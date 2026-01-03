@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RFID Tag Manager - Snapmaker U1</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@simonwep/pickr/dist/themes/nano.min.css">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>RFID Tag Manager</h1>
+            <button id="refresh-all" class="btn btn-primary">Refresh All Extruders</button>
+        </header>
+
+        <div id="channels-grid" class="channels-grid">
+            <!-- Extruder cards will be dynamically inserted here -->
+        </div>
+
+        <div id="status-message" class="status-message"></div>
+    </div>
+
+    <!-- Write/Update Tag Modal -->
+    <dialog id="write-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="write-modal-title">Create Tag</h2>
+                <button class="modal-close" type="button" aria-label="Close">&times;</button>
+            </div>
+            <form id="write-form" class="modal-form">
+                <input type="hidden" name="channel" value="0">
+
+                <div class="form-row">
+                    <label>Material Type:
+                        <select name="type" required>
+                            <option value="PLA">PLA</option>
+                            <option value="PETG">PETG</option>
+                            <option value="ABS">ABS</option>
+                            <option value="TPU">TPU</option>
+                            <option value="PVA">PVA</option>
+                            <option value="NYLON">NYLON</option>
+                            <option value="ASA">ASA</option>
+                            <option value="PC">PC</option>
+                        </select>
+                    </label>
+                    <label>Brand:
+                        <input type="text" name="brand" value="Generic" required>
+                    </label>
+                </div>
+                <div class="form-row">
+                    <label>Subtype (optional):
+                        <input type="text" name="subtype" placeholder="e.g., Matte, Silk">
+                    </label>
+                </div>
+                <div class="form-row">
+                    <label>Color (RRGGBBAA):
+                        <div class="color-input-group">
+                            <div id="color-picker"></div>
+                            <input type="text" name="color_hex" id="color-hex" value="FFFFFFFF"
+                                   pattern="^[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?$"
+                                   placeholder="RRGGBBAA" maxlength="8" required
+                                   title="6 or 8 character hex color (RRGGBB or RRGGBBAA)">
+                        </div>
+                    </label>
+                    <label>Diameter (mm):
+                        <input type="number" name="diameter" value="1.75" step="0.01" min="1.0" max="3.0" required>
+                    </label>
+                    <label>Density (g/cm³):
+                        <input type="number" name="density" step="0.01" min="0.5" max="2.0" placeholder="Auto from material">
+                    </label>
+                </div>
+                <details class="advanced-section">
+                    <summary>Advanced Color Options (multicolor spools)</summary>
+                    <div class="form-row advanced-colors">
+                        <label>Additional Color 2:
+                            <div class="color-input-group">
+                                <div id="color2-picker"></div>
+                                <input type="text" name="color2" id="color2-hex" value=""
+                                       pattern="^([0-9A-Fa-f]{6})?$" placeholder="000000" maxlength="6">
+                            </div>
+                        </label>
+                        <label>Additional Color 3:
+                            <div class="color-input-group">
+                                <div id="color3-picker"></div>
+                                <input type="text" name="color3" id="color3-hex" value=""
+                                       pattern="^([0-9A-Fa-f]{6})?$" placeholder="000000" maxlength="6">
+                            </div>
+                        </label>
+                        <label>Additional Color 4:
+                            <div class="color-input-group">
+                                <div id="color4-picker"></div>
+                                <input type="text" name="color4" id="color4-hex" value=""
+                                       pattern="^([0-9A-Fa-f]{6})?$" placeholder="000000" maxlength="6">
+                            </div>
+                        </label>
+                        <label>Additional Color 5:
+                            <div class="color-input-group">
+                                <div id="color5-picker"></div>
+                                <input type="text" name="color5" id="color5-hex" value=""
+                                       pattern="^([0-9A-Fa-f]{6})?$" placeholder="000000" maxlength="6">
+                            </div>
+                        </label>
+                    </div>
+                </details>
+                <div class="form-row">
+                    <label>Min Extruder Temp (°C):
+                        <input type="number" name="min_temp" min="150" max="300" placeholder="Auto from material">
+                    </label>
+                    <label>Max Extruder Temp (°C):
+                        <input type="number" name="max_temp" min="150" max="300" placeholder="Auto from material">
+                    </label>
+                </div>
+                <div class="form-row">
+                    <label>Bed Min Temp (°C):
+                        <input type="number" name="bed_min_temp" min="0" max="150" placeholder="Auto from material">
+                    </label>
+                    <label>Bed Max Temp (°C):
+                        <input type="number" name="bed_max_temp" min="0" max="150" placeholder="Auto from material">
+                    </label>
+                    <label>Initial Spool Weight (grams):
+                        <input type="number" name="weight" min="1" max="10000" step="0.1" placeholder="Optional">
+                    </label>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary modal-close">Cancel</button>
+                    <button type="submit" class="btn btn-success">Write Tag</button>
+                </div>
+            </form>
+        </div>
+    </dialog>
+
+    <!-- Erase Tag Modal -->
+    <dialog id="erase-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Erase Tag</h2>
+                <button class="modal-close" type="button" aria-label="Close">&times;</button>
+            </div>
+            <form id="erase-form" class="modal-form">
+                <input type="hidden" name="channel" value="0">
+
+                <p>Are you sure you want to erase the tag on <strong>Extruder <span id="erase-channel-text">0</span></strong>?</p>
+                <p class="warning">This operation is irreversible and will clear all tag data.</p>
+
+                <label class="checkbox-label">
+                    <input type="checkbox" name="confirm" required>
+                    I confirm erasing this tag
+                </label>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary modal-close">Cancel</button>
+                    <button type="submit" class="btn btn-danger">Erase Tag</button>
+                </div>
+            </form>
+        </div>
+    </dialog>
+
+    <script src="lib/PrintTag-Web/ndef.js"></script>
+    <script src="lib/PrintTag-Web/openspool.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@simonwep/pickr/dist/pickr.min.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>

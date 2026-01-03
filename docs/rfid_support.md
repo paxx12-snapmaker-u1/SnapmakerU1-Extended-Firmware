@@ -191,6 +191,7 @@ Enable them by removing the `#` prefix from the tag processor.
 - If a vendor tag is present, for example Bambu Lab filament tags, this will usually interfere with reading a user-provided tag (you can cover up the vendor tag with foil tape)
 - Manually read tag: `FILAMENT_DT_UPDATE CHANNEL=<n>` then `FILAMENT_DT_QUERY CHANNEL=<n>`
 - For OpenRFID issues, open Fluidd **Logs** and fetch `openrfid.log`
+- Check `klipper.log` for Snapmaker issues
 
 **OpenPrintTag tags don't work:**
 - Expected - OpenPrintTag uses ISO15693 which is not supported by U1 hardware

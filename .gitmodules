@@ -1,3 +1,6 @@
 [submodule "deps/screen-apps"]
 	path = deps/screen-apps
 	url = https://github.com/paxx12/screen-apps.git
+[submodule "deps/PrintTag-Web"]
+	path = deps/PrintTag-Web
+	url = https://github.com/paxx12/PrintTag-Web.git

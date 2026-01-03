@@ -1,0 +1,144 @@
+   Including: home/lava/klipper/klippy/extras/fm175xx_reader.py
+--- rootfs.original/home/lava/klipper/klippy/extras/fm175xx_reader.py	2026-01-15 02:56:33.270987293 +0000
++++ rootfs/home/lava/klipper/klippy/extras/fm175xx_reader.py	2026-01-15 02:54:53.191709974 +0000
+@@ -920,6 +920,140 @@
+         ret.out_param = card_data_tmp
+         return ret
+ 
++    # Reader-A: NTAG/Ultralight, write a page (4 bytes)
++    def __reader_a_ntag_page_write(self, page:int, data:list) -> int:
++        ret = 0
++        outbuf = [0] * 6
++        inbuf = [0] * 1
++        cmd = Fm175xxCmdMetaData()
++
++        if len(data) != 4:
++            logging.error("NTAG page write requires exactly 4 bytes, got %d", len(data))
++            return FM175XX_CARD_COMM_ERR
++
++        cmd.send_crc_en = FM175XX_SET
++        cmd.recv_crc_en = FM175XX_RESET
++        cmd.send_buff = outbuf
++        cmd.recv_buff = inbuf
++        cmd.send_buff[0] = 0xA2  # WRITE command for NTAG
++        cmd.send_buff[1] = page
++        cmd.send_buff[2] = data[0]
++        cmd.send_buff[3] = data[1]
++        cmd.send_buff[4] = data[2]
++        cmd.send_buff[5] = data[3]
++        cmd.bytes_to_send = 6
++        cmd.bits_to_send = 0
++        cmd.bits_to_recv = 0
++        cmd.bytes_to_recv = 1
++        cmd.timeout = 10
++        cmd.cmd = FM175XX_CMD_TRANSCEIVE
++        result = self.__command_exe(cmd)
++        ret = result.err_code
++
++        if (result.err_code != FM175XX_OK) or (result.out_param.bits_recved != 4) or (result.out_param.recv_buff[0] & 0x0F != 0x0A):
++            if (result.err_code == FM175XX_OK):
++                ret = FM175XX_CARD_COMM_ERR
++                logging.error("NTAG page write ACK error: bits=%d, ack=0x%02X",
++                            result.out_param.bits_recved, result.out_param.recv_buff[0] if result.out_param.bits_recved > 0 else 0)
++
++        return ret
++
++    # Reader-A: NTAG215, write user data area
++    # Page 3 (CC) is OTP - never write to it from this firmware.
++    # Page 4+ contains TLV records (NDEF data)
++    def __reader_a_ntag215_write_user_data(self, data:list, start_page=4, retry_times=3) -> int:
++        if len(data) > (FM175XX_NTAG215_USER_END_PAGE - start_page + 1) * FM175XX_NTAG215_BYTES_PER_PAGE:
++            logging.error("NTAG write data too large: %d bytes", len(data))
++            return FM175XX_CARD_WRITE_ERR
++
++        # Calculate number of pages to write
++        num_pages = (len(data) + FM175XX_NTAG215_BYTES_PER_PAGE - 1) // FM175XX_NTAG215_BYTES_PER_PAGE
++
++        for page_offset in range(num_pages):
++            page_no = start_page + page_offset
++            if page_no > FM175XX_NTAG215_USER_END_PAGE:
++                break
++
++            # Extract 4 bytes for this page
++            offset = page_offset * FM175XX_NTAG215_BYTES_PER_PAGE
++            page_data = data[offset : offset + FM175XX_NTAG215_BYTES_PER_PAGE]
++            page_data += [0] * (4 - len(page_data))  # Pad if needed
++
++            # Retry write
++            for retry in range(retry_times):
++                ret = self.__reader_a_ntag_page_write(page_no, page_data)
++                if ret == FM175XX_OK:
++                    break
++            if ret != FM175XX_OK:
++                logging.error("NTAG page %d write failed after %d retries", page_no, retry_times)
++                return FM175XX_CARD_WRITE_ERR
++
++        return FM175XX_OK
++
++    def write_ntag_data(self, channel, data, start_page=4, retry_times=3):
++        """
++        Write data to NTAG tag on specified channel.
++        This is a synchronous blocking operation that:
++        1. Selects the channel
++        2. Initializes and activates the reader
++        3. Writes the data starting at start_page (default: page 4)
++        Note: Page 3 (CC) is OTP on NTAG tags - do not write to it.
++        Returns: FM175XX_OK on success, error code on failure
++        """
++        if channel < 0 or channel >= FM175XX_CHANNEL_NUMS:
++            logging.error("Invalid channel %d for NTAG write", channel)
++            return FM175XX_PARAM_ERR
++
++        if not data or len(data) == 0:
++            logging.error("No data provided for NTAG write")
++            return FM175XX_PARAM_ERR
++
++        # Select channel and reader object (call sync versions directly)
++        self.__select_fm175xx_obj(channel)
++        self.__do_select_channel(channel)
++        time.sleep(0.2)  # Allow hardware to settle
++
++        for retry in range(retry_times):
++            # Initialize reader
++            self.__picc_a.reset()
++            self.__reader_a_init()
++
++            # Enable carrier wave
++            self.__set_carrier_wave(FM175XX_CW_ENABLE)
++
++            # Activate the card
++            ret = FM175XX_ERR
++            for activate_retry in range(3):
++                ret = self.__reader_a_activate()
++                if ret == FM175XX_OK:
++                    break
++
++            if ret != FM175XX_OK:
++                logging.warning("NTAG activate failed on retry %d, ret=%d", retry, ret)
++                self.__set_carrier_wave(FM175XX_CW_DISABLE)
++                continue
++
++            # Verify it's an NTAG card (SAK = 0x00)
++            if self.__picc_a.SAK[self.__picc_a.CASCADE_LEVEL] != FM175XX_MIFARE_CARD_TYPE_NTAG:
++                logging.error("Card is not NTAG type (SAK=0x%02X)", self.__picc_a.SAK[self.__picc_a.CASCADE_LEVEL])
++                self.__set_carrier_wave(FM175XX_CW_DISABLE)
++                return FM175XX_CARD_ACTIVATE_ERR
++
++            # Write the data
++            ret = self.__reader_a_ntag215_write_user_data(data, start_page=start_page)
++
++            # Disable carrier wave
++            self.__set_carrier_wave(FM175XX_CW_DISABLE)
++
++            if ret == FM175XX_OK:
++                logging.info("NTAG write successful on channel %d", channel)
++                return FM175XX_OK
++
++            logging.warning("NTAG write failed on retry %d, ret=%d", retry, ret)
++
++        logging.error("NTAG write failed after %d retries", retry_times)
++        return FM175XX_CARD_WRITE_ERR
++
+     # Reader-A: M1, read all data
+     def __reader_a_m1_read_all_data(self, uid:list, auth_mode:int, auth_key:list, retry_times = 3) -> Fm175xxReturnVal:
+         ret = Fm175xxReturnVal()
