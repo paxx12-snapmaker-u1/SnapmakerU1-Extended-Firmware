@@ -1,0 +1,26 @@
+  Including: home/lava/klipper/klippy/extras/filament_detect.py
+--- rootfs.original/home/lava/klipper/klippy/extras/filament_detect.py	2026-01-19 20:46:51.443456566 +0000
++++ rootfs/home/lava/klipper/klippy/extras/filament_detect.py	2026-02-08 22:00:00.000000000 +0000
+@@ -123,6 +123,7 @@
+                 if (error == filament_protocol.FILAMENT_PROTO_OK):
+                     logging.info("channel[%d] m1 parse ok....", channel)
+                     filament_info = info
++                    filament_info['CARD_TYPE'] = 'M1'
+                 else:
+                     logging.error("channel[%d] m1 parse err: %d", channel, error)
+             elif fm175xx_reader.FM175XX_MIFARE_CARD_TYPE_NTAG == card_type and fm175xx_reader.FM175XX_OK == result:
+@@ -131,8 +132,13 @@
+                 if (error == filament_protocol.FILAMENT_PROTO_OK):
+                     logging.info("channel[%d] NDEF parse ok....", channel)
+                     filament_info = info
++                    filament_info['CARD_TYPE'] = 'NTAG215'
+                 else:
+-                    logging.error("channel[%d] NDEF parse err....", channel)
++                    logging.info("channel[%d] NDEF parse err, using partial info with UID....", channel)
++                    # Use partial info (contains UID even on parse errors)
++                    if info is not None:
++                        filament_info = info
++                        filament_info['CARD_TYPE'] = 'NTAG215'
+         else:
+             is_clear = True
+
