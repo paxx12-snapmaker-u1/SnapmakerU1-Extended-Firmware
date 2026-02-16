@@ -54,10 +54,12 @@ class AFCLane:
         state = {
             'loaded': False,
             'tool_loaded': False,
-            'vendor': 'NONE',
-            'type': 'NONE',
-            'subtype': 'NONE',
-            'color': 'FFFFFFFF',
+            'spool': {
+                'vendor': 'NONE',
+                'type': 'NONE',
+                'subtype': 'NONE',
+                'color': 'FFFFFFFF'
+            },
             'map': f"T{self.lane_index}",
             'runout_lane': 'NONE',
         }
@@ -65,12 +67,14 @@ class AFCLane:
         try:
             status = self.print_task_config.get_status(eventtime)
             state['loaded'] = dict(enumerate(status.get('filament_exist', []))).get(self.lane_index, False)
-            state['vendor'] = dict(enumerate(status.get('filament_vendor', []))).get(self.lane_index, 'NONE')
-            state['type'] = dict(enumerate(status.get('filament_type', []))).get(self.lane_index, 'NONE')
-            state['subtype'] = dict(enumerate(status.get('filament_sub_type', []))).get(self.lane_index, 'NONE')
-            state['color'] = dict(enumerate(status.get('filament_color_rgba', []))).get(self.lane_index, 'FFFFFFFF')
             if status.get('auto_replenish_filament', False):
                 state['runout_lane'] = 'AUTO'
+
+            spool = state['spool']
+            spool['vendor'] = dict(enumerate(status.get('filament_vendor', []))).get(self.lane_index, 'NONE')
+            spool['type'] = dict(enumerate(status.get('filament_type', []))).get(self.lane_index, 'NONE')
+            spool['subtype'] = dict(enumerate(status.get('filament_sub_type', []))).get(self.lane_index, 'NONE')
+            spool['color'] = dict(enumerate(status.get('filament_color_rgba', []))).get(self.lane_index, 'FFFFFFFF')
 
             tool_to_extruder = dict(enumerate(status.get('extruder_map_table', [])))
             for tool_idx, extruder_idx in tool_to_extruder.items():
@@ -93,6 +97,7 @@ class AFCLane:
         response = {}
 
         state = self._get_state(eventtime)
+        spool = state.get('spool', {})
 
         response['name'] = self.name
         response['unit'] = self.unit_name
@@ -103,10 +108,10 @@ class AFCLane:
         response['prep'] = state.get('loaded', False)
         response['tool_loaded'] = state.get('tool_loaded', response['load'])
         response['loaded_to_hub'] = False
-        response['material'] = state.get('type', 'NONE')
-        response['spool_id'] = None
-        response['color'] = f"#{state.get('color', 'FFFFFFFF')[:6]}" # RGB only, ignore alpha
-        response['weight'] = 1000 # AFC doesn't track weight
+        response['material'] = spool.get('type', 'NONE')
+        response['spool_id'] = 0
+        response['color'] = f"#{spool.get('color', 'FFFFFFFF')[:6]}" # RGB only, ignore alpha
+        response['weight'] = 1000
         response['runout_lane'] = state.get('runout_lane', '?')
         response['filament_status'] = 'unknown'
         response['filament_status_led'] = 'gray'
