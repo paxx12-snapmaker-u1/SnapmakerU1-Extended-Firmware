@@ -1,0 +1,10 @@
+--- a/home/lava/klipper/klippy/extras/filament_protocol.py
++++ b/home/lava/klipper/klippy/extras/filament_protocol.py
+@@ -34,6 +34,7 @@
+     'RSA_KEY_VERSION': 0,
+     'OFFICIAL': False,
+     'CARD_UID': 0,
++    'SPOOL_ID': 0,
+ }
+ 
+ # Filament main type

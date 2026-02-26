@@ -224,6 +224,11 @@ def openspool_parse_payload(payload, card_uid=[]):
         info['OFFICIAL'] = True
         info['CARD_UID'] = card_uid
 
+        try:
+            info['SPOOL_ID'] = int(data.get('spool_id', 0))
+        except (ValueError, TypeError):
+            info['SPOOL_ID'] = 0
+
         return filament_protocol.FILAMENT_PROTO_OK, info
 
     except json.JSONDecodeError as e:

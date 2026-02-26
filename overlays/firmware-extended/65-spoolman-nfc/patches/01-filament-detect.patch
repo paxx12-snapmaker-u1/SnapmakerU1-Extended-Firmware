@@ -1,0 +1,11 @@
+--- a/home/lava/klipper/klippy/extras/filament_detect.py
++++ b/home/lava/klipper/klippy/extras/filament_detect.py
+@@ -226,6 +226,8 @@
+                 filament_info['CARD_UID'] = [int(b) for b in params.pop('CARD_UID')]
+             if 'SKU' in params:
+                 filament_info['SKU'] = int(params.pop('SKU'))
++            if 'SPOOL_ID' in params:
++                filament_info['SPOOL_ID'] = int(params.pop('SPOOL_ID'))
+ 
+             if params:
+                 raise web_request.error("unsupported fields: %s" % (', '.join(sorted(params.keys()))))

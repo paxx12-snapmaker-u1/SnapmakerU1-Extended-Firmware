@@ -1,0 +1,69 @@
+settings:
+  spoolman:
+    items:
+      spoolman_sync:
+        label: Spoolman NFC Sync
+        description: Automatically sync the active spool in Moonraker when an NFC tag is detected.
+        get_cmd:
+          - /usr/local/bin/extended-config.py
+          - get
+          - /oem/printer_data/config/extended/extended2.cfg
+          - components
+          - spoolman_sync
+          - disabled
+        options:
+          enabled:
+            label: Enabled
+            cmd:
+              - bash
+              - -xc
+              - |
+                /usr/local/bin/extended-config.py add /oem/printer_data/config/extended/extended2.cfg components spoolman_sync enabled
+                /usr/local/bin/spoolman-macros-apply.sh
+          disabled:
+            label: Disabled
+            cmd:
+              - bash
+              - -xc
+              - |
+                /usr/local/bin/extended-config.py add /oem/printer_data/config/extended/extended2.cfg components spoolman_sync disabled
+                /usr/local/bin/spoolman-macros-apply.sh
+        default: disabled
+
+      spoolman_macros:
+        label: Spoolman Multi-Tool Configuration
+        help_url: https://github.com/paxx12/SnapmakerU1-Extended-Firmware/blob/develop/overlays/firmware-extended/65-spoolman-nfc/root/usr/local/share/firmware-config/extended/klipper/spoolman_multi_tool.cfg
+        description: Manage the built-in spoolman_multi_tool.cfg macros for Klipper.
+        get_cmd:
+          - /usr/local/bin/extended-config.py
+          - get
+          - /oem/printer_data/config/extended/extended2.cfg
+          - components
+          - spoolman_macros
+          - auto
+        options:
+          auto:
+            label: Follow NFC Sync
+            cmd:
+              - bash
+              - -xc
+              - |
+                /usr/local/bin/extended-config.py add /oem/printer_data/config/extended/extended2.cfg components spoolman_macros auto
+                /usr/local/bin/spoolman-macros-apply.sh
+          enabled:
+            label: Enabled
+            cmd:
+              - bash
+              - -xc
+              - |
+                /usr/local/bin/extended-config.py add /oem/printer_data/config/extended/extended2.cfg components spoolman_macros enabled
+                /usr/local/bin/spoolman-macros-apply.sh
+          disabled:
+            label: Disabled
+            cmd:
+              - bash
+              - -xc
+              - |
+                /usr/local/bin/extended-config.py add /oem/printer_data/config/extended/extended2.cfg components spoolman_macros disabled
+                /usr/local/bin/spoolman-macros-apply.sh
+        default: auto

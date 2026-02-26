@@ -1,0 +1,131 @@
+# Originated from: https://github.com/unlucio/U1-klipper-configs/blob/main/spoolman/spoolman_multi_tool.cfg
+# Author: unlucio
+
+# Remember the selected spools across printer reboots
+[save_variables]
+filename: ~/printer_data/config/variables.cfg
+
+[gcode_macro _SPOOLMAN_CFG]
+variable_tools: "T0,T1,T2,T3,T4,T5,T6,T7,T8,T9,T10,T11,T12,T13,T14,T15,T16,T17,T18,T19,T20,T21,T22,T23,T24,T25,T26,T27,T28,T29,T30,T31"
+gcode:
+  # no g-code, this is just a conveniet "array" because I don't like to repeat my sef.
+  RESPOND PREFIX="🧶" MSG="Nothing to see here"
+
+# main Spool selection macro
+[gcode_macro SET_ACTIVE_SPOOL]
+gcode:
+  {% if params.ID is defined %}
+    {% set id = params.ID|int %}
+    {action_call_remote_method("spoolman_set_active_spool", spool_id=id)}
+    UPDATE_DELAYED_GCODE ID=SAVE_SELECTED_SPOOLS DURATION=0.01
+  {% else %}
+    {action_respond_info("Parameter 'ID' is required")}
+  {% endif %}
+
+[gcode_macro CLEAR_ACTIVE_SPOOL]
+gcode:
+  RESPOND PREFIX="🧶" MSG="Active spool cleared"
+  {action_call_remote_method("spoolman_set_active_spool", spool_id=None)}
+  UPDATE_DELAYED_GCODE ID=SAVE_SELECTED_SPOOLS DURATION=0.01
+
+# Only touch tools that exist AND actually expose .spool_id
+[gcode_macro CLEAR_ALL_SPOOLS]
+gcode:
+  {action_call_remote_method("spoolman_set_active_spool", spool_id=None)}
+
+  RESPOND PREFIX="🧶" MSG="Clearing all spools"
+
+  {% set tools = printer["gcode_macro _SPOOLMAN_CFG"].tools.split(",") %}
+  {% for tool in tools %}
+    {% set macro = "gcode_macro " ~ tool %}
+    {% if macro in printer and printer[macro].spool_id is defined %}
+      SET_GCODE_VARIABLE MACRO={tool} VARIABLE=spool_id VALUE=\"\"
+    {% endif %}
+  {% endfor %}
+
+  UPDATE_DELAYED_GCODE ID=SAVE_SELECTED_SPOOLS DURATION=1
+
+[delayed_gcode SAVE_SELECTED_SPOOLS]
+gcode:
+  {% set tools = printer["gcode_macro _SPOOLMAN_CFG"].tools.split(",") %}
+
+  {% for tool in tools %}
+    {% set macro = "gcode_macro " ~ tool %}
+    {% set vname = tool|lower ~ "__spool_id" %}
+
+    {% if macro in printer and printer[macro].spool_id is defined %}
+      {% set sid = printer[macro].spool_id|string %}
+    {% else %}
+      {% set sid = "" %}
+    {% endif %}
+
+    {% if sid != "" %}
+      #RESPOND PREFIX="🧶" MSG="Saving spool for { vname }: { sid }"
+      SAVE_VARIABLE VARIABLE={vname} VALUE="{sid}"
+    {% else %}
+      #RESPOND PREFIX="🧶" MSG="Clearing spool for { vname }"
+      SAVE_VARIABLE VARIABLE={vname} VALUE=\"\"
+    {% endif %}
+  {% endfor %}
+
+[gcode_macro SAVE_CURRENT_SPOOLS]
+gcode:
+  RESPOND PREFIX="🧶" MSG="Current spools saved"
+  UPDATE_DELAYED_GCODE ID=SAVE_SELECTED_SPOOLS DURATION=0.01
+
+# Apply selected spool during print
+[delayed_gcode RESTORE_SELECTED_SPOOLS]
+initial_duration: 0.1
+gcode:
+  {% set svv = printer.save_variables.variables %}
+  {% for object in printer %}
+    {% if object.startswith('gcode_macro ') and printer[object].spool_id is defined %}
+      {% set macro = object.replace('gcode_macro ', '') %}
+      {% set var = (macro + '__SPOOL_ID')|lower %}
+      {% if svv[var] is defined %}
+        SET_GCODE_VARIABLE MACRO={macro} VARIABLE=spool_id VALUE={svv[var]}
+        RESPOND PREFIX="🧶" MSG="TRestring spools selection"
+      {% endif %}
+    {% endif %}
+  {% endfor %}
+
+# Per tool spool config
+[gcode_macro T0]
+rename_existing: T0.10001
+variable_spool_id: ""
+gcode:
+  {% set sid = printer["gcode_macro T0"].spool_id %}
+  {% if sid %}
+    SET_ACTIVE_SPOOL ID={sid}
+  {% endif %}
+  T0.10001 {rawparams}
+
+[gcode_macro T1]
+rename_existing: T1.10001
+variable_spool_id: ""
+gcode:
+  {% set sid = printer["gcode_macro T1"].spool_id %}
+  {% if sid %}
+    SET_ACTIVE_SPOOL ID={sid}
+  {% endif %}
+  T1.10001 {rawparams}
+
+[gcode_macro T2]
+rename_existing: T2.10001
+variable_spool_id: ""
+gcode:
+  {% set sid = printer["gcode_macro T2"].spool_id %}
+  {% if sid %}
+    SET_ACTIVE_SPOOL ID={sid}
+  {% endif %}
+  T2.10001 {rawparams}
+
+[gcode_macro T3]
+rename_existing: T3.10001
+variable_spool_id: ""
+gcode:
+  {% set sid = printer["gcode_macro T3"].spool_id %}
+  {% if sid %}
+    SET_ACTIVE_SPOOL ID={sid}
+  {% endif %}
+  T3.10001 {rawparams}

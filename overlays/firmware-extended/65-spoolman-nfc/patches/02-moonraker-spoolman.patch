@@ -1,0 +1,117 @@
+--- a/home/lava/moonraker/moonraker/components/spoolman.py	2026-05-05 18:44:11.311205517 +0200
++++ b/home/lava/moonraker/moonraker/components/spoolman.py	2026-05-05 18:44:11.315278693 +0200
+@@ -9,6 +9,7 @@
+ import logging
+ import re
+ import contextlib
++import subprocess
+ import tornado.websocket as tornado_ws
+ from ..common import RequestType, HistoryFieldData
+ from ..utils import json_wrapper as jsonw
+@@ -53,6 +54,18 @@
+         self._error_logged: bool = False
+         self._highest_epos: float = 0
+         self._current_extruder: str = "extruder"
++        self._nfc_spool_ids: List[int] = [0] * 8
++        try:
++            res = subprocess.check_output([
++                "/usr/local/bin/extended-config.py", "get",
++                "/oem/printer_data/config/extended/extended2.cfg",
++                "components", "spoolman_sync", "disabled"
++            ])
++            self._nfc_sync_enabled = (res.decode().strip().lower() == "enabled")
++        except Exception as e:
++            logging.warning(f"Failed to read extended-config for spoolman_sync: {e}")
++            self._nfc_sync_enabled = False
++        
+         self.spool_history = HistoryFieldData(
+             "spool_ids", "spoolman", "Spool IDs used", "collect",
+             reset_callback=self._on_history_reset
+@@ -238,7 +251,10 @@
+     async def _handle_klippy_ready(self) -> None:
+         result: Dict[str, Dict[str, Any]]
+         result = await self.klippy_apis.subscribe_objects(
+-            {"toolhead": ["position", "extruder"]}, self._handle_status_update, {}
++            {
++                "toolhead": ["position", "extruder"],
++                "filament_detect": None
++            }, self._handle_status_update, {}
+         )
+         toolhead = result.get("toolhead", {})
+         self._current_extruder = toolhead.get("extruder", "extruder")
+@@ -259,6 +275,75 @@
+ 
+     def _handle_status_update(self, status: Dict[str, Any], _: float) -> None:
+         toolhead: Optional[Dict[str, Any]] = status.get("toolhead")
++
++        # Check if filament_detect status has changed
++        filament_detect: Optional[Dict[str, Any]] = status.get("filament_detect")
++        if filament_detect is not None:
++            info_list = filament_detect.get("info", [])
++
++            # Determine which index is the current active extruder
++            active_idx = 0
++            if self._current_extruder != "extruder":
++                try:
++                    active_idx = int(self._current_extruder.replace("extruder", ""))
++                except ValueError:
++                    pass
++
++            for idx, info in enumerate(info_list):
++                if isinstance(info, dict):
++                    try:
++                        spool_id = int(info.get("SPOOL_ID", 0))
++                    except (ValueError, TypeError):
++                        spool_id = 0
++
++                    if spool_id is None:
++                        spool_id = 0
++
++                    # Ensure our tracking list is long enough
++                    while len(self._nfc_spool_ids) <= idx:
++                        self._nfc_spool_ids.append(0)
++
++                    if spool_id != self._nfc_spool_ids[idx]:
++                        if not self._nfc_sync_enabled:
++                            logging.info(f"NFC tag updated on T{idx} to {spool_id}, but NFC sync is disabled. Ignoring.")
++                            self._nfc_spool_ids[idx] = spool_id
++                            continue
++
++                        if spool_id > 0:
++                            logging.info(f"NFC tag detected on T{idx}, loaded SPOOL_ID: {spool_id}")
++                        else:
++                            logging.info(f"NFC tag removed from T{idx}, SPOOL_ID cleared")
++
++                        self._nfc_spool_ids[idx] = spool_id
++
++                        async def sync_spool_macro(sid=spool_id, tool_idx=idx) -> None:
++                            try:
++                                # The UI strictly depends on `T0`, `T1`, `T2` macro variables to stay in sync for parked tools!
++                                val = str(sid) if sid > 0 else "'\"\"'"
++                                await self.klippy_apis.run_gcode(f"SET_GCODE_VARIABLE MACRO=T{tool_idx} VARIABLE=spool_id VALUE={val}")
++                            except Exception as e:
++                                pass
++
++                        self.eventloop.create_task(sync_spool_macro())
++
++                        # Only force a Moonraker active spool override if the tag was inserted
++                        # into the CURRENTLY ACTIVE printing tool!
++                        if idx == active_idx and spool_id != self.spool_id:
++                            if spool_id > 0:
++                                async def sync_active_spool(sid=spool_id) -> None:
++                                    try:
++                                        await self.klippy_apis.run_gcode(f"SET_ACTIVE_SPOOL ID={sid}")
++                                    except Exception as e:
++                                        self.set_active_spool(sid)
++                                self.eventloop.create_task(sync_active_spool())
++                            else:
++                                async def clear_active_spool() -> None:
++                                    try:
++                                        await self.klippy_apis.run_gcode("CLEAR_ACTIVE_SPOOL")
++                                    except Exception as e:
++                                        self.set_active_spool(None)
++                                self.eventloop.create_task(clear_active_spool())
++
+         if toolhead is None:
+             return
+         epos: float = toolhead.get("position", [0, 0, 0, self._highest_epos])[3]

@@ -101,6 +101,26 @@ Using the non-standard OpenSpool `subtype` field it is possible to specify a mat
 - `additional_color_hexes` - Additional colors for multicolor spools (up to 4)
 - `weight` - Spool weight in grams
 - `diameter` - Filament diameter in mm (e.g., 1.75)
+- `spool_id` - Integer ID for automatic Spoolman synchronization
+
+### Spoolman Integration
+
+The extended firmware optionally integrates with [Spoolman](https://github.com/Donkie/Spoolman) via Moonraker.
+
+When an OpenSpool NFC tag containing a `spool_id` integer is inserted into any tool slot, the firmware can automatically synchronize your upstream Spoolman database. 
+
+By default, Spoolman NFC Sync is **disabled** to avoid interfering with users who manage Spoolman manually. You can enable it via the Firmware Configuration under **Settings -> Spoolman**.
+
+When **Spoolman NFC Sync** is enabled:
+- **Active Extruder**: If a spool is loaded into the currently active extruder, it is automatically marked as "active" in your Spoolman database so filament usage is tracked accurately.
+- **Parked Extruders**: If a spool is loaded into an idle extruder, the printer's display and web interface (Mainsail/Fluidd) are immediately updated to show the newly loaded spool, ready for the next toolchange. This requires the Spoolman Multi-Tool Configuration to be enabled.
+
+**Spoolman Multi-Tool Configuration:**
+Spoolman requires specific Klipper macros to function properly in a multi-tool setup. The firmware bundles a pre-configured `spoolman_multi_tool.cfg` file.
+The **Spoolman Multi-Tool Configuration** option allows you to manage these macros:
+- **Follow NFC Sync** (Default): The built-in macros are automatically enabled or disabled to match your Spoolman NFC Sync toggle.
+- **Enabled**: Forces the built-in macros to be active, regardless of sync status.
+- **Disabled**: Renames the built-in macros to `.disabled`, allowing you to provide your own custom macro implementation in `/home/lava/printer_data/config/extended/klipper/` without conflicts.
 
 ### Snapmaker Orca Naming Convention
 
