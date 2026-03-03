@@ -1,0 +1,26 @@
+links:
+  detect-http:
+    url: /detect-http/
+    icon: "🤖"
+    label: AI Detection
+    condition:
+      setting: camera-internal
+      value: paxx12-ai
+
+settings:
+  camera:
+    items:
+      camera-internal:
+        options:
+          paxx12-ai:
+            label: Paxx12 AI (Experimental)
+            confirm: This will enable custom AI detection algorithm, the AI might produce false output as result.
+            hidden: true
+            cmd:
+              - bash
+              - -xc
+              - |
+                /usr/local/bin/extended-config.py add /home/lava/printer_data/config/extended/extended2.cfg camera internal paxx12-ai &&
+                /etc/init.d/S90lmd stop &&
+                /etc/init.d/S99detect-rknn restart &&
+                /etc/init.d/S99v4l2-mpp-mipi restart

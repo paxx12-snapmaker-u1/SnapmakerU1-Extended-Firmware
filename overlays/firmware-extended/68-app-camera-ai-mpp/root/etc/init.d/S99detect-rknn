@@ -1,0 +1,122 @@
+#!/bin/sh
+
+EXTENDED_CFG="/home/lava/printer_data/config/extended/extended2.cfg"
+CAMERA_INTERNAL=$(/usr/local/bin/extended-config.py get "$EXTENDED_CFG" camera internal snapmaker)
+
+CMD_PYTHON3=/usr/bin/python3
+
+BED_CHECK_MODEL=/etc/unisrv/camera_service/model/bed_check.fp.rknn
+BED_CHECK_LABELS=item,nozzle,legend_text,extrusion_line,light_spot
+
+PRINT_CHECK_MODEL=/etc/unisrv/camera_service/model/print_check.fp.rknn
+PRINT_CHECK_LABELS=noodle
+
+NOODLE_VERIFY_MODEL=/etc/unisrv/camera_service/model/noodle_verify.fp.rknn
+NOODLE_VERIFY_LABELS=verify_noodle
+
+start() {
+    if [ "$CAMERA_INTERNAL" != "paxx12-ai" ]; then
+        echo "Internal camera is not set to 'paxx12-ai', not starting."
+        return
+    fi
+
+    if [ ! -e /dev/video11 ]; then
+        echo "MIPI camera device /dev/video11 not found, not starting."
+        return
+    fi
+
+    printf "Starting detect-bed-check: "
+    start-stop-daemon -S -b -q -m -p /var/run/detect-bed-check.pid -c lava -x $CMD_PYTHON3 -- \
+        /usr/local/bin/detect-rknn-yolo11.py \
+        --model $BED_CHECK_MODEL \
+        --labels $BED_CHECK_LABELS \
+        --sock /tmp/detect-bed-check.sock
+    echo "OK"
+
+    printf "Starting detect-print-check: "
+    start-stop-daemon -S -b -q -m -p /var/run/detect-print-check.pid -c lava -x $CMD_PYTHON3 -- \
+        /usr/local/bin/detect-rknn-yolo11.py \
+        --model $PRINT_CHECK_MODEL \
+        --labels $PRINT_CHECK_LABELS \
+        --sock /tmp/detect-print-check.sock
+    echo "OK"
+
+    printf "Starting detect-noodle-verify: "
+    start-stop-daemon -S -b -q -m -p /var/run/detect-noodle-verify.pid -c lava -x $CMD_PYTHON3 -- \
+        /usr/local/bin/detect-rknn-yolo11.py \
+        --model $NOODLE_VERIFY_MODEL \
+        --labels $NOODLE_VERIFY_LABELS \
+        --sock /tmp/detect-noodle-verify.sock
+    echo "OK"
+
+    printf "Starting detect-http: "
+    start-stop-daemon -S -b -q -m -p /var/run/detect-http.pid -c lava -x $CMD_PYTHON3 -- \
+        /usr/local/bin/detect-http.py \
+        --port 8091 --bind 127.0.0.1 \
+        --jpeg-sock /tmp/capture-mipi-jpeg.sock \
+        --detect-sock /tmp/detect-bed-check.sock \
+        --detect-sock /tmp/detect-print-check.sock \
+        --detect-sock /tmp/detect-noodle-verify.sock
+    echo "OK"
+
+    printf "Starting fake-camera-agent: "
+    start-stop-daemon -S -b -q -m -p /var/run/fake-camera-agent.pid -c lava -x $CMD_PYTHON3 -- \
+        /usr/local/bin/fake-camera-agent.py \
+        --jpeg-sock /tmp/capture-mipi-jpeg.sock \
+        --detect-sock /tmp/detect-bed-check.sock:$BED_CHECK_LABELS \
+        --detect-sock /tmp/detect-print-check.sock:$PRINT_CHECK_LABELS \
+        --detect-sock /tmp/detect-noodle-verify.sock:$NOODLE_VERIFY_LABELS
+    echo "OK"
+}
+
+stop() {
+    if [ -f /var/run/fake-camera-agent.pid ]; then
+        printf "Stopping fake-camera-agent: "
+        start-stop-daemon -K -q -p /var/run/fake-camera-agent.pid
+        echo "OK"
+    fi
+
+    if [ -f /var/run/detect-http.pid ]; then
+        printf "Stopping detect-http: "
+        start-stop-daemon -K -q -p /var/run/detect-http.pid
+        echo "OK"
+    fi
+
+    if [ -f /var/run/detect-print-check.pid ]; then
+        printf "Stopping detect-print-check: "
+        start-stop-daemon -K -q -p /var/run/detect-print-check.pid
+        echo "OK"
+    fi
+
+    if [ -f /var/run/detect-bed-check.pid ]; then
+        printf "Stopping detect-bed-check: "
+        start-stop-daemon -K -q -p /var/run/detect-bed-check.pid
+        echo "OK"
+    fi
+
+    if [ -f /var/run/detect-noodle-verify.pid ]; then
+        printf "Stopping detect-noodle-verify: "
+        start-stop-daemon -K -q -p /var/run/detect-noodle-verify.pid
+        echo "OK"
+    fi
+}
+
+case "$1" in
+    start)
+        start
+        ;;
+    stop)
+        stop
+        ;;
+    restart|reload)
+        stop
+        sleep 1
+        start
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|restart}"
+        exit 1
+        ;;
+esac
+
+exit 0
