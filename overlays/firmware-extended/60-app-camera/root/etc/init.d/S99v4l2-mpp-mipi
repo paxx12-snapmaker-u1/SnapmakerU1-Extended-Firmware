@@ -22,12 +22,9 @@ CMD_CTRL_ARGS="/usr/local/bin/control-v4l2.py --device /dev/v4l-subdev2 --sock /
 
 CMD_RTSP="/usr/local/bin/stream-rtsp --h264-sock /tmp/capture-mipi-h264.sock --rtsp-port 8554 --max-clients 4"
 
-CMD_LMD="/usr/bin/lmd"
-CMD_LMD_ARGS=""
-
 start() {
-    if [ "$CAMERA_INTERNAL" != "paxx12" ]; then
-        echo "Internal MIPI camera is not set to 'paxx12', not starting."
+    if [ "$CAMERA_INTERNAL" != "paxx12" ] && [ "$CAMERA_INTERNAL" != "paxx12-ai" ]; then
+        echo "Internal MIPI camera is not set to 'paxx12' or 'paxx12-ai', not starting."
         return
     fi
 
@@ -61,27 +58,9 @@ start() {
         start-stop-daemon -S -b -q -m -p /var/run/stream-mipi-rtsp.pid -c lava -x $CMD_FAKE_SERVICE -- $CMD_FAKE_SERVICE_ARGS $CMD_RTSP
         echo "OK"
     fi
-
-    # Emulates V4L2 device for MIPI camera input through the capture-mipi-raw.sock
-    (
-        export LD_PRELOAD=/usr/local/lib/libv4l2-imposter.so
-        export V4L2_IMPOSTER_SOCKET_PATH=/tmp/capture-mipi-raw.sock
-        export V4L2_IMPOSTER_DEVICE=/dev/video11
-        export V4L2_IMPOSTER_WIDTH=1920
-        export V4L2_IMPOSTER_HEIGHT=1080
-        export V4L2_IMPOSTER_FORMAT=nv12
-
-        printf "Starting lmd: "
-        start-stop-daemon -S -b -q -m -p /var/run/unisrv.pid -x $CMD_LMD -- $CMD_LMD_ARGS
-        echo "OK"
-    )
 }
 
 stop() {
-    printf "Stopping lmd: "
-    start-stop-daemon -K -q -p /var/run/unisrv.pid
-    echo "OK"
-
     if [ -f /var/run/stream-mipi-rtsp.pid ]; then
         printf "Stopping stream-rtsp: "
         start-stop-daemon -K -q -p /var/run/stream-mipi-rtsp.pid
