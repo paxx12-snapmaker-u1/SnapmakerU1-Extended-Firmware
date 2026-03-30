@@ -367,7 +367,10 @@ class AFCLaneSpoolman:
             logging.error(f"Failed to add lot_nr: {error}")
             return
         payload = web_request.get_dict('payload', {})
-        logging.info(f"lot_nr set for spool {payload.get('id', '?')}")
+        spool_id = payload.get('id', '?')
+        lot_nr = payload.get('lot_nr', '')
+        logging.info(f"lot_nr set for spool {spool_id}: {lot_nr}")
+        self.gcode.respond_info(f"RFID card bound to spool {spool_id} (lot_nr: {lot_nr})")
 
     def _handle_remove_lot_nr_callback(self, web_request):
         error = web_request.get('error', None)
@@ -375,7 +378,10 @@ class AFCLaneSpoolman:
             logging.error(f"Failed to remove lot_nr: {error}")
             return
         payload = web_request.get_dict('payload', {})
-        logging.info(f"lot_nr cleared from spool {payload.get('id', '?')}")
+        spool_id = payload.get('id', '?')
+        lot_nr = payload.get('lot_nr', '')
+        logging.info(f"lot_nr cleared from spool {spool_id}: {lot_nr}")
+        self.gcode.respond_info(f"RFID card unbound from spool {spool_id}")
 
     def _handle_by_lot_nr_callback(self, web_request):
         try:
