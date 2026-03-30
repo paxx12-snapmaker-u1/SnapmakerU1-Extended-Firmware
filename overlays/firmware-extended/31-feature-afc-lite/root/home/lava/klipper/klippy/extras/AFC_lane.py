@@ -42,8 +42,8 @@ class AFCLane:
         if self.toolhead_sensor_name:
             try:
                 self.toolhead_sensor = self.printer.lookup_object(self.toolhead_sensor_name)
-        except:
-            pass
+            except:
+                pass
 
     def _get_state(self, eventtime=None):
         if not self.print_task_config:
