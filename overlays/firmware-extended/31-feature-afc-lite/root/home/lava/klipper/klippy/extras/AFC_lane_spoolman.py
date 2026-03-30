@@ -58,6 +58,8 @@ class AFCLaneSpoolman:
 
         self._last_card_uid = None
         self._pending_lot_nr_card_uid = None
+        self._current_spool_id = None
+        self._unbind_card_uid = None
 
         self.printer.register_event_handler("klippy:connect", self._handle_connect)
 
@@ -92,6 +94,11 @@ class AFCLaneSpoolman:
         self.webhooks.register_endpoint(
             self.remove_lot_nr_callback,
             self._handle_remove_lot_nr_callback)
+
+        self.unbind_spool_callback = f"{cb_base}/unbind_spool"
+        self.webhooks.register_endpoint(
+            self.unbind_spool_callback,
+            self._handle_unbind_spool_callback)
 
         self.by_lot_nr_callback = f"{cb_base}/by_lot_nr"
         self.webhooks.register_endpoint(
@@ -194,13 +201,23 @@ class AFCLaneSpoolman:
 
     cmd_SET_SPOOL_ID_help = "Set spool ID and fetch filament data from Spoolman"
     def cmd_SET_SPOOL_ID(self, gcmd):
-        spool_id = gcmd.get_int('SPOOL_ID', 0)
+        spool_id_str = gcmd.get('SPOOL_ID', '0')
+        try:
+            spool_id = int(spool_id_str) if spool_id_str.strip() else 0
+        except ValueError:
+            spool_id = 0
         card_uid = self._get_card_uid_hex()
 
         if not spool_id:
             gcmd.respond_info(f"Clearing spool data for lane {self.lane_name}")
             reactor = self.printer.get_reactor()
             reactor.register_callback(lambda _: self._clear_filament_config())
+            # If we have a current spool and a card_uid, remove the card_uid from that spool
+            if self._current_spool_id and card_uid:
+                self._unbind_card_uid = card_uid
+                gcmd.respond_info(f"Unbinding RFID card from spool {self._current_spool_id}...")
+                self._unbind_card_from_spool(self._current_spool_id)
+            self._current_spool_id = None
             self.pending_card_uid = None
             return
 
@@ -231,6 +248,9 @@ class AFCLaneSpoolman:
                 )
             except Exception as e:
                 logging.error(f"Failed to query spoolman by lot_nr: {e}")
+        else:
+            if self.webhooks.has_remote_method('spoolman_proxy'):
+                gcmd.respond_info(f"Note: No RFID card detected on lane {self.lane_name}. Spool will not be bound to a card.")
 
     def _refresh_spool(self, spool_id):
         if not spool_id or not self.webhooks.has_remote_method('spoolman_proxy'):
@@ -271,6 +291,19 @@ class AFCLaneSpoolman:
         except Exception as e:
             raise web_request.error(f"Failed to process spoolman response: {e}")
 
+    def _unbind_card_from_spool(self, spool_id):
+        if not spool_id or not self._unbind_card_uid or not self.webhooks.has_remote_method('spoolman_proxy'):
+            return
+        try:
+            self.webhooks.call_remote_method(
+                "spoolman_proxy",
+                cb_endpoint=self.unbind_spool_callback,
+                request_method="GET",
+                path=f"/v1/spool/{spool_id}"
+            )
+        except Exception as e:
+            logging.error(f"Failed to query spool for unbind: {e}")
+
     def _set_spool_from_response(self, response, card_uid=None):
         if not response or not self.lane:
             return
@@ -284,6 +317,8 @@ class AFCLaneSpoolman:
         weight = response.get('remaining_weight', -1)
         lot_nr = response.get('lot_nr', None)
 
+        self._current_spool_id = spool_id
+
         self._set_filament_config(
             vendor=vendor,
             type=material,
@@ -294,18 +329,22 @@ class AFCLaneSpoolman:
             official=True
         )
 
-        if card_uid and not _has_card_uid_in_lot_nr(lot_nr, card_uid):
-            new_lot_nr = _add_card_uid_to_lot_nr(lot_nr, card_uid)
-            try:
-                self.webhooks.call_remote_method(
-                    "spoolman_proxy",
-                    cb_endpoint=self.add_lot_nr_callback,
-                    request_method="PATCH",
-                    path=f"/v1/spool/{spool_id}",
-                    body={"lot_nr": new_lot_nr}
-                )
-            except Exception as e:
-                logging.error(f"Failed to add lot_nr to spool {spool_id}: {e}")
+        if card_uid:
+            if not _has_card_uid_in_lot_nr(lot_nr, card_uid):
+                new_lot_nr = _add_card_uid_to_lot_nr(lot_nr, card_uid)
+                self.gcode.respond_info(f"Binding RFID card {card_uid} to spool {spool_id}...")
+                try:
+                    self.webhooks.call_remote_method(
+                        "spoolman_proxy",
+                        cb_endpoint=self.add_lot_nr_callback,
+                        request_method="PATCH",
+                        path=f"/v1/spool/{spool_id}",
+                        body={"lot_nr": new_lot_nr}
+                    )
+                except Exception as e:
+                    logging.error(f"Failed to add lot_nr to spool {spool_id}: {e}")
+            else:
+                self.gcode.respond_info(f"RFID card {card_uid} already bound to spool {spool_id}")
 
     def _apply_spool_data(self, response):
         if not response or not self.lane:
@@ -382,6 +421,38 @@ class AFCLaneSpoolman:
         lot_nr = payload.get('lot_nr', '')
         logging.info(f"lot_nr cleared from spool {spool_id}: {lot_nr}")
         self.gcode.respond_info(f"RFID card unbound from spool {spool_id}")
+
+    def _handle_unbind_spool_callback(self, web_request):
+        try:
+            payload = web_request.get_dict('payload', {})
+            error = web_request.get('error', None)
+
+            if error:
+                logging.error(f"Spoolman unbind error: {error}")
+                return
+
+            spool_id = payload.get('id', 0)
+            lot_nr = payload.get('lot_nr', None)
+            card_uid = self._unbind_card_uid
+            self._unbind_card_uid = None
+
+            if not spool_id or not card_uid:
+                return
+
+            new_lot_nr = _remove_card_uid_from_lot_nr(lot_nr, card_uid)
+            if new_lot_nr != lot_nr:
+                try:
+                    self.webhooks.call_remote_method(
+                        "spoolman_proxy",
+                        cb_endpoint=self.remove_lot_nr_callback,
+                        request_method="PATCH",
+                        path=f"/v1/spool/{spool_id}",
+                        body={"lot_nr": new_lot_nr}
+                    )
+                except Exception as e:
+                    logging.error(f"Failed to remove lot_nr from spool {spool_id}: {e}")
+        except Exception as e:
+            raise web_request.error(f"Failed to process unbind spool response: {e}")
 
     def _handle_by_lot_nr_callback(self, web_request):
         try:
