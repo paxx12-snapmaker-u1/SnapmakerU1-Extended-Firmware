@@ -201,7 +201,7 @@ class AFCLaneSpoolman:
 
     cmd_SET_SPOOL_ID_help = "Set spool ID and fetch filament data from Spoolman"
     def cmd_SET_SPOOL_ID(self, gcmd):
-        spool_id_str = gcmd.get('SPOOL_ID', '0')
+        spool_id_str = gcmd.get('SPOOL_ID')
         try:
             spool_id = int(spool_id_str) if spool_id_str.strip() else 0
         except ValueError:
