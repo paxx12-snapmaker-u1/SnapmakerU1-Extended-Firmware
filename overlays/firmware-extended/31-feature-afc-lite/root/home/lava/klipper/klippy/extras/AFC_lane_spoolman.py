@@ -132,7 +132,19 @@ class AFCLaneSpoolman:
             card_uid = info.get('CARD_UID', [])
             if not card_uid:
                 return None
-            return "".join(f"{b:02x}" for b in card_uid)
+            uid_hex = "".join(f"{b:02x}" for b in card_uid)
+            duplicate_slots = [
+                i for i, other in enumerate(all_info)
+                if i != self.lane.lane_index
+                and other.get('OFFICIAL', False)
+                and other.get('CARD_UID') == card_uid
+            ]
+            if duplicate_slots:
+                slots = ", ".join(str(i) for i in [self.lane.lane_index] + duplicate_slots)
+                raise ValueError(f"RFID card {uid_hex} detected on multiple slots: {slots}")
+            return uid_hex
+        except ValueError:
+            raise
         except Exception as e:
             logging.error(f"AFC_lane_spoolman {self.name}: failed to get card_uid: {e}")
             return None
@@ -177,7 +189,10 @@ class AFCLaneSpoolman:
             return False
 
     def _check_card_state(self, eventtime):
-        card_uid_hex = self._get_card_uid_hex()
+        try:
+            card_uid_hex = self._get_card_uid_hex()
+        except ValueError:
+            card_uid_hex = None
         if card_uid_hex != self._last_card_uid:
             self._last_card_uid = card_uid_hex
             if card_uid_hex:
@@ -206,7 +221,11 @@ class AFCLaneSpoolman:
             spool_id = int(spool_id_str) if spool_id_str.strip() else 0
         except ValueError:
             spool_id = 0
-        card_uid = self._get_card_uid_hex()
+        try:
+            card_uid = self._get_card_uid_hex()
+        except ValueError as e:
+            gcmd.respond_raw(f"!! Error: {e}")
+            return
 
         if not spool_id:
             gcmd.respond_info(f"Clearing spool data for lane {self.lane_name}")
