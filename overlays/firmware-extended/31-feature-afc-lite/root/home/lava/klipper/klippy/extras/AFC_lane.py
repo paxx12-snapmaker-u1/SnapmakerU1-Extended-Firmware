@@ -74,7 +74,10 @@ class AFCLane:
             spool['type'] = dict(enumerate(status.get('filament_type', []))).get(self.lane_index, 'NONE')
             spool['subtype'] = dict(enumerate(status.get('filament_sub_type', []))).get(self.lane_index, 'NONE')
             spool['color'] = dict(enumerate(status.get('filament_color_rgba', []))).get(self.lane_index, 'FFFFFFFF')
-            spool['spool_id'] = dict(enumerate(status.get('filament_spool_id', []))).get(self.lane_index, 0)
+            try:
+                spool['spool_id'] = int(dict(enumerate(status.get('filament_spool_id', []))).get(self.lane_index, 0) or 0)
+            except (TypeError, ValueError):
+                spool['spool_id'] = 0
 
             tool_to_extruder = dict(enumerate(status.get('extruder_map_table', [])))
             for tool_idx, extruder_idx in tool_to_extruder.items():
