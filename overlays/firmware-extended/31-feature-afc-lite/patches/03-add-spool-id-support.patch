@@ -9,7 +9,7 @@
      'extruders_used' : [False] * PHYSICAL_EXTRUDER_NUM,
      'extruders_replenished': [i for i in range(PHYSICAL_EXTRUDER_NUM)],
 @@ -181,6 +182,7 @@
-         self.print_task_config['filament_color_rgba'][channel] = filament_color_rgba
+ 
          self.print_task_config['filament_official'][channel] = info['OFFICIAL']
          self.print_task_config['filament_sku'][channel] = info['SKU']
 +        self.print_task_config['filament_spool_id'][channel] = info.get('SPOOL_ID', 0)
@@ -25,33 +25,28 @@
                  else:
                      allowd_edit = True
  
-@@ -343,6 +347,8 @@
-         filament_sub_type = gcmd.get('FILAMENT_SUBTYPE', None)
+@@ -343,6 +347,7 @@
+         filament_soft = gcmd.get_int('SOFT', None)
          filament_color = gcmd.get_int('FILAMENT_COLOR', None)
          filament_color_rgba = gcmd.get('FILAMENT_COLOR_RGBA', None)
 +        filament_spool_id = gcmd.get_int('FILAMENT_SPOOL_ID', None)
-+        force = gcmd.get_int('FORCE', 0)
-         logging.info("[print_task_config] PRINT_FILAMENT_CONFIG %s",
-                         gcmd.get_raw_command_parameters())
-
-@@ -359,8 +365,10 @@
-         if config_extruder < 0 or config_extruder >= PHYSICAL_EXTRUDER_NUM:
-             raise gcmd.error("[print_task_config] extruder{} is out of range[0, {}]".format(config_extruder, PHYSICAL_EXTRUDER_NUM -1))
+         filament_alpha = gcmd.get_int('ALPHA', None, minval=0, maxval=255)
+         filament_color_nums = gcmd.get_int('COLOR_NUMS', None, minval=1, maxval=FILAMENT_COLOR_NUMS_MAX)
+         filament_colors_str = gcmd.get('COLORS', None)
+@@ -359,6 +365,8 @@
  
--        if self.print_task_config['filament_official'][config_extruder]:
--            raise gcmd.error("[print_task_config] filament_config, official filament, not configurable!")
-+        if self.print_task_config['filament_official'][config_extruder] and not force:
-+            raise gcmd.error("[print_task_config] filament_config, official filament, use FORCE=1 to overwrite")
-+        if (self.print_task_config['filament_spool_id'][config_extruder] or 0) > 0 and not force and filament_spool_id == None and self.printer.lookup_object('webhooks').has_remote_method('spoolman_set_active_spool'):
-+            raise gcmd.error("[print_task_config] filament_spool_id, is configured, use FORCE=1 to overwrite")
-
-         if filament_type is not None:
-             self.print_task_config['filament_vendor'][config_extruder] = filament_vendor
+             if self.print_task_config['filament_official'][config_extruder] and bool(force) == False:
+                 raise gcmd.error("[print_task_config] filament_config, official filament, not configurable!")
++            if (self.print_task_config['filament_spool_id'][config_extruder] or 0) > 0 and not force and filament_spool_id == None and self.printer.lookup_object('webhooks').has_remote_method('spoolman_set_active_spool'):
++                raise gcmd.error("[print_task_config] filament_spool_id, is configured, use FORCE=1 to overwrite")
+ 
+             # alpha
+             if filament_alpha == None:
 @@ -403,6 +411,7 @@
  
-         self.print_task_config['filament_official'][config_extruder] = False
-         self.print_task_config['filament_sku'][config_extruder] = 0
-+        self.print_task_config['filament_spool_id'][config_extruder] = filament_spool_id or 0
+             self.print_task_config['filament_official'][config_extruder] = False
+             self.print_task_config['filament_sku'][config_extruder] = 0
++            self.print_task_config['filament_spool_id'][config_extruder] = filament_spool_id or 0
  
-         if not self.printer.update_snapmaker_config_file(self.config_path,
-                 self.print_task_config, DEFAULT_PRINT_TASK_CONFIG):
+             need_save = True
+ 
