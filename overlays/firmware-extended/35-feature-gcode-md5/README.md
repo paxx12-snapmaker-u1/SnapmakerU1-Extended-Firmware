@@ -4,7 +4,7 @@ Adds MD5 checksum verification for g-code files.
 
 ## What it does
 
-When a g-code file has a `; MD5:<hash>` comment on its first line, Klipper
+When a g-code file has a `; MD5:<hash>` comment on its first line Klipper
 verifies the hash before printing begins. If the file is corrupt or was
 truncated during upload, Klipper cancels the print, and, by default,
 deletes the file.
@@ -25,13 +25,13 @@ the first command, before `PRINT_START`.
 
 ## Files installed
 
-| Destination | Purpose                                             |
-|---|-----------------------------------------------------|
-| `/home/lava/klipper/klippy/extras/gcode_md5.py` | Klipper plugin (exposes `CHECK_MD5` command)        |
+| Destination | Purpose                                            |
+|---|----------------------------------------------------|
+| `/home/lava/klipper/klippy/extras/gcode_md5.py` | Klipper plugin (exposes `CHECK_MD5` command)       |
 | `/usr/local/share/firmware-config/tweaks/klipper/gcode_md5.cfg` | Canonical config: symlinked into place when enabled |
-| `/usr/local/share/firmware-config/functions/35_settings_tweaks_gcode_md5.yaml` | Firmware Config UI toggles                          |
-| `/usr/local/share/firmware-config/tools/gcode-md5/add_md5.sh` | Slicer helper script: Linux / macOS                 |
-| `/usr/local/share/firmware-config/tools/gcode-md5/add_md5.bat` | Slicer helper script: Windows                       |
+| `/usr/local/share/firmware-config/functions/35_settings_tweaks_gcode_md5.yaml` | Firmware Config UI toggle                          |
+| `/usr/local/share/firmware-config/tools/gcode-md5/add_md5.sh` | Slicer helper script: Linux / macOS                |
+| `/usr/local/share/firmware-config/tools/gcode-md5/add_md5.bat` | Slicer helper script: Windows                      |
 
 ## Slicer integration
 

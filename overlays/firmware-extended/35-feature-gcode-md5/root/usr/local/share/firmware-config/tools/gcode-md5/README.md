@@ -36,13 +36,13 @@ tools\gcode-md5\add_md5.bat MyPrint.gcode
 ## Slicer post-processing integration
 
 ### Snapmaker Orca / OrcaSlicer / BambuStudio
-**Process → Others → Post-processing Scripts:**
+*Process → Others → Post-processing Scripts:*
 ```
 /full/path/to/add_md5.sh;
 ```
 
 ### PrusaSlicer
-**Print Settings → Output options → Post-processing scripts:**
+*Print Settings → Output options → Post-processing scripts:*
 ```
 /full/path/to/add_md5.sh;
 ```

@@ -4,8 +4,8 @@ title: G-code MD5 Verification
 
 # G-code MD5 Verification
 
-Verifies an MD5 checksum embedded in a g-code file before printing begins.
-If the file has been corrupted or truncated Klipper will detect the mismatch, 
+Verifies an MD5 checksum embedded in a g-code file before printing begins. If
+the file has been corrupted or truncated, Klipper will detect the mismatch, 
 cancel the print, and, by default, delete the file.
 
 ## How it works
@@ -20,24 +20,17 @@ The feature requires two one-time setup steps in your slicer:
 2. **Machine Start G-code**: `CHECK_MD5` is added as the first command in
    your slicer's Machine Start G-code. When a print begins, Klipper reads
    the `; MD5:` header, re-hashes the rest of the file, and compares the
-   two values. A mismatch triggers `CANCEL_PRINT` and a clear error message.
+   two values. A mismatch triggers `CANCEL_PRINT` and, by default,
+   deletion of the corrupted file.
 
-Files **without** a `; MD5:` header are printed normally so existing
+Files without a `; MD5:` header are printed normally so existing
 workflows and files are unaffected.
-
-## How the hook works
-
-When enabled, Firmware Config symlinks `gcode_md5.cfg` into Klipper's
-extended config directory, which loads the `gcode_md5` plugin and registers
-the `CHECK_MD5` command. The check is triggered by adding `CHECK_MD5` as
-the first line of your slicer's Machine Start G-code, before `PRINT_START`.
-When the feature is disabled, the symlink is removed.
 
 ## Setup
 
 ### Step 1 — Enable the feature
 
-Go to **Firmware Config → Tweaks → G-code MD5 Verification** and set it
+Go to **[Firmware Config](firmware_config.md) → Tweaks → G-code MD5 Verification** and set it
 to **Enabled**. Klipper will restart automatically.
 
 ### Step 2 — Add the post-processing script to your slicer
@@ -57,13 +50,13 @@ the printer itself at:
 Then add it to your slicer's post-processing configuration:
 
 #### Snapmaker Orca / OrcaSlicer / BambuStudio
-**Process → Others → Post-processing Scripts:**
+*Process → Others → Post-processing Scripts:*
 ```
 /full/path/to/add_md5.sh;
 ```
 
 #### PrusaSlicer
-**Print Settings → Output options → Post-processing scripts:**
+*Print Settings → Output options → Post-processing scripts:*
 ```
 /full/path/to/add_md5.sh;
 ```
@@ -77,34 +70,24 @@ G-code, before `PRINT_START`. This is what triggers the verification on
 the printer when a print begins.
 
 #### Snapmaker Orca / OrcaSlicer / BambuStudio
-**Printer Settings → Machine G-code → Machine Start G-code:**
+*Printer Settings → Machine G-code → Machine Start G-code:*
 ```
 CHECK_MD5
 PRINT_START ...
 ```
 
 #### PrusaSlicer
-**Printer Settings → Custom G-code → Start G-code:**
+*Printer Settings → Custom G-code → Start G-code:*
 ```
 CHECK_MD5
 PRINT_START ...
 ```
-
-Both steps are required. The post-processing script stamps the file; the
-Machine Start G-code verifies it.
 
 ## Delete Invalid Files Option
 By default, if `CHECK_MD5` detects a corrupted file, it will delete the
 file to avoid it being accidentally used.
 
 You can use `CHECK_MD5 DELETE=False` in your slicer to disable.
-
-
-## Firmware Config settings
-
-| Setting | Default | Description |
-|---|---|---|
-| G-code MD5 Verification | Disabled | Enable or disable the feature. Klipper restarts automatically. |
 
 ## Manual console commands
 
@@ -127,7 +110,7 @@ The file content does not match its checksum. Common causes:
 
 - Incomplete upload: retry the upload
 - File was edited after stamping: re-run `add_md5.sh` / `add_md5.bat`
-- Disk or storage corruption: try re-uploading to a different path
+- Disk or storage corruption
 
 **"No MD5 checksum found in G-code"**
 
