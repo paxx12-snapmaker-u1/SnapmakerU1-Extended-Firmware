@@ -4,7 +4,7 @@ settings:
       gcode_md5:
         label: G-code MD5 Verification
         description: Verifies an MD5 checksum embedded in g-code files before printing.
-        help_url: http://snapmakeru1-extended-firmware.pages.dev/features/gcode-md5
+        help_url: http://snapmakeru1-extended-firmware.pages.dev/gcode_md5
         get_cmd:
           - bash
           - -c
