@@ -28,7 +28,7 @@ settings:
                 }
                 URL="${SPOOLMAN_URL%/}"
                 echo "Checking Spoolman at ${URL}..."
-                RESPONSE=$(curl -sf --max-time 5 "${URL}/api/v1/info" 2>&1) || {
+                RESPONSE=$(/usr/local/bin/curl -sf --max-time 5 "${URL}/api/v1/info") || {
                   echo "ERROR: Cannot reach Spoolman at ${URL}"
                   echo "Ensure the server is running and the URL is correct."
                   exit 1
