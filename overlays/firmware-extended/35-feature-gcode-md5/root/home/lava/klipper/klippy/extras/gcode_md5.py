@@ -58,10 +58,6 @@ class MD5Checker:
                     self.gcode.respond_raw(f"INFO: File {file_path} deleted!")
                     os.remove(file_path)
 
-                    bmp_file_path = file_path.rsplit('.', maxsplit=1)[0] + ".bmp"
-                    if os.path.exists(bmp_file_path):
-                        os.remove(bmp_file_path)
-
                 self.gcode.run_script_from_command('CANCEL_PRINT')
                 return False
 

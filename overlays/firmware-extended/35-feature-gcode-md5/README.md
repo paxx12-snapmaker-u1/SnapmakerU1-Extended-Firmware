@@ -4,12 +4,12 @@ Adds MD5 checksum verification for g-code files.
 
 ## What it does
 
-When a g-code file has a `; MD5:<hexdigest>` comment on its first line,
-Klipper verifies the hash before printing begins and cancels the print
-with a clear error message if the file is corrupt or was truncated during
-upload.
+When a g-code file has a `; MD5:<hash>` comment on its first line, Klipper
+verifies the hash before printing begins. If the file is corrupt or was
+truncated during upload, Klipper cancels the print, and, by default,
+deletes the file.
 
-Files **without** a checksum header are allowed through unchanged.
+Files without a checksum header are allowed through unchanged.
 
 ## How enabling/disabling works
 
@@ -18,15 +18,10 @@ Firmware Config creates or removes a symlink at
 canonical copy at
 `/usr/local/share/firmware-config/tweaks/klipper/gcode_md5.cfg`.
 
-The presence of that symlink is the enabled state. When it exists, Klipper
-loads the plugin and the `PRINT_START` wrapper.
-
 ## How the hook works
 
-`gcode_md5.cfg` wraps the existing `PRINT_START` macro using Klipper's
-`rename_existing` pattern. The original `PRINT_START` is renamed to
-`_PRINT_START_BASE` and called with all original parameters intact after
-a successful check.
+`CHECK_MD5` is called directly from the slicer's Machine Start G-code as
+the first command, before `PRINT_START`.
 
 ## Files installed
 
