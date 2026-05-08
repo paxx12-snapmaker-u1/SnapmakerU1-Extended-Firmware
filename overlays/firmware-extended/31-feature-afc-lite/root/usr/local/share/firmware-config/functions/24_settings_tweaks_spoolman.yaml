@@ -22,6 +22,10 @@ settings:
               - bash
               - -xc
               - |
+                test -f /oem/printer_data/config/extended/klipper/afc.cfg || {
+                  echo "ERROR: AFC Lite must be enabled before enabling Spoolman integration."
+                  exit 1
+                }
                 URL="${SPOOLMAN_URL%/}"
                 echo "Checking Spoolman at ${URL}..."
                 RESPONSE=$(curl -sf --max-time 5 "${URL}/api/v1/info" 2>&1) || {
