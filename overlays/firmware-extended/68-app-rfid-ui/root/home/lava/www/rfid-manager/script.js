@@ -246,12 +246,12 @@ async function refreshAllChannels() {
                     type: mainType,
                     brand: channelInfo.VENDOR && channelInfo.VENDOR !== 'NONE' ? channelInfo.VENDOR : (channelInfo.MANUFACTURER && channelInfo.MANUFACTURER !== 'NONE' ? channelInfo.MANUFACTURER : null),
                     subtype: channelInfo.SUB_TYPE && channelInfo.SUB_TYPE !== 'NONE' ? channelInfo.SUB_TYPE : null,
-                    color_hex: channelInfo.RGB_1 ? channelInfo.RGB_1.toString(16).padStart(6, '0').toUpperCase() : null,
+                    first_color: channelInfo.RGB_1 ? channelInfo.RGB_1.toString(16).padStart(6, '0').toUpperCase() : null,
                     alpha: channelInfo.ALPHA || 0xFF,
-                    color2: channelInfo.RGB_2 || null,
-                    color3: channelInfo.RGB_3 || null,
-                    color4: channelInfo.RGB_4 || null,
-                    color5: channelInfo.RGB_5 || null,
+                    additional_colors: [channelInfo.RGB_2, channelInfo.RGB_3, channelInfo.RGB_4, channelInfo.RGB_5]
+                        .slice(0, Math.max(0, (channelInfo.COLOR_NUMS || 1) - 1))
+                        .map(c => c ? c.toString(16).padStart(6, '0').toUpperCase() : null)
+                        .filter(Boolean),
                     diameter: channelInfo.DIAMETER ? channelInfo.DIAMETER / 100.0 : null,
                     density: channelInfo.DENSITY || null,
                     min_temp: channelInfo.HOTEND_MIN_TEMP || null,
@@ -313,12 +313,12 @@ async function refreshSingleChannel(channel) {
             type: mainType,
             brand: channelInfo.VENDOR && channelInfo.VENDOR !== 'NONE' ? channelInfo.VENDOR : (channelInfo.MANUFACTURER && channelInfo.MANUFACTURER !== 'NONE' ? channelInfo.MANUFACTURER : null),
             subtype: channelInfo.SUB_TYPE && channelInfo.SUB_TYPE !== 'NONE' ? channelInfo.SUB_TYPE : null,
-            color_hex: channelInfo.RGB_1 ? channelInfo.RGB_1.toString(16).padStart(6, '0').toUpperCase() : null,
+            first_color: channelInfo.RGB_1 ? channelInfo.RGB_1.toString(16).padStart(6, '0').toUpperCase() : null,
             alpha: channelInfo.ALPHA || 0xFF,
-            color2: channelInfo.RGB_2 || null,
-            color3: channelInfo.RGB_3 || null,
-            color4: channelInfo.RGB_4 || null,
-            color5: channelInfo.RGB_5 || null,
+            additional_colors: [channelInfo.RGB_2, channelInfo.RGB_3, channelInfo.RGB_4, channelInfo.RGB_5]
+                .slice(0, Math.max(0, (channelInfo.COLOR_NUMS || 1) - 1))
+                .map(c => c ? c.toString(16).padStart(6, '0').toUpperCase() : null)
+                .filter(Boolean),
             diameter: channelInfo.DIAMETER ? channelInfo.DIAMETER / 100.0 : null,
             density: channelInfo.DENSITY || null,
             min_temp: channelInfo.HOTEND_MIN_TEMP || null,
@@ -471,27 +471,22 @@ function createChannelCard(channel) {
             info.innerHTML += `<div class="info-row"><strong>Material:</strong> ${brand} ${type}${subtype}</div>`;
 
             // Color
-            if (filament.color_hex) {
+            if (filament.first_color) {
                 const alpha = filament.alpha || 0xFF;
                 const alphaStr = alpha < 0xFF ? ` (${(alpha / 255 * 100).toFixed(0)}%)` : '';
-                const colorSwatch = `<span class="color-swatch" style="background-color: #${filament.color_hex}${alpha.toString(16).padStart(2, '0')}" title="#${filament.color_hex}"></span>`;
+                const colorSwatch = `<span class="color-swatch" style="background-color: #${filament.first_color}${alpha.toString(16).padStart(2, '0')}" title="#${filament.first_color}"></span>`;
                 let colorHtml = `<strong>Color:</strong>`;
 
-                // Build color section with additional colors and primary color on right
                 let colorsOnRight = '';
 
-                // Additional colors on right
-                const additionalColors = [filament.color2, filament.color3, filament.color4, filament.color5].filter(c => c && c !== 0);
-                if (additionalColors.length > 0) {
-                    const swatches = additionalColors.map(c => {
-                        const hex = c.toString(16).padStart(6, '0').toUpperCase();
-                        return `<span class="color-swatch" style="background-color: #${hex}" title="#${hex}"></span>`;
-                    }).join('');
+                if (filament.additional_colors && filament.additional_colors.length > 0) {
+                    const swatches = filament.additional_colors.map(hex =>
+                        `<span class="color-swatch" style="background-color: #${hex}" title="#${hex}"></span>`
+                    ).join('');
                     colorsOnRight = swatches;
                 }
 
-                // Primary color swatch and hex (with padding separator from secondary colors)
-                const primaryColorSection = `${colorSwatch} #${filament.color_hex}${alphaStr}`;
+                const primaryColorSection = `${colorSwatch} #${filament.first_color}${alphaStr}`;
                 colorsOnRight += (colorsOnRight ? `<span class="color-separator"></span>` : '') + primaryColorSection;
 
                 colorHtml += ` <span class="color-hex-primary">${colorsOnRight}</span>`;
@@ -717,9 +712,9 @@ function populateWriteForm(filament) {
     if (filament.subtype) form.elements.subtype.value = filament.subtype;
 
     // Color
-    if (filament.color_hex) {
+    if (filament.first_color) {
         const alpha = (filament.alpha || 0xFF).toString(16).padStart(2, '0').toUpperCase();
-        const colorHexAlpha = filament.color_hex + alpha;
+        const colorHexAlpha = filament.first_color + alpha;
         form.elements.color_hex.value = colorHexAlpha;
         if (colorPickers.main) {
             colorPickers.main.setColor('#' + colorHexAlpha, true);
@@ -728,17 +723,14 @@ function populateWriteForm(filament) {
     }
 
     // Additional colors
-    [filament.color2, filament.color3, filament.color4, filament.color5].forEach((color, idx) => {
-        if (color && color !== 0) {
-            const colorHex = color.toString(16).padStart(6, '0').toUpperCase();
-            const inputName = `color${idx + 2}`;
-            form.elements[inputName].value = colorHex;
-            if (colorPickers[inputName]) {
-                colorPickers[inputName].setColor('#' + colorHex, true);
-                colorPickers[inputName].applyColor();
-            }
-            userModifiedColors.add(inputName);
+    (filament.additional_colors || []).forEach((hex, idx) => {
+        const inputName = `color${idx + 2}`;
+        form.elements[inputName].value = hex;
+        if (colorPickers[inputName]) {
+            colorPickers[inputName].setColor('#' + hex, true);
+            colorPickers[inputName].applyColor();
         }
+        userModifiedColors.add(inputName);
     });
 
     if (filament.diameter) form.elements.diameter.value = filament.diameter;
@@ -925,20 +917,16 @@ function exportTag(channel) {
         payload.subtype = filament.subtype;
     }
 
-    if (filament.color_hex) {
-        payload.color_hex = '#' + filament.color_hex;
+    if (filament.first_color) {
+        payload.color_hex = '#' + filament.first_color;
     }
 
     if (filament.alpha && filament.alpha < 0xFF) {
         payload.alpha = filament.alpha.toString(16).padStart(2, '0').toUpperCase();
     }
 
-    // Additional colors as hex string array
-    const additionalColors = [filament.color2, filament.color3, filament.color4, filament.color5]
-        .filter(c => c && c !== 0)
-        .map(c => c.toString(16).padStart(6, '0').toUpperCase());
-    if (additionalColors.length > 0) {
-        payload.additional_color_hexes = additionalColors;
+    if (filament.additional_colors && filament.additional_colors.length > 0) {
+        payload.additional_color_hexes = filament.additional_colors;
     }
 
     if (filament.min_temp) payload.min_temp = String(filament.min_temp);
