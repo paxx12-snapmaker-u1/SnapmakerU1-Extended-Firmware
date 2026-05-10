@@ -43,3 +43,7 @@ For camera configuration examples, see [Camera Support](camera_support.md#moonra
 ## Configuration Recovery
 
 If an invalid configuration breaks Moonraker (printer won't connect to WiFi), see [Firmware Configuration - Recovery & Reset](firmware_config.md#recovery--reset) for recovery instructions.
+
+## See Also
+
+- [Klipper Print Hooks](klipper_hooks.md) - React to `PRINT_START`, `PRINT_END`, and `CANCEL_PRINT` events from your custom includes
