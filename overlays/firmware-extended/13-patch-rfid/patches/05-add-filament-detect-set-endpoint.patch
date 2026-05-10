@@ -10,7 +10,7 @@
      def _ready(self):
          self.filament_feed_objects = self.printer.lookup_objects('filament_feed')
          self._fm175xx_reader = self.printer.lookup_object('fm175xx_reader')
-@@ -173,6 +176,59 @@
+@@ -173,6 +176,67 @@
  
          return error, info
  
@@ -46,7 +46,15 @@
 +                filament_info['ALPHA'] = int(params.pop('ALPHA')) & 0xFF
 +            if 'RGB_1' in params:
 +                filament_info['RGB_1'] = int(params.pop('RGB_1')) & 0xFFFFFF
++            filament_info['COLOR_NUMS'] = 1
++            for key in ('RGB_2', 'RGB_3', 'RGB_4', 'RGB_5'):
++                if key in params:
++                    filament_info[key] = int(params.pop(key)) & 0xFFFFFF
++                    filament_info['COLOR_NUMS'] += 1
 +            filament_info['ARGB_COLOR'] = filament_info['ALPHA'] << 24 | filament_info['RGB_1']
++
++            if 'MULTI_MODE' in params:
++                filament_info['MULTI_MODE'] = int(params.pop('MULTI_MODE')) & 0xFF
 +
 +            if 'CARD_UID' in params:
 +                filament_info['CARD_UID'] = [int(b) for b in params.pop('CARD_UID')]
