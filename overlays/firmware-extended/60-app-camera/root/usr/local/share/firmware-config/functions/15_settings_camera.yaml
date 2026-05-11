@@ -37,6 +37,7 @@ settings:
               - |
                 /usr/local/bin/extended-config.py add /home/lava/printer_data/config/extended/extended2.cfg camera internal paxx12 &&
                 /etc/init.d/S90lmd stop &&
+                /etc/init.d/S99detect-rknn stop &&
                 /etc/init.d/S99v4l2-mpp-mipi restart
           snapmaker:
             label: Snapmaker
@@ -46,6 +47,7 @@ settings:
               - |
                 /usr/local/bin/extended-config.py add /home/lava/printer_data/config/extended/extended2.cfg camera internal snapmaker &&
                 /etc/init.d/S99v4l2-mpp-mipi stop &&
+                /etc/init.d/S99detect-rknn stop &&
                 /etc/init.d/S90lmd start
           none:
             label: Disabled

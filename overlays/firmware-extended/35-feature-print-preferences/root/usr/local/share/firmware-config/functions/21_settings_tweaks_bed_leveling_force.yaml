@@ -1,0 +1,54 @@
+settings:
+  tweaks:
+    items:
+      bed_leveling_force:
+        label: Force Bed Mesh Calibration
+        description: Forces bed mesh calibration before each print.
+        help_url: http://snapmakeru1-extended-firmware.pages.dev/tweaks#force-auto-bed-leveling
+        get_cmd:
+          - bash
+          - -c
+          - |
+            if test -f /oem/printer_data/config/extended/klipper/bed_leveling_adaptive_force.cfg; then
+              echo "adaptive"
+            elif test -f /oem/printer_data/config/extended/klipper/bed_leveling_force.cfg; then
+              echo "force"
+            else
+              echo "disabled"
+            fi
+        options:
+          force:
+            label: Force Full Mesh
+            confirm: "Force full bed mesh calibration before every print?"
+            cmd:
+              - bash
+              - -xc
+              - |
+                mkdir -p /oem/printer_data/config/extended/klipper &&
+                rm -f /oem/printer_data/config/extended/klipper/bed_leveling_adaptive_force.cfg &&
+                ln -sf /usr/local/share/firmware-config/tweaks/klipper/bed_leveling_force.cfg /oem/printer_data/config/extended/klipper/bed_leveling_force.cfg &&
+                echo "Force full bed mesh enabled. Restarting Klipper..." &&
+                /etc/init.d/S60klipper restart
+          adaptive:
+            label: Force Adaptive Mesh
+            confirm: "Force adaptive bed mesh calibration before every print? Falls back to full mesh when exclude_object is not active."
+            cmd:
+              - bash
+              - -xc
+              - |
+                mkdir -p /oem/printer_data/config/extended/klipper &&
+                rm -f /oem/printer_data/config/extended/klipper/bed_leveling_force.cfg &&
+                ln -sf /usr/local/share/firmware-config/tweaks/klipper/bed_leveling_adaptive_force.cfg /oem/printer_data/config/extended/klipper/bed_leveling_adaptive_force.cfg &&
+                echo "Force adaptive bed mesh enabled. Restarting Klipper..." &&
+                /etc/init.d/S60klipper restart
+          disabled:
+            label: Disabled
+            cmd:
+              - bash
+              - -xc
+              - |
+                rm -f /oem/printer_data/config/extended/klipper/bed_leveling_force.cfg \
+                      /oem/printer_data/config/extended/klipper/bed_leveling_adaptive_force.cfg &&
+                echo "Force bed mesh disabled. Restarting Klipper..." &&
+                /etc/init.d/S60klipper restart
+        default: disabled

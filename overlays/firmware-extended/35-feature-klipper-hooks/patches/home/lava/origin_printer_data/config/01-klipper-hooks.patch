@@ -1,0 +1,32 @@
+--- a/fluidd.cfg
++++ b/fluidd.cfg
+@@ -200,6 +200,9 @@
+     M84
+     G92 E0
+     M220 S100
++    {% for section in printer.configfile.config if section.startswith("gcode_macro _PRINT_START_") %}
++        { section[12:] }
++    {% endfor %}
+
+ [gcode_macro PRINT_STRAT]
+ gcode:
+@@ -208,6 +211,9 @@
+
+ [gcode_macro PRINT_END]
+ gcode:
++    {% for section in printer.configfile.config if section.startswith("gcode_macro _PRINT_END_") %}
++        { section[12:] }
++    {% endfor %}
+     M220 S100
+     ##### get user parameters or use default #####
+     {% set client = printer['gcode_macro _CLIENT_VARIABLE'] | default({}) %}
+@@ -267,6 +273,9 @@
+ description: Cancel the actual running print
+ rename_existing: CANCEL_PRINT_BASE
+ gcode:
++    {% for section in printer.configfile.config if section.startswith("gcode_macro _CANCEL_PRINT_") %}
++        { section[12:] }
++    {% endfor %}
+     M220 S100
+     ##### get user parameters or use default #####
+     {% set client = printer['gcode_macro _CLIENT_VARIABLE'] | default({}) %}

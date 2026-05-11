@@ -1,0 +1,33 @@
+settings:
+  tweaks:
+    items:
+      timelapse_force:
+        label: Force Timelapse
+        description: Allows TIMELAPSE_START to work even when timelapse is not enabled in the Snapmaker app. Your slicer must call TIMELAPSE_START, TIMELAPSE_TAKE_FRAME, and TIMELAPSE_STOP.
+        help_url: http://snapmakeru1-extended-firmware.pages.dev/tweaks#force-timelapse
+        get_cmd:
+          - bash
+          - -c
+          - test -f /oem/printer_data/config/extended/klipper/timelapse_force.cfg && echo "enabled" || echo "disabled"
+        options:
+          enabled:
+            label: Enabled
+            confirm: "Allow TIMELAPSE_START to bypass the Snapmaker timelapse preference? Your slicer must call TIMELAPSE_START, TIMELAPSE_TAKE_FRAME, and TIMELAPSE_STOP."
+            cmd:
+              - bash
+              - -xc
+              - |
+                mkdir -p /oem/printer_data/config/extended/klipper &&
+                ln -sf /usr/local/share/firmware-config/tweaks/klipper/timelapse_force.cfg /oem/printer_data/config/extended/klipper/timelapse_force.cfg &&
+                echo "Force timelapse enabled. Restarting Klipper..." &&
+                /etc/init.d/S60klipper restart
+          disabled:
+            label: Disabled
+            cmd:
+              - bash
+              - -xc
+              - |
+                rm -f /oem/printer_data/config/extended/klipper/timelapse_force.cfg &&
+                echo "Force timelapse disabled. Restarting Klipper..." &&
+                /etc/init.d/S60klipper restart
+        default: disabled

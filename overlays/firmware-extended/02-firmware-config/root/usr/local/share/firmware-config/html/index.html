@@ -98,6 +98,10 @@
             Authentication required. Please <a href="/">log in to Fluidd</a> first, then return to this page.
         </div>
 
+        <div id="hidden-notice" class="notice" style="background:var(--accent);color:#000">
+            Hidden options are visible.
+        </div>
+
         <div id="main-content">
         <div class="card">
             <div class="card-header"><span class="card-title">Status</span></div>
@@ -190,6 +194,7 @@
         let selectedFile = null;
         let actionsData = [];
         let currentAction = '';
+        const showHidden = new URLSearchParams(window.location.search).has('hidden') || window.location.hash.includes('hidden');
 
         function showServiceNotice() {
             $('service-notice').classList.add('visible');
@@ -237,7 +242,9 @@
             try {
                 const status = await (await apiFetch('api/status')).json();
 
-                container.innerHTML = Object.entries(status).map(([key, section]) => {
+                container.innerHTML = Object.entries(status)
+                    .filter(([_, section]) => !section.hidden || showHidden)
+                    .map(([key, section]) => {
                     const itemsHtml = section.items.map(item =>
                         `<div><strong>${item.label}:</strong> ${item.value || 'N/A'}</div>`
                     ).join('');
@@ -276,7 +283,7 @@
                 container.innerHTML = Object.entries(grouped).map(([_, group]) =>
                     `<div class="group-section">
                         <div class="group-title">${group.label}</div>
-                        ${group.items.map(action =>
+                        ${group.items.filter(action => !action.hidden || showHidden).map(action =>
                             `<div class="row" onclick="runAction('${action.id}')">
                                 <div class="row-label-wrap">
                                     <span class="row-label">${action.label}${action.help_url ? `<a class="row-help" href="${action.help_url}" target="_blank" onclick="event.stopPropagation()">↗</a>` : ''}</span>
@@ -308,8 +315,10 @@
                 container.innerHTML = groups.map(([_, group]) =>
                     `<div class="group-section">
                         <div class="group-title">${group.label}</div>
-                        ${group.items.map(setting => {
-                            const options = Object.entries(setting.options).map(([optKey, optVal]) => {
+                        ${group.items.filter(setting => !setting.hidden || showHidden).map(setting => {
+                            const options = Object.entries(setting.options)
+                                .filter(([optKey, optVal]) => !optVal.hidden || optKey === setting.current || showHidden)
+                                .map(([optKey, optVal]) => {
                                 return `<option value="${optKey}" data-label="${encodeURIComponent(optVal.label)}" data-confirm="${encodeURIComponent(optVal.confirm || '')}"${optKey === setting.current ? ' selected' : ''}>${optVal.label}</option>`;
                             }).join('');
                             return `<div class="row"${setting.help_url ? ` onclick="if(!event.target.closest('select'))window.open('${setting.help_url}','_blank')"` : ''}>
@@ -726,6 +735,7 @@
         // Initialize
         // ========================================
 
+        if (showHidden) $('hidden-notice').classList.add('visible');
         refreshAll();
     </script>
 </body>

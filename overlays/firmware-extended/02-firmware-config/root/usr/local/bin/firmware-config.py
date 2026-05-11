@@ -259,6 +259,7 @@ class FirmwareConfigHandler(SimpleHTTPRequestHandler):
 
                 result[section_key] = {
                     'title': section_cfg.get('title', section_key),
+                    'hidden': section_cfg.get('hidden', False),
                     'items': section_items
                 }
 
@@ -300,6 +301,8 @@ class FirmwareConfigHandler(SimpleHTTPRequestHandler):
                         opt_info = {"label": opt_val["label"]}
                         if "confirm" in opt_val:
                             opt_info["confirm"] = opt_val["confirm"]
+                        if opt_val.get("hidden"):
+                            opt_info["hidden"] = True
                         options_data[opt_key] = opt_info
 
                     settings_list.append({
@@ -308,6 +311,7 @@ class FirmwareConfigHandler(SimpleHTTPRequestHandler):
                         "description": config.get("description"),
                         "help_url": config.get("help_url"),
                         "current": current_value,
+                        "hidden": config.get("hidden", False),
                         "options": options_data
                     })
                 if settings_list:
@@ -395,7 +399,8 @@ class FirmwareConfigHandler(SimpleHTTPRequestHandler):
                         "help_url": cfg.get("help_url"),
                         "confirm": cfg.get("confirm", False),
                         "background": cfg.get("background", False),
-                        "download_file": cfg.get("download_file")
+                        "download_file": cfg.get("download_file"),
+                        "hidden": cfg.get("hidden", False)
                     })
                 if actions_list:
                     result[group_key] = {
