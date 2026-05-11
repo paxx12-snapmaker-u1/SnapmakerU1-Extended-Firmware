@@ -21,6 +21,10 @@ Patch set in `overlays/firmware-extended/13-rfid-support/patches`:
     - `cmd_FILAMENT_DT_SELF_TEST`: raises early error when reader is disabled.
 - `05-add-filament-detect-set-endpoint.patch`
   - Adds webhook endpoint `filament_detect/set`.
+- `08-pass-uid-on-m1-auth-failure.patch`
+  - When M1 auth fails, sets `card_data` to the UID bytes from the anticollision/SELECT phase
+    (`self.__picc_a.UID[0:4]`) so that `CARD_UID` and `CARD_TYPE` are still populated via the
+    existing patch-07 handler in `filament_detect.py`.
 
 ## API Contract
 

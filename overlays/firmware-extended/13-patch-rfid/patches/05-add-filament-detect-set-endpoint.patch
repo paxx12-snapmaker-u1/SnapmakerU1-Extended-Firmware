@@ -10,7 +10,7 @@
      def _ready(self):
          self.filament_feed_objects = self.printer.lookup_objects('filament_feed')
          self._fm175xx_reader = self.printer.lookup_object('fm175xx_reader')
-@@ -173,6 +176,67 @@
+@@ -173,6 +176,70 @@
  
          return error, info
  
@@ -25,9 +25,13 @@
 +                                        % (channel, self._channel_nums - 1))
 +
 +            params = web_request.get_dict('info', {})
-+            has_params = len(params) > 0
 +            filament_info = dict(filament_protocol.FILAMENT_INFO_STRUCT)
++            if 'CARD_UID' in params:
++                filament_info['CARD_UID'] = [int(b) for b in params.pop('CARD_UID')]
++            if 'CARD_TYPE' in params:
++                filament_info['CARD_TYPE'] = str(params.pop('CARD_TYPE'))
 +
++            has_params = len(params) > 0
 +            if 'VENDOR' in params:
 +                filament_info['VENDOR'] = str(params.pop('VENDOR'))
 +            if 'MAIN_TYPE' in params:
@@ -55,9 +59,6 @@
 +
 +            if 'MULTI_MODE' in params:
 +                filament_info['MULTI_MODE'] = int(params.pop('MULTI_MODE')) & 0xFF
-+
-+            if 'CARD_UID' in params:
-+                filament_info['CARD_UID'] = [int(b) for b in params.pop('CARD_UID')]
 +            if 'SKU' in params:
 +                filament_info['SKU'] = int(params.pop('SKU'))
 +
@@ -70,6 +71,8 @@
 +            ptc = self.printer.lookup_object('print_task_config', None)
 +            if has_params or ptc is not None and ptc.print_task_config['filament_official'][channel]:
 +                self._filament_info_update(channel, filament_info, True)
++            else:
++                self._filament_info[channel] = filament_info
 +            web_request.send({'state': 'success'})
 +        except Exception as e:
 +            logging.error("[filament_detect] set: %s", str(e))

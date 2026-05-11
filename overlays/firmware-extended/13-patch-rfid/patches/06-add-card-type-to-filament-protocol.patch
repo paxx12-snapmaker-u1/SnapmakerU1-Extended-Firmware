@@ -1,0 +1,10 @@
+--- rootfs.original/home/lava/klipper/klippy/extras/filament_protocol.py
++++ rootfs/home/lava/klipper/klippy/extras/filament_protocol.py
+@@ -36,6 +36,7 @@
+     'RSA_KEY_VERSION': 0,
+     'OFFICIAL': False,
+     'CARD_UID': 0,
++    'CARD_TYPE': '',
+ }
+
+ # Filament main type
