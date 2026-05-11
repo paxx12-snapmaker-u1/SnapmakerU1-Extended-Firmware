@@ -1,0 +1,20 @@
+--- rootfs.original/home/lava/klipper/klippy/extras/filament_detect.py
++++ rootfs/home/lava/klipper/klippy/extras/filament_detect.py
+@@ -132,6 +132,17 @@
+         else:
+             self._self_test_success_cnt += 1
+ 
++        if fm175xx_reader.FM175XX_CARD_INFO_READ == operation:
++            if card_type == fm175xx_reader.FM175XX_MIFARE_CARD_TYPE_NTAG:
++                filament_info['CARD_TYPE'] = 'NTAG'
++                if card_data and len(card_data) >= 8:
++                    filament_info['CARD_UID'] = [card_data[0], card_data[1], card_data[2],
++                                                 card_data[4], card_data[5], card_data[6], card_data[7]]
++            elif card_type == fm175xx_reader.FM175XX_MIFARE_CARD_TYPE_M1:
++                filament_info['CARD_TYPE'] = 'M1'
++                if card_data and len(card_data) >= filament_protocol.M1_PROTO_UID_LEN:
++                    filament_info['CARD_UID'] = list(card_data[:filament_protocol.M1_PROTO_UID_LEN])
++
+         self._state[channel] = FILAMENT_DT_STATE_IDLE
+         self._filament_info_update(channel, filament_info, is_clear)
+ 

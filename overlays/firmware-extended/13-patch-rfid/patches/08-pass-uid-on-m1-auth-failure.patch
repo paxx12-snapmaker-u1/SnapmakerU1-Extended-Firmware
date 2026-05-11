@@ -1,0 +1,10 @@
+--- rootfs.original/home/lava/klipper/klippy/extras/fm175xx_reader.py
++++ rootfs/home/lava/klipper/klippy/extras/fm175xx_reader.py
+@@ -1059,6 +1059,8 @@
+                             if (FM175XX_OK != ret.err_code):
+                                 card_op_result = FM175XX_CARD_READ_ERR
++                                card_data = list(self.__picc_a.UID[0:4])
++                                logging.info("M1 auth failed, UID: %s", ' '.join('%02X' % b for b in card_data))
+                             else:
+                                 card_data = ret.out_param[0:FM175XX_M1_CARD_EEPROM_SIZE]
+                                 card_op_result = FM175XX_OK
