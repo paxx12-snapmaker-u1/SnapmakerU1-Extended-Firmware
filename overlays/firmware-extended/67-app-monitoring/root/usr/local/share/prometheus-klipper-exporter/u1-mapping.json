@@ -1,0 +1,21 @@
+{
+  "purifier": {
+    "instance_label": null,
+    "name_label": null,
+    "labels": {
+      "kind": "purifier"
+    },
+    "fields": {
+      "power_det_value": "klipper_purifier_power_det_value",
+      "mode": "klipper_purifier_mode",
+      "exhaust_fan.speed": "klipper_purifier_exhaust_fan_speed",
+      "inner_fan.speed": "klipper_purifier_inner_fan_speed",
+      "inner_fan.rpm": "klipper_purifier_inner_fan_rpm",
+      "inner_fan.delay": "klipper_purifier_inner_fan_delay",
+      "inner_fan.work": "klipper_purifier_inner_fan_work"
+    },
+    "state_fields": {
+      "power_detected": "klipper_purifier_power_detected"
+    }
+  }
+}

@@ -18,7 +18,7 @@ start() {
         echo "already running"
         return 1
     fi
-	start-stop-daemon -S -m -q -b -c lava -p "$PIDFILE" -x $DAEMON -- -web.listen-address "$EXPORTER_ADDRESS"
+	start-stop-daemon -S -m -q -b -c lava -p "$PIDFILE" -x $DAEMON -- -web.listen-address "$EXPORTER_ADDRESS" -moonraker.mapping "/usr/local/share/prometheus-klipper-exporter/u1-mapping.json"
     echo "OK"
 }
 

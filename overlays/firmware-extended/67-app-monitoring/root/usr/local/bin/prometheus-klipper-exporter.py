@@ -139,6 +139,41 @@ DEFAULT_OBJECTS = list(STANDARD_MAPPING.keys())
 
 REQUEST_TIMEOUT = 5
 
+
+def load_mapping_file(path):
+    with open(path, "r", encoding="utf-8") as handle:
+        loaded = json.load(handle)
+    if not isinstance(loaded, dict):
+        raise ValueError("mapping file must contain a top-level object")
+    for key, value in loaded.items():
+        if not isinstance(value, dict):
+            raise ValueError(f"mapping for {key} must be an object")
+    return loaded
+
+
+def build_mapping(mapping_path=None):
+    mapping = dict(STANDARD_MAPPING)
+    if mapping_path:
+        mapping.update(load_mapping_file(mapping_path))
+    return mapping
+
+
+def default_objects_from_mapping(mapping):
+    return list(mapping.keys())
+
+
+def default_object_filters(default_objects, mapping):
+    configured = parse_object_list([default_objects]) if default_objects else []
+    if configured:
+        return configured
+    return default_objects_from_mapping(mapping)
+
+
+def resolve_mapping_for_name(mapping, name):
+    kind, _ = parse_object_name(name)
+    return mapping.get(name) or mapping.get(kind) or {}
+
+
 def metric_name(*parts):
     name = "_".join(str(part) for part in parts if part != "")
     name = re.sub(r"[^a-zA-Z0-9_]", "_", name).lower()
@@ -246,6 +281,19 @@ def resolve_mapping_labels(mapping, name, instance):
     return values
 
 
+def get_field_value(data, field):
+    value = data
+    for part in field.split("."):
+        if not isinstance(value, dict) or part not in value:
+            return None
+        value = value[part]
+    return value
+
+
+def root_field(field):
+    return field.split(".", 1)[0]
+
+
 def emit_standard(name, data):
     kind, instance = parse_object_name(name)
     mapping = STANDARD_MAPPING.get(kind, {})
@@ -257,14 +305,15 @@ def emit_standard(name, data):
         return lines, consumed
 
     for field, metric in mapping.get("fields", {}).items():
-        value = number(data.get(field))
+        value = number(get_field_value(data, field))
         if value is not None:
             lines.append(sample(metric, value, values))
-            consumed.add(field)
+            consumed.add(root_field(field))
     for field, metric in mapping.get("state_fields", {}).items():
-        if field in data:
-            lines.append(sample(metric, 1, {**values, field: data.get(field)}))
-            consumed.add(field)
+        raw = get_field_value(data, field)
+        if raw is not None:
+            lines.append(sample(metric, 1, {**values, metric_name(field): raw}))
+            consumed.add(root_field(field))
     return lines, consumed
 
 
