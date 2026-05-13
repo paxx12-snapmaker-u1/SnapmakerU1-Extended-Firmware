@@ -1,0 +1,43 @@
+--- a/home/lava/moonraker/moonraker/components/file_manager/metadata.py	2026-02-06 19:12:24.179575409 +0100
++++ b/home/lava/moonraker/moonraker/components/file_manager/metadata.py	2026-02-06 19:13:16.448036223 +0100
+@@ -67,6 +67,23 @@
+             pass
+     return []
+ 
++def regex_find_strings(pattern: str, separators: str, data: str) -> List[str]:
++    pattern = pattern.replace(r"(%S)", r"(.*)")
++    match = re.search(pattern, data)
++    if match and match.group(1):
++        separators = re.escape(separators)
++        pattern = rf'\s*(")(?:\\"|[^"])*"\s*|[^{separators}]+'
++        parsed_matches: List[str] = []
++        for m in re.finditer(pattern, match.group(1)):
++            (val, sep) = m.group(0, 1)
++            val = val.strip()
++            if sep:
++                val = val[1:-1].replace(rf'\{sep}', sep).strip()
++            if val:
++                parsed_matches.append(val)
++        return parsed_matches
++    return []
++
+ def regex_find_float(pattern: str, data: str) -> Optional[float]:
+     pattern = pattern.replace(r"(%F)", r"([0-9]*\.?[0-9]+)")
+     match = re.search(pattern, data)
+@@ -459,7 +476,14 @@
+         )
+ 
+     def parse_filament_type(self) -> Optional[str]:
+-        return regex_find_string(r";\sfilament_type\s=\s(%S)", self.footer_data)
++        result = regex_find_strings(
++             r";\sfilament_type\s=\s(%S)", ",;", self.footer_data
++         )
++        if len(result) > 1:
++             return ";".join(result)
++        elif result:
++            return result[0]
++        return None
+ 
+     def parse_filament_retract_length_toolchange(self) -> Optional[List[float]]:
+         # Use (.*)$ to capture empty values as well
+
