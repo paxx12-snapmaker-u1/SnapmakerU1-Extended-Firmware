@@ -10,32 +10,28 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 DEFAULT_TARGET = "localhost:7125"
-DEFAULT_OBJECTS = [
-    "extruder",
-    "heater_bed",
-    "temperature_sensor",
-    "fan",
-    "fan_generic",
-    "heater_fan",
-    "print_stats",
-    "system_stats",
-    "toolhead",
-]
+
+EXTRUDER_MAPPING = {
+    "instance_label": None,
+    "name_label": "extruder",
+    "labels": {"kind": "extruder"},
+    "fields": {
+        "temperature": "klipper_temperature_value",
+        "target": "klipper_temperature_target",
+        "power": "klipper_power_value",
+        "pressure_advance": "klipper_extruder_pressure_advance",
+        "smooth_time": "klipper_extruder_smooth_time",
+    },
+}
 
 STANDARD_MAPPING = {
-    "extruder": {
-        "instance": False,
-        "labels": {"kind": "extruder", "extruder": "{name}"},
-        "fields": {
-            "temperature": "klipper_temperature_value",
-            "target": "klipper_temperature_target",
-            "power": "klipper_power_value",
-            "pressure_advance": "klipper_extruder_pressure_advance",
-            "smooth_time": "klipper_extruder_smooth_time",
-        },
-    },
+    "extruder": EXTRUDER_MAPPING,
+    "extruder1": EXTRUDER_MAPPING,
+    "extruder2": EXTRUDER_MAPPING,
+    "extruder3": EXTRUDER_MAPPING,
     "fan": {
-        "instance": False,
+        "instance_label": None,
+        "name_label": None,
         "labels": {"kind": "fan", "fan": "fan"},
         "fields": {
             "rpm": "klipper_fan_rpm",
@@ -43,15 +39,17 @@ STANDARD_MAPPING = {
         },
     },
     "fan_generic": {
-        "instance": True,
-        "labels": {"kind": "fan_generic", "fan": "{instance}"},
+        "instance_label": "fan",
+        "name_label": None,
+        "labels": {"kind": "fan_generic"},
         "fields": {
             "rpm": "klipper_fan_rpm",
             "speed": "klipper_fan_speed",
         },
     },
     "heater_bed": {
-        "instance": False,
+        "instance_label": None,
+        "name_label": None,
         "labels": {"kind": "heater_bed"},
         "fields": {
             "temperature": "klipper_temperature_value",
@@ -60,24 +58,50 @@ STANDARD_MAPPING = {
         },
     },
     "heater_fan": {
-        "instance": True,
-        "labels": {"kind": "heater_fan", "fan": "{instance}"},
+        "instance_label": "fan",
+        "name_label": None,
+        "labels": {"kind": "heater_fan"},
         "fields": {
             "rpm": "klipper_fan_rpm",
             "speed": "klipper_fan_speed",
         },
     },
+    "controller_fan": {
+        "instance_label": "fan",
+        "name_label": None,
+        "labels": {"kind": "controller_fan"},
+        "fields": {
+            "rpm": "klipper_fan_rpm",
+            "speed": "klipper_fan_speed",
+        },
+    },
+    "temperature_fan": {
+        "instance_label": "fan",
+        "name_label": None,
+        "labels": {"kind": "temperature_fan"},
+        "fields": {
+            "rpm": "klipper_fan_rpm",
+            "speed": "klipper_fan_speed",
+            "temperature": "klipper_temperature_value",
+            "target": "klipper_temperature_target",
+        },
+    },
     "print_stats": {
-        "instance": False,
+        "instance_label": None,
+        "name_label": None,
         "labels": {},
         "fields": {
             "filament_used": "klipper_print_filament_used",
             "print_duration": "klipper_print_print_duration",
             "total_duration": "klipper_print_total_duration",
         },
+        "state_fields": {
+            "state": "klipper_print_state",
+        },
     },
     "system_stats": {
-        "instance": False,
+        "instance_label": None,
+        "name_label": None,
         "labels": {},
         "fields": {
             "cputime": "klipper_system_cputime",
@@ -86,8 +110,9 @@ STANDARD_MAPPING = {
         },
     },
     "temperature_sensor": {
-        "instance": True,
-        "labels": {"kind": "temperature_sensor", "sensor": "{instance}"},
+        "instance_label": "sensor",
+        "name_label": None,
+        "labels": {"kind": "temperature_sensor"},
         "fields": {
             "temperature": "klipper_temperature_value",
             "measured_max_temp": "klipper_temperature_max",
@@ -96,7 +121,8 @@ STANDARD_MAPPING = {
         },
     },
     "toolhead": {
-        "instance": False,
+        "instance_label": None,
+        "name_label": None,
         "labels": {},
         "fields": {
             "estimated_print_time": "klipper_toolhead_estimated_print_time",
@@ -108,6 +134,8 @@ STANDARD_MAPPING = {
         },
     },
 }
+
+DEFAULT_OBJECTS = list(STANDARD_MAPPING.keys())
 
 REQUEST_TIMEOUT = 5
 
@@ -205,35 +233,38 @@ def object_labels(name):
     return values
 
 
-def resolve_mapping_labels(label_mapping, name, instance):
-    values = {}
-    for key, value in label_mapping.items():
-        if value == "{name}":
-            values[key] = name
-        elif value == "{instance}":
-            values[key] = instance
-        else:
-            values[key] = value
+def resolve_mapping_labels(mapping, name, instance):
+    values = dict(mapping.get("labels", {}))
+    name_label = mapping.get("name_label")
+    if name_label:
+        values[name_label] = name
+    instance_label = mapping.get("instance_label")
+    if instance_label:
+        if not instance:
+            return None
+        values[instance_label] = instance
     return values
 
 
 def emit_standard(name, data):
+    kind, instance = parse_object_name(name)
+    mapping = STANDARD_MAPPING.get(kind, {})
+
     lines = []
     consumed = set()
-    kind, instance = parse_object_name(name)
-    mapping = STANDARD_MAPPING.get(kind)
-    if mapping:
-        expects_instance = mapping["instance"]
-        if (expects_instance and instance) or (not expects_instance and instance is None):
-            values = resolve_mapping_labels(mapping["labels"], name, instance)
-            for field, metric in mapping["fields"].items():
-                value = number(data.get(field))
-                if value is not None:
-                    lines.append(sample(metric, value, values))
-                    consumed.add(field)
-    if kind == "print_stats" and instance is None and "state" in data:
-        lines.append(sample("klipper_print_state", 1, {"state": data.get("state")}))
-        consumed.add("state")
+    values = resolve_mapping_labels(mapping, name, instance)
+    if values is None:
+        return lines, consumed
+
+    for field, metric in mapping.get("fields", {}).items():
+        value = number(data.get(field))
+        if value is not None:
+            lines.append(sample(metric, value, values))
+            consumed.add(field)
+    for field, metric in mapping.get("state_fields", {}).items():
+        if field in data:
+            lines.append(sample(metric, 1, {**values, field: data.get(field)}))
+            consumed.add(field)
     return lines, consumed
 
 
