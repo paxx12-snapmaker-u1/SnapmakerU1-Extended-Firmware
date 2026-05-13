@@ -2,6 +2,7 @@
   "purifier": {
     "instance_label": null,
     "name_label": null,
+    "flatten": false,
     "labels": {
       "kind": "purifier"
     },

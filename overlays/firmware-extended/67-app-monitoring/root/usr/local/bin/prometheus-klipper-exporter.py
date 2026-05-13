@@ -14,6 +14,7 @@ DEFAULT_TARGET = "localhost:7125"
 EXTRUDER_MAPPING = {
     "instance_label": None,
     "name_label": "extruder",
+    "flatten": False,
     "labels": {"kind": "extruder"},
     "fields": {
         "temperature": "klipper_temperature_value",
@@ -27,6 +28,7 @@ EXTRUDER_MAPPING = {
 TMC_DRIVER_MAPPING = {
     "instance_label": "stepper",
     "name_label": None,
+    "flatten": False,
     "labels": {},
     "fields": {
         "drv_status": "klipper_tmc_drv_status",
@@ -46,6 +48,7 @@ DEFAULT_MAPPING = {
     "fan": {
         "instance_label": None,
         "name_label": None,
+        "flatten": False,
         "labels": {"kind": "fan", "fan": "fan"},
         "fields": {
             "rpm": "klipper_fan_rpm",
@@ -55,6 +58,7 @@ DEFAULT_MAPPING = {
     "fan_generic": {
         "instance_label": "fan",
         "name_label": None,
+        "flatten": False,
         "labels": {"kind": "fan_generic"},
         "fields": {
             "rpm": "klipper_fan_rpm",
@@ -64,6 +68,7 @@ DEFAULT_MAPPING = {
     "heater_bed": {
         "instance_label": None,
         "name_label": None,
+        "flatten": False,
         "labels": {"kind": "heater_bed"},
         "fields": {
             "temperature": "klipper_temperature_value",
@@ -74,6 +79,7 @@ DEFAULT_MAPPING = {
     "heater_fan": {
         "instance_label": "fan",
         "name_label": None,
+        "flatten": False,
         "labels": {"kind": "heater_fan"},
         "fields": {
             "rpm": "klipper_fan_rpm",
@@ -83,6 +89,7 @@ DEFAULT_MAPPING = {
     "controller_fan": {
         "instance_label": "fan",
         "name_label": None,
+        "flatten": False,
         "labels": {"kind": "controller_fan"},
         "fields": {
             "rpm": "klipper_fan_rpm",
@@ -92,6 +99,7 @@ DEFAULT_MAPPING = {
     "temperature_fan": {
         "instance_label": "fan",
         "name_label": None,
+        "flatten": False,
         "labels": {"kind": "temperature_fan"},
         "fields": {
             "rpm": "klipper_fan_rpm",
@@ -103,6 +111,7 @@ DEFAULT_MAPPING = {
     "print_stats": {
         "instance_label": None,
         "name_label": None,
+        "flatten": False,
         "labels": {},
         "fields": {
             "filament_used": "klipper_print_filament_used",
@@ -116,6 +125,7 @@ DEFAULT_MAPPING = {
     "system_stats": {
         "instance_label": None,
         "name_label": None,
+        "flatten": False,
         "labels": {},
         "fields": {
             "cputime": "klipper_system_cputime",
@@ -126,6 +136,7 @@ DEFAULT_MAPPING = {
     "temperature_sensor": {
         "instance_label": "sensor",
         "name_label": None,
+        "flatten": False,
         "labels": {"kind": "temperature_sensor"},
         "fields": {
             "temperature": "klipper_temperature_value",
@@ -137,6 +148,7 @@ DEFAULT_MAPPING = {
     "toolhead": {
         "instance_label": None,
         "name_label": None,
+        "flatten": False,
         "labels": {},
         "fields": {
             "estimated_print_time": "klipper_toolhead_estimated_print_time",
@@ -321,12 +333,13 @@ def resolve_metric_spec(spec):
 def emit_standard(name, data, mapping_registry):
     kind, instance = parse_object_name(name)
     mapping = resolve_mapping_for_name(mapping_registry, name)
+    flatten = mapping.get("flatten", True)
 
     lines = []
     consumed = set()
     values = resolve_mapping_labels(mapping, name, instance)
     if values is None:
-        return lines, consumed
+        return lines, consumed, flatten
 
     for field, spec in mapping.get("fields", {}).items():
         metric, extra_labels = resolve_metric_spec(spec)
@@ -344,7 +357,7 @@ def emit_standard(name, data, mapping_registry):
         if raw is not None:
             lines.append(sample(metric, 1, {**values, **extra_labels, metric_name(field): raw}))
             consumed.add(root_field(field))
-    return lines, consumed
+    return lines, consumed, flatten
 
 
 def emit_flattened(prefix, base_labels, value, path=(), excluded_fields=None):
@@ -395,9 +408,10 @@ def scrape(target, apikey, objects, mapping_registry):
         status = {}
     lines.append(sample("klipper_objects", len(status)))
     for name, data in sorted(status.items()):
-        standard_lines, consumed_fields = emit_standard(name, data, mapping_registry)
+        standard_lines, consumed_fields, flatten = emit_standard(name, data, mapping_registry)
         lines.extend(standard_lines)
-        lines.extend(emit_flattened("klipper", object_labels(name), data, excluded_fields=consumed_fields))
+        if flatten:
+            lines.extend(emit_flattened("klipper", object_labels(name), data, excluded_fields=consumed_fields))
     return "\n".join(add_help_and_type(lines)) + "\n"
 
 
@@ -405,7 +419,7 @@ class Handler(BaseHTTPRequestHandler):
     default_target = DEFAULT_TARGET
     default_objects = []
     apikey = None
-    mapping = STANDARD_MAPPING
+    mapping = DEFAULT_MAPPING
 
     def do_GET_healthy(self):
         self.send_response(200)
