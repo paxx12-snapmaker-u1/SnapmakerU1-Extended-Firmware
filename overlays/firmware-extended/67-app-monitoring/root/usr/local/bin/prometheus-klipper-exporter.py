@@ -24,7 +24,21 @@ EXTRUDER_MAPPING = {
     },
 }
 
-STANDARD_MAPPING = {
+TMC_DRIVER_MAPPING = {
+    "instance_label": "stepper",
+    "name_label": None,
+    "labels": {},
+    "fields": {
+        "drv_status": "klipper_tmc_drv_status",
+        "mcu_phase_offset": "klipper_tmc_mcu_phase_offset",
+        "phase_offset_position": "klipper_tmc_phase_offset_position",
+        "run_current": "klipper_tmc_run_current",
+        "hold_current": "klipper_tmc_hold_current",
+        "temperature": "klipper_temperature_value",
+    },
+}
+
+DEFAULT_MAPPING = {
     "extruder": EXTRUDER_MAPPING,
     "extruder1": EXTRUDER_MAPPING,
     "extruder2": EXTRUDER_MAPPING,
@@ -133,9 +147,11 @@ STANDARD_MAPPING = {
             "stalls": "klipper_toolhead_stalls",
         },
     },
+    "tmc2209": TMC_DRIVER_MAPPING,
+    "tmc2240": TMC_DRIVER_MAPPING,
 }
 
-DEFAULT_OBJECTS = list(STANDARD_MAPPING.keys())
+DEFAULT_OBJECTS = list(DEFAULT_MAPPING.keys())
 
 REQUEST_TIMEOUT = 5
 
@@ -152,7 +168,7 @@ def load_mapping_file(path):
 
 
 def build_mapping(mapping_path=None):
-    mapping = dict(STANDARD_MAPPING)
+    mapping = dict(DEFAULT_MAPPING)
     if mapping_path:
         mapping.update(load_mapping_file(mapping_path))
     return mapping
