@@ -10,6 +10,105 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 DEFAULT_TARGET = "localhost:7125"
+DEFAULT_OBJECTS = [
+    "extruder",
+    "heater_bed",
+    "temperature_sensor",
+    "fan",
+    "fan_generic",
+    "heater_fan",
+    "print_stats",
+    "system_stats",
+    "toolhead",
+]
+
+STANDARD_MAPPING = {
+    "extruder": {
+        "instance": False,
+        "labels": {"kind": "extruder", "extruder": "{name}"},
+        "fields": {
+            "temperature": "klipper_temperature_value",
+            "target": "klipper_temperature_target",
+            "power": "klipper_power_value",
+            "pressure_advance": "klipper_extruder_pressure_advance",
+            "smooth_time": "klipper_extruder_smooth_time",
+        },
+    },
+    "fan": {
+        "instance": False,
+        "labels": {"kind": "fan", "fan": "fan"},
+        "fields": {
+            "rpm": "klipper_fan_rpm",
+            "speed": "klipper_fan_speed",
+        },
+    },
+    "fan_generic": {
+        "instance": True,
+        "labels": {"kind": "fan_generic", "fan": "{instance}"},
+        "fields": {
+            "rpm": "klipper_fan_rpm",
+            "speed": "klipper_fan_speed",
+        },
+    },
+    "heater_bed": {
+        "instance": False,
+        "labels": {"kind": "heater_bed"},
+        "fields": {
+            "temperature": "klipper_temperature_value",
+            "target": "klipper_temperature_target",
+            "power": "klipper_power_value",
+        },
+    },
+    "heater_fan": {
+        "instance": True,
+        "labels": {"kind": "heater_fan", "fan": "{instance}"},
+        "fields": {
+            "rpm": "klipper_fan_rpm",
+            "speed": "klipper_fan_speed",
+        },
+    },
+    "print_stats": {
+        "instance": False,
+        "labels": {},
+        "fields": {
+            "filament_used": "klipper_print_filament_used",
+            "print_duration": "klipper_print_print_duration",
+            "total_duration": "klipper_print_total_duration",
+        },
+    },
+    "system_stats": {
+        "instance": False,
+        "labels": {},
+        "fields": {
+            "cputime": "klipper_system_cputime",
+            "memavail": "klipper_system_memavail",
+            "sysload": "klipper_system_sysload",
+        },
+    },
+    "temperature_sensor": {
+        "instance": True,
+        "labels": {"kind": "temperature_sensor", "sensor": "{instance}"},
+        "fields": {
+            "temperature": "klipper_temperature_value",
+            "measured_max_temp": "klipper_temperature_max",
+            "measured_min_temp": "klipper_temperature_min",
+            "estimated_expansion": "klipper_temperature_sensor_estimated_expansion",
+        },
+    },
+    "toolhead": {
+        "instance": False,
+        "labels": {},
+        "fields": {
+            "estimated_print_time": "klipper_toolhead_estimated_print_time",
+            "max_accel": "klipper_toolhead_max_accel",
+            "max_velocity": "klipper_toolhead_max_velocity",
+            "print_time": "klipper_toolhead_print_time",
+            "square_corner_velocity": "klipper_toolhead_square_corner_velocity",
+            "stalls": "klipper_toolhead_stalls",
+        },
+    },
+}
+
 REQUEST_TIMEOUT = 5
 
 def metric_name(*parts):
@@ -67,6 +166,10 @@ def object_query_path(objects):
     return "/printer/objects/query?" + "&".join(urllib.parse.quote(obj, safe="") for obj in objects)
 
 
+def object_list_path():
+    return "/printer/objects/list"
+
+
 def parse_object_name(name):
     if " " not in name:
         return name, None
@@ -79,9 +182,19 @@ def parse_object_list(values):
     for value in values or []:
         for item in value.split(","):
             normalized = item.strip()
-            if normalized and normalized != "modules":
+            if normalized:
                 objects.append(normalized)
     return objects
+
+
+def resolve_query_objects(available, requested):
+    resolved = []
+    requested_set = set(requested)
+    for name in sorted(available):
+        kind, _ = parse_object_name(name)
+        if name in requested_set or kind in requested_set:
+            resolved.append(name)
+    return resolved
 
 
 def object_labels(name):
@@ -92,65 +205,43 @@ def object_labels(name):
     return values
 
 
+def resolve_mapping_labels(label_mapping, name, instance):
+    values = {}
+    for key, value in label_mapping.items():
+        if value == "{name}":
+            values[key] = name
+        elif value == "{instance}":
+            values[key] = instance
+        else:
+            values[key] = value
+    return values
+
+
 def emit_standard(name, data):
     lines = []
+    consumed = set()
     kind, instance = parse_object_name(name)
-    if kind == "extruder" and instance is None:
-        values = {"extruder": name}
-        for field in ("power", "pressure_advance", "smooth_time", "target", "temperature"):
-            value = number(data.get(field))
-            if value is not None:
-                lines.append(sample(f"klipper_extruder_{field}", value, values))
-    elif kind == "fan" and instance is None:
-        for field in ("rpm", "speed"):
-            value = number(data.get(field))
-            if value is not None:
-                lines.append(sample(f"klipper_fan_{field}", value))
-    elif kind == "fan_generic" and instance:
-        values = {"fan": instance}
-        for field in ("rpm", "speed"):
-            value = number(data.get(field))
-            if value is not None:
-                lines.append(sample(f"klipper_generic_fan_{field}", value, values))
-    elif kind == "heater_fan" and instance:
-        values = {"fan": instance}
-        for field in ("rpm", "speed"):
-            value = number(data.get(field))
-            if value is not None:
-                lines.append(sample(f"klipper_heater_fan_{field}", value, values))
-    elif kind == "heater_bed" and instance is None:
-        for field in ("power", "target", "temperature"):
-            value = number(data.get(field))
-            if value is not None:
-                lines.append(sample(f"klipper_heater_bed_{field}", value))
-    elif kind == "temperature_sensor" and instance:
-        values = {"sensor": instance}
-        for field in ("temperature", "measured_max_temp", "measured_min_temp", "estimated_expansion"):
-            value = number(data.get(field))
-            if value is not None:
-                lines.append(sample(f"klipper_temperature_sensor_{field}", value, values))
-    elif kind == "print_stats" and instance is None:
-        for field in ("filament_used", "print_duration", "total_duration"):
-            value = number(data.get(field))
-            if value is not None:
-                lines.append(sample(f"klipper_print_{field}", value))
-        if "state" in data:
-            lines.append(sample("klipper_print_state", 1, {"state": data.get("state")}))
-    elif kind == "system_stats" and instance is None:
-        for field in ("cputime", "memavail", "sysload"):
-            value = number(data.get(field))
-            if value is not None:
-                lines.append(sample(f"klipper_system_{field}", value))
-    elif kind == "toolhead" and instance is None:
-        for field in ("estimated_print_time", "max_accel", "max_velocity", "print_time", "square_corner_velocity", "stalls"):
-            value = number(data.get(field))
-            if value is not None:
-                lines.append(sample(f"klipper_toolhead_{field}", value))
-    return lines
+    mapping = STANDARD_MAPPING.get(kind)
+    if mapping:
+        expects_instance = mapping["instance"]
+        if (expects_instance and instance) or (not expects_instance and instance is None):
+            values = resolve_mapping_labels(mapping["labels"], name, instance)
+            for field, metric in mapping["fields"].items():
+                value = number(data.get(field))
+                if value is not None:
+                    lines.append(sample(metric, value, values))
+                    consumed.add(field)
+    if kind == "print_stats" and instance is None and "state" in data:
+        lines.append(sample("klipper_print_state", 1, {"state": data.get("state")}))
+        consumed.add("state")
+    return lines, consumed
 
 
-def emit_flattened(prefix, base_labels, value, path=()):
+def emit_flattened(prefix, base_labels, value, path=(), excluded_fields=None):
     lines = []
+    excluded_fields = excluded_fields or set()
+    if len(path) == 1 and path[0] in excluded_fields:
+        return lines
     numeric = number(value)
     if numeric is not None:
         lines.append(sample(metric_name(prefix, *path), numeric, base_labels))
@@ -162,10 +253,10 @@ def emit_flattened(prefix, base_labels, value, path=()):
             lines.append(sample(metric, 1, {**base_labels, field: text}))
     elif isinstance(value, list):
         for index, item in enumerate(value):
-            lines.extend(emit_flattened(prefix, {**base_labels, "index": str(index)}, item, path))
+            lines.extend(emit_flattened(prefix, {**base_labels, "index": str(index)}, item, path, excluded_fields))
     elif isinstance(value, dict):
         for key, item in sorted(value.items()):
-            lines.extend(emit_flattened(prefix, base_labels, item, path + (key,)))
+            lines.extend(emit_flattened(prefix, base_labels, item, path + (key,), excluded_fields))
     return lines
 
 
@@ -185,15 +276,18 @@ def add_help_and_type(lines):
 def scrape(target, apikey, objects):
     lines = [sample("klipper_up", 1)]
     lines.append(sample("klipper_scrape_time", int(time.time())))
-    query_objects = parse_object_list(objects)
+    requested_objects = parse_object_list(objects)
+    available_objects = fetch_json(target, object_list_path(), apikey)["result"]["objects"]
+    query_objects = resolve_query_objects(available_objects, requested_objects)
     if query_objects:
         status = fetch_json(target, object_query_path(query_objects), apikey)["result"]["status"]
     else:
         status = {}
     lines.append(sample("klipper_objects", len(status)))
     for name, data in sorted(status.items()):
-        lines.extend(emit_standard(name, data))
-        lines.extend(emit_flattened("klipper", object_labels(name), data))
+        standard_lines, consumed_fields = emit_standard(name, data)
+        lines.extend(standard_lines)
+        lines.extend(emit_flattened("klipper", object_labels(name), data, excluded_fields=consumed_fields))
     return "\n".join(add_help_and_type(lines)) + "\n"
 
 
@@ -202,17 +296,20 @@ class Handler(BaseHTTPRequestHandler):
     default_objects = []
     apikey = None
 
-    def do_GET(self):
-        parsed = urllib.parse.urlsplit(self.path)
-        if parsed.path == "/-/healthy":
-            self.send_response(200)
-            self.end_headers()
-            self.wfile.write(b"OK\n")
-            return
-        if parsed.path not in ("/probe", "/metrics"):
-            self.send_response(404)
-            self.end_headers()
-            return
+    def do_GET_healthy(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"OK\n")
+
+    def do_GET_metrics(self):
+        body = (sample("klipper_exporter_up", 1) + "\n").encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_GET_probe(self, parsed):
         params = urllib.parse.parse_qs(parsed.query)
         target = params.get("target", [self.default_target])[0]
         objects = params.get("objects") or self.default_objects
@@ -226,6 +323,18 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    def do_GET(self):
+        parsed = urllib.parse.urlsplit(self.path)
+        if parsed.path == "/-/healthy":
+            self.do_GET_healthy()
+        elif parsed.path == "/metrics":
+            self.do_GET_metrics()
+        elif parsed.path == "/probe":
+            self.do_GET_probe(parsed)
+        else:
+            self.send_response(404)
+            self.end_headers()
 
     def log_message(self, fmt, *args):
         print(f"{self.address_string()} - {fmt % args}", file=sys.stderr)
@@ -245,10 +354,10 @@ def main():
     parser.add_argument("-web.listen-address", default=":9101", dest="listen_address")
     parser.add_argument("-moonraker.apikey", default=os.environ.get("MOONRAKER_APIKEY"), dest="apikey")
     parser.add_argument("-moonraker.address", default=os.environ.get("MOONRAKER_ADDRESS", DEFAULT_TARGET), dest="default_target")
-    parser.add_argument("-moonraker.objects", default=os.environ.get("MOONRAKER_OBJECTS", ""), dest="default_objects")
+    parser.add_argument("-moonraker.objects", default=os.environ.get("MOONRAKER_OBJECTS"), dest="default_objects")
     args = parser.parse_args()
     Handler.default_target = args.default_target
-    Handler.default_objects = parse_object_list([args.default_objects])
+    Handler.default_objects = parse_object_list([args.default_objects]) if args.default_objects else list(DEFAULT_OBJECTS)
     Handler.apikey = args.apikey
     server = ThreadingHTTPServer(listen_address(args.listen_address), Handler)
     print(f"Serving prometheus-klipper-exporter on {args.listen_address}", file=sys.stderr)
