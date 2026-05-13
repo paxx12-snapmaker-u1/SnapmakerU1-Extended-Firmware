@@ -6,16 +6,50 @@
       "kind": "purifier"
     },
     "fields": {
-      "power_det_value": "klipper_purifier_power_det_value",
-      "mode": "klipper_purifier_mode",
-      "exhaust_fan.speed": "klipper_purifier_exhaust_fan_speed",
-      "inner_fan.speed": "klipper_purifier_inner_fan_speed",
-      "inner_fan.rpm": "klipper_purifier_inner_fan_rpm",
-      "inner_fan.delay": "klipper_purifier_inner_fan_delay",
-      "inner_fan.work": "klipper_purifier_inner_fan_work"
+      "power_det_value": {
+        "metric": "klipper_purifier_power_det_value",
+        "labels": {}
+      },
+      "mode": {
+        "metric": "klipper_purifier_mode",
+        "labels": {}
+      },
+      "exhaust_fan.speed": {
+        "metric": "klipper_purifier_exhaust_fan_speed",
+        "labels": {
+          "fan": "exhaust"
+        }
+      },
+      "inner_fan.speed": {
+        "metric": "klipper_purifier_inner_fan_speed",
+        "labels": {
+          "fan": "inner"
+        }
+      },
+      "inner_fan.rpm": {
+        "metric": "klipper_purifier_inner_fan_rpm",
+        "labels": {
+          "fan": "inner"
+        }
+      },
+      "inner_fan.delay": {
+        "metric": "klipper_purifier_inner_fan_delay",
+        "labels": {
+          "fan": "inner"
+        }
+      },
+      "inner_fan.work": {
+        "metric": "klipper_purifier_inner_fan_work",
+        "labels": {
+          "fan": "inner"
+        }
+      }
     },
     "state_fields": {
-      "power_detected": "klipper_purifier_power_detected"
+      "power_detected": {
+        "metric": "klipper_purifier_power_detected",
+        "labels": {}
+      }
     }
   }
 }

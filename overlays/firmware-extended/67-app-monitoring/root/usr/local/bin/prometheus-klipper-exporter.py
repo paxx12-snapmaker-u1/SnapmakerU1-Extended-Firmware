@@ -294,6 +294,14 @@ def root_field(field):
     return field.split(".", 1)[0]
 
 
+def resolve_metric_spec(spec):
+    if isinstance(spec, str):
+        return spec, {}
+    if isinstance(spec, dict):
+        return spec.get("metric"), dict(spec.get("labels", {}))
+    return None, {}
+
+
 def emit_standard(name, data, mapping_registry):
     kind, instance = parse_object_name(name)
     mapping = resolve_mapping_for_name(mapping_registry, name)
@@ -304,15 +312,21 @@ def emit_standard(name, data, mapping_registry):
     if values is None:
         return lines, consumed
 
-    for field, metric in mapping.get("fields", {}).items():
+    for field, spec in mapping.get("fields", {}).items():
+        metric, extra_labels = resolve_metric_spec(spec)
+        if not metric:
+            continue
         value = number(get_field_value(data, field))
         if value is not None:
-            lines.append(sample(metric, value, values))
+            lines.append(sample(metric, value, {**values, **extra_labels}))
             consumed.add(root_field(field))
-    for field, metric in mapping.get("state_fields", {}).items():
+    for field, spec in mapping.get("state_fields", {}).items():
+        metric, extra_labels = resolve_metric_spec(spec)
+        if not metric:
+            continue
         raw = get_field_value(data, field)
         if raw is not None:
-            lines.append(sample(metric, 1, {**values, metric_name(field): raw}))
+            lines.append(sample(metric, 1, {**values, **extra_labels, metric_name(field): raw}))
             consumed.add(root_field(field))
     return lines, consumed
 
