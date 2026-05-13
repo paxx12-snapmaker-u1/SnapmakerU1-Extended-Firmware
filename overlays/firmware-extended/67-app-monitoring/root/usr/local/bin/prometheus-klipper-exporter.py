@@ -294,9 +294,9 @@ def root_field(field):
     return field.split(".", 1)[0]
 
 
-def emit_standard(name, data):
+def emit_standard(name, data, mapping_registry):
     kind, instance = parse_object_name(name)
-    mapping = STANDARD_MAPPING.get(kind, {})
+    mapping = resolve_mapping_for_name(mapping_registry, name)
 
     lines = []
     consumed = set()
@@ -353,7 +353,7 @@ def add_help_and_type(lines):
     return output
 
 
-def scrape(target, apikey, objects):
+def scrape(target, apikey, objects, mapping_registry):
     lines = [sample("klipper_up", 1)]
     lines.append(sample("klipper_scrape_time", int(time.time())))
     requested_objects = parse_object_list(objects)
@@ -365,7 +365,7 @@ def scrape(target, apikey, objects):
         status = {}
     lines.append(sample("klipper_objects", len(status)))
     for name, data in sorted(status.items()):
-        standard_lines, consumed_fields = emit_standard(name, data)
+        standard_lines, consumed_fields = emit_standard(name, data, mapping_registry)
         lines.extend(standard_lines)
         lines.extend(emit_flattened("klipper", object_labels(name), data, excluded_fields=consumed_fields))
     return "\n".join(add_help_and_type(lines)) + "\n"
@@ -375,6 +375,7 @@ class Handler(BaseHTTPRequestHandler):
     default_target = DEFAULT_TARGET
     default_objects = []
     apikey = None
+    mapping = STANDARD_MAPPING
 
     def do_GET_healthy(self):
         self.send_response(200)
@@ -394,7 +395,7 @@ class Handler(BaseHTTPRequestHandler):
         target = params.get("target", [self.default_target])[0]
         objects = params.get("objects") or self.default_objects
         try:
-            body = scrape(target, self.apikey, objects).encode()
+            body = scrape(target, self.apikey, objects, self.mapping).encode()
             self.send_response(200)
         except Exception as error:
             body = (sample("klipper_up", 0) + "\n" + sample("klipper_scrape_error", 1, {"error": type(error).__name__}) + "\n").encode()
@@ -435,10 +436,13 @@ def main():
     parser.add_argument("-moonraker.apikey", default=os.environ.get("MOONRAKER_APIKEY"), dest="apikey")
     parser.add_argument("-moonraker.address", default=os.environ.get("MOONRAKER_ADDRESS", DEFAULT_TARGET), dest="default_target")
     parser.add_argument("-moonraker.objects", default=os.environ.get("MOONRAKER_OBJECTS"), dest="default_objects")
+    parser.add_argument("-moonraker.mapping", default=os.environ.get("MOONRAKER_MAPPING"), dest="mapping_file")
     args = parser.parse_args()
+    mapping = build_mapping(args.mapping_file)
     Handler.default_target = args.default_target
-    Handler.default_objects = parse_object_list([args.default_objects]) if args.default_objects else list(DEFAULT_OBJECTS)
+    Handler.default_objects = default_object_filters(args.default_objects, mapping)
     Handler.apikey = args.apikey
+    Handler.mapping = mapping
     server = ThreadingHTTPServer(listen_address(args.listen_address), Handler)
     print(f"Serving prometheus-klipper-exporter on {args.listen_address}", file=sys.stderr)
     server.serve_forever()
