@@ -15,34 +15,24 @@
         "labels": {}
       },
       "exhaust_fan.speed": {
-        "metric": "klipper_purifier_exhaust_fan_speed",
-        "labels": {
-          "fan": "exhaust"
-        }
+        "metric": "klipper_fan_speed",
+        "labels": {"fan": "exhaust", "kind": "purifier_fan"}
       },
       "inner_fan.speed": {
-        "metric": "klipper_purifier_inner_fan_speed",
-        "labels": {
-          "fan": "inner"
-        }
+        "metric": "klipper_fan_speed",
+        "labels": {"fan": "inner", "kind": "purifier_fan"}
       },
       "inner_fan.rpm": {
-        "metric": "klipper_purifier_inner_fan_rpm",
-        "labels": {
-          "fan": "inner"
-        }
+        "metric": "klipper_fan_rpm",
+        "labels": {"fan": "inner", "kind": "purifier_fan"}
       },
       "inner_fan.delay": {
         "metric": "klipper_purifier_inner_fan_delay",
-        "labels": {
-          "fan": "inner"
-        }
+        "labels": {"fan": "inner"}
       },
       "inner_fan.work": {
         "metric": "klipper_purifier_inner_fan_work",
-        "labels": {
-          "fan": "inner"
-        }
+        "labels": {"fan": "inner"}
       }
     },
     "state_fields": {
