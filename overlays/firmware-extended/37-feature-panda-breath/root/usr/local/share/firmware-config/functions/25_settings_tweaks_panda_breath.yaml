@@ -1,0 +1,125 @@
+settings:
+  snapmaker_components:
+    items:
+      panda_breath:
+        label: Panda Breath Chamber Heater
+        description: Choose how Panda Breath chamber heating is integrated. Auto uses Panda native auto mode after heat-up and requires Panda firmware v1.0.3. Manual keeps the older pure heater_generic fallback.
+        help_url: https://github.com/justinh-rahb/pandabreath-klipper
+        get_cmd:
+          - bash
+          - -c
+          - |
+            if /usr/local/bin/extended-config.py has /oem/printer_data/config/extended/klipper/panda_breath.cfg "include /usr/local/share/firmware-config/tweaks/klipper/panda_breath_heater_auto.cfg" &>/dev/null; then
+              echo "auto"
+            elif /usr/local/bin/extended-config.py has /oem/printer_data/config/extended/klipper/panda_breath.cfg "include /usr/local/share/firmware-config/tweaks/klipper/panda_breath_heater_manual.cfg" &>/dev/null; then
+              echo "manual"
+            elif test -f /oem/printer_data/config/extended/klipper/panda_breath.cfg; then
+              echo "manual"
+            else
+              echo "disabled"
+            fi
+        options:
+          disabled:
+            label: Disabled
+            cmd:
+              - bash
+              - -ec
+              - |
+                if PANDA_BREATH_IP=$(/usr/local/bin/extended-config.py get /oem/printer_data/config/extended/klipper/panda_breath.cfg panda_breath host 2>/dev/null); then
+                  echo ""
+                  echo ">> Unbinding Panda Breath at ${PANDA_BREATH_IP}..."
+                  /usr/local/bin/panda_breath_cli.py --host "${PANDA_BREATH_IP}" unbind || true
+                fi
+
+                echo ""
+                echo ">> Removing Panda Breath configuration..."
+                rm -f /oem/printer_data/config/extended/klipper/panda_breath.cfg
+
+                echo ""
+                echo ">> Panda Breath disabled. Restarting Klipper..."
+                /etc/init.d/S60klipper restart
+          auto:
+            label: Auto (Recommended)
+            confirm: |
+              Before enabling Panda Breath auto mode, complete all of the following steps:
+
+              1. Ensure the Panda Breath device is running firmware v1.0.3 — this is required for auto mode.
+              2. Configure a static DHCP lease for this printer on your router — the printer IP is embedded into the Panda Breath device and must not change after a reboot.
+              3. Configure a static DHCP lease for the Panda Breath device on your router — Klipper will connect to it by IP address on every print.
+              4. Power-cycle the Panda Breath device and wait at least 5 seconds before proceeding.
+              5. Enter the Panda Breath IP address in the field below.
+
+              Auto mode heats the chamber with Klipper first, then hands off hold and cool-down behaviour to Panda native auto mode.
+            inputs:
+              - name: PANDA_BREATH_IP
+                label: Panda Breath IP Address
+                placeholder: "192.168.1.100"
+                regex: '^((25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])$'
+            cmd:
+              - bash
+              - -ec
+              - |
+                echo ""
+                echo ">> Detecting printer IP address..."
+                PRINTER_IP=$((ip -4 -o addr show eth0 || ip -4 -o addr show wlan0) | awk '{print $4}' | cut -d/ -f1)
+
+                echo ""
+                echo ">> Binding Panda Breath at ${PANDA_BREATH_IP} to printer at ${PRINTER_IP}..."
+                /usr/local/bin/panda_breath_cli.py --host "${PANDA_BREATH_IP}" bind-klipper --printer-ip "${PRINTER_IP}" --version "V1.0.3"
+
+                echo ""
+                echo ">> Writing configuration..."
+                mkdir -p /oem/printer_data/config/extended/klipper
+                cp -n /usr/local/share/firmware-config/tweaks/klipper/panda_breath.cfg /oem/printer_data/config/extended/klipper/panda_breath.cfg
+                /usr/local/bin/extended-config.py add /oem/printer_data/config/extended/klipper/panda_breath.cfg panda_breath host "${PANDA_BREATH_IP}"
+                /usr/local/bin/extended-config.py uncomment /oem/printer_data/config/extended/klipper/panda_breath.cfg "include /usr/local/share/firmware-config/tweaks/klipper/panda_breath_heater_auto.cfg"
+                /usr/local/bin/extended-config.py comment /oem/printer_data/config/extended/klipper/panda_breath.cfg "include /usr/local/share/firmware-config/tweaks/klipper/panda_breath_heater_manual.cfg"
+                chown lava:lava /oem/printer_data/config/extended/klipper/panda_breath.cfg
+
+                echo ""
+                echo ">> Panda Breath auto mode enabled. Restarting Klipper..."
+                /etc/init.d/S60klipper restart
+          manual:
+            label: Manual (Advanced)
+            hidden: true
+            confirm: |
+              Before enabling Panda Breath manual mode, complete all of the following steps:
+
+              1. Ensure the Panda Breath device is running firmware v1.0.3 — this is the required firmware version.
+              2. Configure a static DHCP lease for this printer on your router — the printer IP is embedded into the Panda Breath device and must not change after a reboot.
+              3. Configure a static DHCP lease for the Panda Breath device on your router — Klipper will connect to it by IP address on every print.
+              4. Power-cycle the Panda Breath device and wait at least 5 seconds before proceeding.
+              5. Enter the Panda Breath IP address in the field below.
+
+              Manual mode is a legacy fallback that may be less safe if the device or network connectivity is lost during a print.
+            inputs:
+              - name: PANDA_BREATH_IP
+                label: Panda Breath IP Address
+                placeholder: "192.168.1.100"
+                regex: '^((25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])$'
+            cmd:
+              - bash
+              - -ec
+              - |
+                echo ""
+                echo ">> Detecting printer IP address..."
+                PRINTER_IP=$((ip -4 -o addr show eth0 || ip -4 -o addr show wlan0) | awk '{print $4}' | cut -d/ -f1)
+
+                echo ""
+                echo ">> Binding Panda Breath at ${PANDA_BREATH_IP} to printer at ${PRINTER_IP}..."
+                /usr/local/bin/panda_breath_cli.py --host "${PANDA_BREATH_IP}" bind-klipper --printer-ip "${PRINTER_IP}" --version "V1.0.3"
+
+                echo ""
+                echo ">> Writing configuration..."
+                mkdir -p /oem/printer_data/config/extended/klipper
+                cp -n /usr/local/share/firmware-config/tweaks/klipper/panda_breath.cfg /oem/printer_data/config/extended/klipper/panda_breath.cfg
+                /usr/local/bin/extended-config.py add /oem/printer_data/config/extended/klipper/panda_breath.cfg panda_breath host "${PANDA_BREATH_IP}"
+                /usr/local/bin/extended-config.py comment /oem/printer_data/config/extended/klipper/panda_breath.cfg "include /usr/local/share/firmware-config/tweaks/klipper/panda_breath_heater_auto.cfg"
+                /usr/local/bin/extended-config.py uncomment /oem/printer_data/config/extended/klipper/panda_breath.cfg "include /usr/local/share/firmware-config/tweaks/klipper/panda_breath_heater_manual.cfg"
+                chown lava:lava /oem/printer_data/config/extended/klipper/panda_breath.cfg
+                ln -sf /usr/local/share/firmware-config/tweaks/klipper/panda_breath_heater_manual.cfg /oem/printer_data/config/extended/klipper/panda_breath_heater.cfg
+
+                echo ""
+                echo ">> Panda Breath manual mode enabled. Restarting Klipper..."
+                /etc/init.d/S60klipper restart
+        default: disabled

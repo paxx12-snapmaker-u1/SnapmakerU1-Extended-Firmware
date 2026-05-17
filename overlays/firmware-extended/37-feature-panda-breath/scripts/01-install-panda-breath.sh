@@ -18,6 +18,6 @@ cache_git.sh "$TARGET_DIR" "$GIT_URL" "$GIT_SHA"
 
 echo ">> Installing Panda Breath Klipper extras..."
 install -Dm644 -o "$LAVA_UID" -g "$LAVA_GID" "$TARGET_DIR/panda_breath.py" \
-  "$ROOTFS_DIR/usr/local/share/firmware-config/tweaks/klipper/panda_breath.py"
+  "$ROOTFS_DIR/home/lava/klipper/klippy/extras/panda_breath.py"
 
 echo ">> Panda Breath installation completed successfully."
