@@ -1,5 +1,5 @@
 settings:
-  tweaks:
+  print_preferences:
     items:
       object_processing:
         label: Object Processing for Adaptive Mesh
