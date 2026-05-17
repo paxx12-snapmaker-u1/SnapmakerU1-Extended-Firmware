@@ -67,7 +67,7 @@ jobs:
         tag: "v${{ env.GIT_VERSION }}"
         allowUpdates: false
         updateOnlyUnreleased: true
-        prerelease: true
+        draft: true
         bodyFile: RELEASE.md
         artifacts: "U1_*_upgrade.bin"
 
