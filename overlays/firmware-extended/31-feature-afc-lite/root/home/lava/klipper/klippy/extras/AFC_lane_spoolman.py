@@ -331,7 +331,13 @@ class AFCLaneSpoolman:
         filament = response.get('filament', {})
         material = filament.get('material', 'PLA')
         vendor = filament.get('vendor', {}).get('name', 'Generic')
-        color_hex = filament.get('color_hex', 'FFFFFFFF')
+        color_hex = filament.get('color_hex', None)
+        multi_color_hexes = filament.get('multi_color_hexes', '')
+        if not color_hex or color_hex.upper() == 'FFFFFFFF':
+            if multi_color_hexes:
+                color_hex = multi_color_hexes.split(',')[0]
+        if not color_hex:
+            color_hex = 'FFFFFFFF'
         sub_type = filament.get('extra', {}).get('sub_type', 'Basic')
         weight = response.get('remaining_weight', -1)
         lot_nr = response.get('lot_nr', None)
