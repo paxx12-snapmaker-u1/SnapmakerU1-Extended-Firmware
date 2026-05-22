@@ -149,7 +149,7 @@ class AFCLaneSpoolman:
             logging.error(f"AFC_lane_spoolman {self.name}: failed to get card_uid: {e}")
             return None
 
-    def _set_filament_config(self, vendor='NONE', type='NONE', sub_type='NONE', color='FFFFFFFF', official=False, spool_id=0, weight=1000):
+    def _set_filament_config(self, vendor='NONE', type='NONE', sub_type='NONE', color='FFFFFFFF', multi_colors='', official=False, spool_id=0, weight=1000):
         if not self.lane:
             return False
         try:
@@ -161,9 +161,13 @@ class AFCLaneSpoolman:
             if sub_type:
                 info['SUB_TYPE'] = sub_type
             if color:
-                info['COLOR_NUMS'] = 1
-                info['RGB_1'] = int(color[:6], 16)
-                info['ALPHA'] = int(color[6:8] or 'FF', 16)
+                colors = [color_hex.strip() for color_hex in multi_colors.split(',')] if multi_colors else [color]
+                colors = [c for c in colors if c]
+                info['COLOR_NUMS'] = min(len(colors), 5)
+                info['MULTI_MODE'] = 1 if len(colors) > 1 else 0
+                for i, c in enumerate(colors[:5]):
+                    info[f'RGB_{i+1}'] = int(c[:6], 16)
+                info['ALPHA'] = int(colors[0][6:8] or 'FF', 16) if len(colors[0]) > 6 else 0xFF
                 info['ARGB_COLOR'] = info['ALPHA'] << 24 | info['RGB_1']
             info['SPOOL_ID'] = spool_id
             info['OFFICIAL'] = spool_id not in (None, 0) or official
@@ -349,6 +353,7 @@ class AFCLaneSpoolman:
             type=material,
             sub_type=sub_type,
             color=color_hex,
+            multi_colors=multi_color_hexes,
             spool_id=spool_id,
             weight=weight,
             official=True
