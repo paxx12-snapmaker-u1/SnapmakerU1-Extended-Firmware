@@ -171,13 +171,11 @@ def openspool_parse_payload(payload, card_uid=[]):
         info['RGB_1'] = parse_color_hex(data.get('color_hex', 'FFFFFF'))
 
         additional_color_hexes = list(data.get('additional_color_hexes') or [])
-        for hex_color in additional_color_hexes[:5]:
+        max_additional = filament_protocol.FILAMENT_PROTO_COLOR_NUMS_MAX - 1
+        for hex_color in additional_color_hexes[:max_additional]:
             idx = info['COLOR_NUMS'] + 1
             info['COLOR_NUMS'] = idx
             info[f'RGB_{idx}'] = parse_color_hex(hex_color)
-
-        for i in range(info['COLOR_NUMS'] + 1, 6):
-            info[f'RGB_{i}'] = 0
 
         try:
             info['ALPHA'] = max(0x00, min(0xFF, int(data.get('alpha'))))
