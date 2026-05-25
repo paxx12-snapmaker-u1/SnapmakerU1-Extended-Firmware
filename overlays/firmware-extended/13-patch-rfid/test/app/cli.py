@@ -21,8 +21,8 @@ if __name__ == '__main__':
         if args.file.endswith('.json'):
             try:
                 json.loads(data.decode('utf-8'))
-                logging.info("Detected JSON file, parsing as OpenSpool payload")
-                error_code, info = filament_protocol_ndef.openspool_parse_payload(data)
+                logging.info("Detected JSON file, parsing as JSON payload")
+                error_code, info = filament_protocol_ndef.parse_json_payload(data)
             except (json.JSONDecodeError, UnicodeDecodeError):
                 logging.info("JSON parsing failed, treating as binary NDEF data")
                 error_code, info = filament_protocol_ndef.ndef_proto_data_parse(data)

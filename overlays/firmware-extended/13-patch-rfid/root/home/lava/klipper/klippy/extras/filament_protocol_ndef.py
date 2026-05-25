@@ -139,23 +139,23 @@ def parse_color_hex(value):
     except (ValueError, TypeError):
         return 0xFFFFFF
 
-def openspool_parse_payload(payload, card_uid=[]):
+def parse_json_payload(payload, card_uid=[]):
     if None == payload or not isinstance(payload, (bytes, bytearray)):
-        logging.error("OpenSpool payload parsing failed: Invalid payload parameter")
+        logging.error("JSON payload parsing failed: Invalid payload parameter")
         return filament_protocol.FILAMENT_PROTO_PARAMETER_ERR, None
 
     try:
         payload_str = payload.decode('utf-8')
-        logging.info(f"OpenSpool JSON payload: {payload_str}")
+        logging.info(f"JSON payload: {payload_str}")
 
         data = json.loads(payload_str)
 
         if not isinstance(data, dict):
-            logging.error(f"OpenSpool payload parsing failed: JSON data is not a dict, got {type(data)}")
+            logging.error(f"JSON payload parsing failed: JSON data is not a dict, got {type(data)}")
             return filament_protocol.FILAMENT_PROTO_ERR, None
 
-        if data.get('protocol') != 'openspool':
-            logging.error(f"OpenSpool payload parsing failed: Invalid protocol '{data.get('protocol')}', expected 'openspool'")
+        if data.get('protocol') != 'openspool' and data.get('protocol') != 'filaman':
+            logging.error(f"JSON payload parsing failed: Invalid protocol '{data.get('protocol')}', expected 'openspool' or 'filaman'")
             return filament_protocol.FILAMENT_PROTO_ERR, None
 
         info = copy.copy(filament_protocol.FILAMENT_INFO_STRUCT)
@@ -227,10 +227,10 @@ def openspool_parse_payload(payload, card_uid=[]):
         return filament_protocol.FILAMENT_PROTO_OK, info
 
     except json.JSONDecodeError as e:
-        logging.exception("OpenSpool payload parsing failed: Invalid JSON: %s", str(e))
+        logging.exception("JSON payload parsing failed: Invalid JSON: %s", str(e))
         return filament_protocol.FILAMENT_PROTO_ERR, None
     except Exception as e:
-        logging.exception("OpenSpool payload parsing failed: %s", str(e))
+        logging.exception("JSON payload parsing failed: %s", str(e))
         return filament_protocol.FILAMENT_PROTO_ERR, None
 
 def ndef_proto_data_parse(data_buf):
@@ -249,13 +249,13 @@ def ndef_proto_data_parse(data_buf):
         payload = record['payload']
 
         if mime_type == 'application/json':
-            logging.info(f"Detected OpenSpool format, parsing payload ({len(payload)} bytes)")
-            error_code, info = openspool_parse_payload(payload, card_uid)
+            logging.info(f"Detected JSON format, parsing payload ({len(payload)} bytes)")
+            error_code, info = parse_json_payload(payload, card_uid)
             if error_code != filament_protocol.FILAMENT_PROTO_OK:
-                logging.error(f"OpenSpool parse failed: Payload parsing error (code: {error_code})")
+                logging.error(f"JSON parse failed: Payload parsing error (code: {error_code})")
                 continue
             else:
-                logging.info(f"OpenSpool parse success: vendor={info.get('VENDOR')}, type={info.get('MAIN_TYPE')}")
+                logging.info(f"JSON parse success: vendor={info.get('VENDOR')}, type={info.get('MAIN_TYPE')}")
                 return error_code, info
 
         else:
