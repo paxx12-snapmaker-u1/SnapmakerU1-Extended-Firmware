@@ -1,0 +1,12 @@
+diff -uNr rootfs.original/home/lava/klipper/klippy/extras/print_task_config.py rootfs/home/lava/klipper/klippy/extras/print_task_config.py
+--- rootfs.original/home/lava/klipper/klippy/extras/print_task_config.py
++++ rootfs/home/lava/klipper/klippy/extras/print_task_config.py
+@@ -710,7 +710,7 @@ class PrintTaskConfig:
+         logging.info("[print_task_config] SET_PRINT_PREFERENCES %s", gcmd.get_raw_command_parameters())
+
+         print_stats = self.printer.lookup_object('print_stats', None)
+-        if print_stats is not None and print_stats.state in ['printing', 'paused']:
++        if print_stats is not None and print_stats.state in ['printing', 'paused'] and not gcmd.get_int('FORCE', 0):
+             if bed_level is not None or flow_calibrate is not None or shaper_calibrate is not None or \
+                     time_lapse_camera is not None or end_unload_filament is not None:
+                 raise gcmd.error(
