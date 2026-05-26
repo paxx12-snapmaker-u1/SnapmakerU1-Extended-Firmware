@@ -26,7 +26,7 @@
 +
 +            params = web_request.get_dict('info', {})
 +            has_params = len(params) > 0
-+            filament_info = copy.deepcopy(filament_protocol.FILAMENT_INFO_STRUCT)
++            filament_info = dict(filament_protocol.FILAMENT_INFO_STRUCT)
 +
 +            if 'VENDOR' in params:
 +                filament_info['VENDOR'] = str(params.pop('VENDOR'))
@@ -73,7 +73,7 @@
 +            web_request.send({'state': 'success'})
 +        except Exception as e:
 +            logging.error("[filament_detect] set: %s", str(e))
-+            web_request.send({'state': 'error', 'message': str(e)})
++            web_request.set_error(web_request.error(str(e)))
 +
      def get_all_filament_info(self):
          return self._filament_info

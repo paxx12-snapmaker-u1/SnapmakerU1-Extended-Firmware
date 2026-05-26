@@ -1,4 +1,3 @@
-import copy
 import io
 import json
 import logging
@@ -158,7 +157,7 @@ def openspool_parse_payload(payload, card_uid=[]):
             logging.error(f"OpenSpool payload parsing failed: Invalid protocol '{data.get('protocol')}', expected 'openspool'")
             return filament_protocol.FILAMENT_PROTO_ERR, None
 
-        info = copy.copy(filament_protocol.FILAMENT_INFO_STRUCT)
+        info = dict(filament_protocol.FILAMENT_INFO_STRUCT)
         info['VERSION'] = 1
         info['VENDOR'] = data.get('brand', 'Generic')
         info['MANUFACTURER'] = data.get('brand', 'Generic')
