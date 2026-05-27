@@ -3,8 +3,8 @@ settings:
     items:
       panda_breath:
         label: Panda Breath Chamber Heater
-        description: Choose how Panda Breath chamber heating is integrated. Auto uses Panda native auto mode after heat-up and requires Panda firmware v1.0.3. Manual keeps the older pure heater_generic fallback.
-        help_url: https://github.com/justinh-rahb/pandabreath-klipper
+        description: BIQU Panda Breath chamber heater and air filter integration.
+        help_url: https://snapmakeru1-extended-firmware.pages.dev/panda_breath
         get_cmd:
           - bash
           - -c
@@ -41,16 +41,23 @@ settings:
           auto:
             label: Auto (Recommended)
             confirm: |
+              WARNING: Panda Breath significantly raises sustained enclosure temperatures, accelerating wear on electronics, motors, and other components beyond their rated conditions. Any damage attributable to elevated thermal stress is unlikely to be covered under warranty. Additional motherboard cooling is required before use — see the documentation for details.
+
               Before enabling Panda Breath auto mode, complete all of the following steps:
 
-              1. Ensure the Panda Breath device is running firmware v1.0.3 — this is required for auto mode.
-              2. Configure a static DHCP lease for this printer on your router — the printer IP is embedded into the Panda Breath device and must not change after a reboot.
-              3. Configure a static DHCP lease for the Panda Breath device on your router — Klipper will connect to it by IP address on every print.
-              4. Power-cycle the Panda Breath device and wait at least 5 seconds before proceeding.
-              5. Enter the Panda Breath IP address in the field below.
+              1. Install additional active cooling on the motherboard (see documentation).
+              2. Ensure the Panda Breath device is running firmware v1.0.3.
+              3. Configure a static DHCP lease for this printer on your router — the printer IP is embedded into the Panda Breath device and must not change after a reboot.
+              4. Configure a static DHCP lease for the Panda Breath device on your router — Klipper will connect to it by IP address on every print.
+              5. Power-cycle the Panda Breath device and wait at least 5 seconds before proceeding.
+              6. Enter the Panda Breath IP address in the field below.
 
               Auto mode heats the chamber with Klipper first, then hands off hold and cool-down behaviour to Panda native auto mode.
             inputs:
+              - name: ACKNOWLEDGED
+                label: "Type \"I UNDERSTAND\" to confirm you have read the documentation and accept the warranty and longevity risks"
+                placeholder: "I UNDERSTAND"
+                regex: '^I UNDERSTAND$'
               - name: PANDA_BREATH_IP
                 label: Panda Breath IP Address
                 placeholder: "192.168.1.100"
@@ -83,16 +90,23 @@ settings:
             label: Manual (Advanced)
             hidden: true
             confirm: |
+              WARNING: Panda Breath significantly raises sustained enclosure temperatures, accelerating wear on electronics, motors, and other components beyond their rated conditions. Any damage attributable to elevated thermal stress is unlikely to be covered under warranty. Additional motherboard cooling is required before use — see the documentation for details.
+
               Before enabling Panda Breath manual mode, complete all of the following steps:
 
-              1. Ensure the Panda Breath device is running firmware v1.0.3 — this is the required firmware version.
-              2. Configure a static DHCP lease for this printer on your router — the printer IP is embedded into the Panda Breath device and must not change after a reboot.
-              3. Configure a static DHCP lease for the Panda Breath device on your router — Klipper will connect to it by IP address on every print.
-              4. Power-cycle the Panda Breath device and wait at least 5 seconds before proceeding.
-              5. Enter the Panda Breath IP address in the field below.
+              1. Install additional active cooling on the motherboard (see documentation).
+              2. Ensure the Panda Breath device is running firmware v1.0.3.
+              3. Configure a static DHCP lease for this printer on your router — the printer IP is embedded into the Panda Breath device and must not change after a reboot.
+              4. Configure a static DHCP lease for the Panda Breath device on your router — Klipper will connect to it by IP address on every print.
+              5. Power-cycle the Panda Breath device and wait at least 5 seconds before proceeding.
+              6. Enter the Panda Breath IP address in the field below.
 
               Manual mode is a legacy fallback that may be less safe if the device or network connectivity is lost during a print.
             inputs:
+              - name: ACKNOWLEDGED
+                label: "Type \"I UNDERSTAND\" to confirm you have read the documentation and accept the warranty and longevity risks"
+                placeholder: "I UNDERSTAND"
+                regex: '^I UNDERSTAND$'
               - name: PANDA_BREATH_IP
                 label: Panda Breath IP Address
                 placeholder: "192.168.1.100"
