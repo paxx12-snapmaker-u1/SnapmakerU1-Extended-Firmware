@@ -6,7 +6,7 @@ CAMERA_INTERNAL=$(/usr/local/bin/extended-config.py get "$EXTENDED_CFG" camera i
 CMD_PYTHON3=/usr/bin/python3
 
 BED_CHECK_MODEL=/etc/unisrv/camera_service/model/bed_check.fp.rknn
-BED_CHECK_LABELS=item,nozzle,legend_text,extrusion_line,light_spot
+BED_CHECK_LABELS=item,nozzle,legend_text,extrusion_line
 
 PRINT_CHECK_MODEL=/etc/unisrv/camera_service/model/print_check.fp.rknn
 PRINT_CHECK_LABELS=noodle
