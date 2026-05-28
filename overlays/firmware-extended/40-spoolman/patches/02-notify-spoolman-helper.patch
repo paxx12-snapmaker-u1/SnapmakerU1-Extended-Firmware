@@ -1,0 +1,39 @@
+--- rootfs.original/home/lava/klipper/klippy/extras/filament_detect.py	2026-03-31 11:43:53
++++ rootfs/home/lava/klipper/klippy/extras/filament_detect.py	2026-03-31 11:09:30
+@@ -54,7 +54,14 @@
+ 
+         self.webhooks = self.printer.lookup_object('webhooks')
+         self.webhooks.register_endpoint("filament_detect/set", self._handle_filament_detect_set)
++        
++        self.spoolman = None
+ 
++    def getSpoolman(self):
++        if not self.spoolman:
++            self.spoolman = self.printer.lookup_object("spoolman_helper", None)
++        return self.spoolman
++
+     def _ready(self):
+         self.filament_feed_objects = self.printer.lookup_objects('filament_feed')
+         self._fm175xx_reader = self.printer.lookup_object('fm175xx_reader')
+@@ -148,6 +155,10 @@
+ 
+         self._state[channel] = FILAMENT_DT_STATE_IDLE
+         self._filament_info_update(channel, filament_info, is_clear)
++        
++        spoolman = self.getSpoolman()
++        if spoolman:
++            spoolman.set_spool_for_channel(channel, filament_info)
+ 
+     def register_cb_2_update_filament_info(self, cb):
+         try:
+@@ -176,6 +187,10 @@
+         else:
+             self._state[channel] = FILAMENT_DT_STATE_IDLE
+             self._filament_info_update(channel, copy.deepcopy(filament_protocol.FILAMENT_INFO_STRUCT), True)
++        
++        spoolman = self.getSpoolman()
++        if spoolman:
++            spoolman.clear_spool_for_channel(channel)
+ 
+     def get_a_filament_info(self, channel):
+         error = FILAMENT_DT_ERR

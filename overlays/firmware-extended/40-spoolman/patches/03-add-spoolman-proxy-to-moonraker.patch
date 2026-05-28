@@ -1,0 +1,54 @@
+--- rootfs.original/home/lava//moonraker/moonraker/components/spoolman.py	2025-12-30 05:40:53
++++ rootfs/home/lava//moonraker/moonraker/components/spoolman.py	2026-01-15 02:15:08
+@@ -5,7 +5,7 @@
+ # This file may be distributed under the terms of the GNU GPLv3 license.
+ 
+ from __future__ import annotations
+-import asyncio
++import asyncio, json
+ import logging
+ import re
+ import contextlib
+@@ -69,8 +69,42 @@
+         self._register_endpoints()
+         self.server.register_remote_method(
+             "spoolman_set_active_spool", self.set_active_spool
++        )
++
++
++        self.server.register_remote_method(
++            "spoolman_proxy", self.rpc_spoolman_proxy
++        )
++
++    async def rpc_spoolman_proxy(self, cb_endpoint, request_method, path, query=None, body=None):
++        query_str = f"?{query}" if query else ""
++        full_url = f"{self.spoolman_url}{path}{query_str}"
++
++        logging.info(f"Spoolman proxy: {full_url}")
++
++        response = await self.http_client.request(
++            method=request_method,
++            url=full_url,
++            body=body
+         )
+ 
++        if response.has_error():
++            payload = None
++            error = {"status_code": response.status_code, "message": str(response.error)}
++            logging.info(f"Spoolman proxy: error {json.dumps(error)}")
++        else:
++            payload = response.json()
++            logging.info(f"Spoolman proxy: payload {json.dumps(payload)}")
++            error = None
++
++        await self.klippy_apis._send_klippy_request(
++            cb_endpoint,
++            {"payload": payload, "error": error},
++            default=None
++        )
++
++        return None
++
+     def _get_spoolman_urls(self, config: ConfigHelper) -> None:
+         orig_url = config.get('server')
+         url_match = re.match(r"(?i:(?P<scheme>https?)://)?(?P<host>.+)", orig_url)

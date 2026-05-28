@@ -165,6 +165,7 @@ def openspool_parse_payload(payload, card_uid=[]):
         info['MAIN_TYPE'] = data.get('type', 'PLA').upper()
         info['SUB_TYPE'] = data.get('subtype', 'Basic')
         info['TRAY'] = 0
+        info['SPOOL_ID'] = data.get('spool_id', '0')
 
         info['COLOR_NUMS'] = 1
         info['RGB_1'] = parse_color_hex(data.get('color_hex', 'FFFFFF'))
