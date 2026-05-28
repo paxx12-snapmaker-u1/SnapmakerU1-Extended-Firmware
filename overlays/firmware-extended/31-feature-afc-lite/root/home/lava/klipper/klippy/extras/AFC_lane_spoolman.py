@@ -342,7 +342,7 @@ class AFCLaneSpoolman:
                 color_hex = multi_color_hexes.split(',')[0]
         if not color_hex:
             color_hex = 'FFFFFFFF'
-        sub_type = filament.get('extra', {}).get('sub_type', 'Basic')
+        sub_type = filament.get('extra', {}).get('sub_type', '')
         weight = response.get('remaining_weight', -1)
         lot_nr = response.get('lot_nr', None)
 
