@@ -271,6 +271,12 @@ class SpoolLink:
             f" FILAMENT_SPOOL_ID={spool_id}"
             f" FORCE=1"
         )
+        logger.info(
+            "ch%d: applying spool %s — %s %s%s #%s (card %s)",
+            channel, spool_id, vendor, material,
+            f" {variant}" if variant else "",
+            color_hex, uid_hex or "none",
+        )
         try:
             await ws.send_json({
                 "jsonrpc": "2.0",
@@ -281,7 +287,7 @@ class SpoolLink:
         except Exception as e:
             logger.error("ch%d: failed to set filament: %s", channel, e)
             return
-        logger.info("ch%d: applied spool %s (card %s)", channel, spool_id, uid_hex)
+        logger.info("ch%d: spool %s applied", channel, spool_id)
 
 
 def main():
