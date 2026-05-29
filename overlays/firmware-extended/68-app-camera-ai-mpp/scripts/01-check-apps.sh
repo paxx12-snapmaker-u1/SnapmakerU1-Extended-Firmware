@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-EXPECTED_SHA256="da24c3113bf89030246f16ffa8f62c87287173b41f1f99ba6e9a435a968cd8e8"
+EXPECTED_SHA256="ab19f2051b845c1db06a5b7f164b88e5242bd4f3d01dc190254e9b4bab1f348f"
 
 if [[ $# -ne 1 ]]; then
     echo "Usage: $0 <rootfs-dir>"

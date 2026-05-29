@@ -2,15 +2,12 @@ status:
   version:
     title: System Information
     items:
-      - label: Base Firmware
+      - label: Base
         cmd: cat /etc/FULLVERSION
-      - label: Build Version
+      - label: Version
         cmd: cat /etc/BUILD_VERSION
-      - label: Build Profile
+      - label: Profile
         cmd: cat /etc/BUILD_PROFILE
-  firmware:
-    title: Firmware Information
-    items:
       - label: Active Firmware
         cmd: "awk '/android.*slot.*=/{gsub(/.*=/,\"\"); print ($0==\"_a\")?\"A\":\"B\"}' /proc/cmdline"
       - label: Device Name

@@ -288,3 +288,4 @@ If an invalid configuration breaks Moonraker (printer won't connect to WiFi):
 - [Klipper Print Hooks](klipper_hooks.md) - React to print lifecycle events via hook macros
 - [Data Persistence](data_persistence.md) - Understanding persistent storage
 - [VPN Remote Access](vpn.md) - Secure remote access via Tailscale
+- [Panda Breath Chamber Heater](panda_breath.md) - BIQU Panda Breath integration with Klipper

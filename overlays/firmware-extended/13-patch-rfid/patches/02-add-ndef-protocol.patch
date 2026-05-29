@@ -1,14 +1,13 @@
 diff -uNr rootfs.original/home/lava/klipper/klippy/extras/filament_detect.py rootfs/home/lava/klipper/klippy/extras/filament_detect.py
 --- rootfs.original/home/lava/klipper/klippy/extras/filament_detect.py	2025-11-06 05:01:19.000000000 +0100
 +++ rootfs/home/lava/klipper/klippy/extras/filament_detect.py	2025-12-01 23:11:18.373585258 +0100
-@@ -1,5 +1,6 @@
- import logging, copy, os
+@@ -1,4 +1,5 @@
+ import logging, os
  from . import filament_protocol
 +from . import filament_protocol_ndef
  from . import fm175xx_reader
- from . import filament_feed
- 
-@@ -124,6 +125,14 @@
+
+@@ -123,6 +124,14 @@
                      filament_info = info
                  else:
                      logging.error("channel[%d] m1 parse err: %d", channel, error)
@@ -22,4 +21,4 @@ diff -uNr rootfs.original/home/lava/klipper/klippy/extras/filament_detect.py roo
 +                    logging.error("channel[%d] NDEF parse err....", channel)
          else:
              is_clear = True
- 
+

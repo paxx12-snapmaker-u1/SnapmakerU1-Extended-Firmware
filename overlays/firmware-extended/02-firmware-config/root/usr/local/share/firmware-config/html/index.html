@@ -42,7 +42,7 @@
         .row-help:hover { text-decoration: none; opacity: 0.8; }
         .row select { align-self: flex-start; background: var(--card); border: 1px solid #555; border-radius: 6px; padding: 8px 12px; color: var(--text); font-size: 13px; cursor: pointer; min-width: 150px; max-width: 150px; }
         .row select:focus { outline: none; border-color: var(--accent); }
-        .links-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+        .links-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; }
         .link-item { background: var(--item); padding: 12px 16px; border-radius: 6px; text-decoration: none; display: flex; align-items: center; gap: 10px; transition: background 0.2s; }
         .link-item:hover { background: var(--hover); }
         .link-icon { font-size: 20px; }
@@ -143,6 +143,7 @@
     <div class="modal-overlay" id="confirm-modal">
         <div class="modal">
             <div class="modal-title" id="confirm-title"></div>
+            <div id="confirm-help-link" style="display:none;margin-top:-10px;margin-bottom:16px;font-size:13px;"></div>
             <div class="modal-message" id="confirm-message" style="white-space:pre-wrap"></div>
             <div id="confirm-input-wrap" style="display:none;"></div>
             <div class="modal-buttons">
@@ -327,7 +328,7 @@
                                     <span class="row-label">${setting.label}${setting.help_url ? `<a class="row-help" href="${setting.help_url}" target="_blank" onclick="event.stopPropagation()">↗</a>` : ''}</span>
                                     ${setting.description ? `<span class="row-desc">${setting.description}</span>` : ''}
                                 </div>
-                                <select data-prev-value="${setting.current}" onchange="updateSetting('${setting.id}', this)">${options}</select>
+                                <select data-prev-value="${setting.current}" data-help-url="${setting.help_url || ''}" onchange="updateSetting('${setting.id}', this)">${options}</select>
                             </div>`;
                         }).join('')}
                     </div>`
@@ -440,9 +441,16 @@
             return values;
         }
 
-        function showConfirmModal(title, message, onConfirm, onCancel, inputs) {
+        function showConfirmModal(title, message, onConfirm, onCancel, inputs, helpUrl) {
             $('confirm-title').textContent = title;
             $('confirm-message').textContent = message;
+            const helpLinkEl = $('confirm-help-link');
+            if (helpUrl) {
+                helpLinkEl.innerHTML = `<a href="${helpUrl}" target="_blank">View documentation</a>`;
+                helpLinkEl.style.display = 'block';
+            } else {
+                helpLinkEl.style.display = 'none';
+            }
             renderConfirmInputs(inputs);
             validateConfirmInputs();
             $('confirm-btn').onclick = () => {
@@ -718,7 +726,9 @@
             const optLabel = decodeURIComponent(selectedOption.dataset.label || value);
             const confirmMsg = decodeURIComponent(selectedOption.dataset.confirm || '');
             const inputs = JSON.parse(decodeURIComponent(selectedOption.dataset.inputs || 'null'));
-            const label = selectEl.parentElement.querySelector('.row-label').textContent;
+            const labelEl = selectEl.parentElement.querySelector('.row-label');
+            const label = Array.from(labelEl.childNodes).filter(n => n.nodeType === Node.TEXT_NODE).map(n => n.textContent).join('').trim();
+            const helpUrl = selectEl.dataset.helpUrl || '';
 
             const message = confirmMsg || `Change ${label} to "${optLabel}"?`;
             const warning = '⚠️ Warning: Changing settings will restart services and may interrupt printing.';
@@ -728,7 +738,8 @@
                 `${message}\n\n${warning}`,
                 (inputValues) => { selectEl.dataset.prevValue = value; doUpdateSetting(key, value, inputValues); },
                 () => { selectEl.value = prevValue; },
-                inputs
+                inputs,
+                helpUrl
             );
         }
 
