@@ -124,3 +124,37 @@ settings:
                 /etc/init.d/S99v4l2-mpp-mipi restart &&
                 /etc/init.d/S99v4l2-mpp-usb restart
         default: "false"
+
+      camera-fps:
+        label: Capture Frame Rate (paxx12 only)
+        description: >-
+          Frame rate for the internal MIPI camera. If the live view flickers or
+          pulses, the capture rate is likely beating against your mains/LED
+          frequency. Pick the rate that divides your mains frequency evenly:
+          30 fps for 60 Hz regions (e.g. North America), 25 fps for 50 Hz
+          regions (e.g. UK/EU/most of Asia).
+        get_cmd:
+          - /usr/local/bin/extended-config.py
+          - get
+          - /home/lava/printer_data/config/extended/extended2.cfg
+          - camera
+          - fps
+          - "30"
+        options:
+          "30":
+            label: 30 fps (60 Hz mains)
+            cmd:
+              - bash
+              - -xc
+              - |
+                /usr/local/bin/extended-config.py add /home/lava/printer_data/config/extended/extended2.cfg camera fps 30 &&
+                /etc/init.d/S99v4l2-mpp-mipi restart
+          "25":
+            label: 25 fps (50 Hz mains)
+            cmd:
+              - bash
+              - -xc
+              - |
+                /usr/local/bin/extended-config.py add /home/lava/printer_data/config/extended/extended2.cfg camera fps 25 &&
+                /etc/init.d/S99v4l2-mpp-mipi restart
+        default: "30"
