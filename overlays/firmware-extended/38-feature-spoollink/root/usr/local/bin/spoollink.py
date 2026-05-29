@@ -116,10 +116,17 @@ async def _test_connection(spoolman_url: str) -> bool:
 
 
 class SpoolLink:
-    def __init__(self, spoolman_url: str, cache_dir: str = None):
+    def __init__(self, spoolman_url: str, cache_dir: str = None, debug: bool = False):
         self._spoolman_url = spoolman_url.rstrip("/")
         self._cache_dir = cache_dir
+        self._debug = debug
         self._msg_id = 0
+        self._channel_uids: dict = {}
+
+    async def _ws_send(self, ws, payload: dict):
+        if self._debug:
+            logger.debug(">> %s", json.dumps(payload))
+        await ws.send_json(payload)
 
     def _cache_path(self, card_uid: str):
         if not self._cache_dir:
@@ -167,9 +174,11 @@ class SpoolLink:
                 await asyncio.sleep(RECONNECT_DELAY)
 
     async def _ws_loop(self, session):
+        self._channel_uids = {}
+        self._subscribe_id = None
         async with session.ws_connect(MOONRAKER_WS) as ws:
             logger.info("connected to Moonraker")
-            await ws.send_json({
+            await self._ws_send(ws, {
                 "jsonrpc": "2.0",
                 "method": "server.connection.identify",
                 "params": {
@@ -180,14 +189,23 @@ class SpoolLink:
                 },
                 "id": self._next_id(),
             })
-            await ws.send_json({
+            await self._ws_send(ws, {
                 "jsonrpc": "2.0",
                 "method": "connection.register_remote_method",
                 "params": {"method_name": "spoollink_resolve_spool"},
                 "id": self._next_id(),
             })
+            self._subscribe_id = self._next_id()
+            await self._ws_send(ws, {
+                "jsonrpc": "2.0",
+                "method": "printer.objects.subscribe",
+                "params": {"objects": {"filament_detect": None}},
+                "id": self._subscribe_id,
+            })
             async for msg in ws:
                 if msg.type == aiohttp.WSMsgType.TEXT:
+                    if self._debug:
+                        logger.debug("<< %s", msg.data)
                     data = json.loads(msg.data)
                     asyncio.ensure_future(self._handle(session, ws, data))
                 elif msg.type in (aiohttp.WSMsgType.ERROR, aiohttp.WSMsgType.CLOSE):
@@ -195,20 +213,63 @@ class SpoolLink:
                     break
 
     async def _handle(self, session, ws, data):
-        if data.get("method") != "spoollink_resolve_spool":
-            return
-        params = data.get("params", {})
-        channel = params.get("channel")
-        if channel is None:
-            logger.error("spoollink_resolve_spool: missing channel")
-            return
-        asyncio.ensure_future(
-            self._resolve_spool(
-                session, ws, channel,
-                spool_id=params.get("spool_id") or None,
-                card_uid=params.get("card_uid") or None,
+        if (
+            self._subscribe_id is not None
+            and data.get("id") == self._subscribe_id
+            and "result" in data
+        ):
+            status = data["result"].get("status", {})
+            asyncio.ensure_future(
+                self._handle_status_update(session, ws, {"params": [status]})
             )
-        )
+            return
+        method = data.get("method")
+        if method == "notify_status_update":
+            asyncio.ensure_future(self._handle_status_update(session, ws, data))
+        elif method == "spoollink_resolve_spool":
+            params = data.get("params", {})
+            channel = params.get("channel")
+            if channel is None:
+                logger.error("spoollink_resolve_spool: missing channel")
+                return
+            asyncio.ensure_future(
+                self._resolve_spool(
+                    session, ws, channel,
+                    spool_id=params.get("spool_id") or None,
+                    card_uid=params.get("card_uid") or None,
+                )
+            )
+
+    @staticmethod
+    def _uid_to_hex(uid_raw) -> str:
+        if not uid_raw:
+            return ""
+        if isinstance(uid_raw, (list, tuple)):
+            if all(b == 0 for b in uid_raw):
+                return ""
+            return "".join(f"{b:02X}" for b in uid_raw)
+        return ""
+
+    async def _handle_status_update(self, session, ws, data):
+        params = data.get("params", [{}])
+        status = params[0] if params else {}
+        fd = status.get("filament_detect")
+        if fd is None:
+            return
+        info_list = fd.get("info", [])
+        logger.debug("filament_detect: received %d channel(s)", len(info_list))
+        for ch, info in enumerate(info_list):
+            if not isinstance(info, dict):
+                continue
+            uid_hex = self._uid_to_hex(info.get("CARD_UID"))
+            prev = self._channel_uids.get(ch, "")
+            self._channel_uids[ch] = uid_hex
+            logger.debug("filament_detect: ch%d uid=%s (prev=%s)", ch, uid_hex or "none", prev or "none")
+            if uid_hex and uid_hex != prev:
+                logger.info("ch%d: card UID changed to %s, triggering auto-discovery", ch, uid_hex)
+                asyncio.ensure_future(
+                    self._resolve_spool(session, ws, ch, card_uid=uid_hex)
+                )
 
     async def _retry(self, fn, *args, retries=3, **kwargs):
         delay = 1.0
@@ -322,7 +383,7 @@ class SpoolLink:
             color_hex, uid_hex or "none",
         )
         try:
-            await ws.send_json({
+            await self._ws_send(ws, {
                 "jsonrpc": "2.0",
                 "method": "printer.gcode.script",
                 "params": {"script": script},
@@ -339,6 +400,7 @@ def main():
     parser.add_argument("url", metavar="spoolman-url", help="Spoolman base URL")
     parser.add_argument("--test", action="store_true", help="Validate connectivity and exit")
     parser.add_argument("--cache-dir", metavar="DIR", help="Directory for card UID spool cache")
+    parser.add_argument("--debug", action="store_true", help="Log raw WebSocket messages")
     args = parser.parse_args()
 
     if args.test:
@@ -347,7 +409,7 @@ def main():
     _setup_logging()
     logger.info("spoollink starting (spoolman: %s, cache: %s)", args.url, args.cache_dir or "disabled")
     try:
-        asyncio.run(SpoolLink(args.url, cache_dir=args.cache_dir).run())
+        asyncio.run(SpoolLink(args.url, cache_dir=args.cache_dir, debug=args.debug).run())
     except KeyboardInterrupt:
         logger.info("spoollink stopped")
 
