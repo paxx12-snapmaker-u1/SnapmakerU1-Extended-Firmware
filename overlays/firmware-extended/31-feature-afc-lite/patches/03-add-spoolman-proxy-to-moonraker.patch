@@ -41,7 +41,25 @@
 +            error = {"status_code": response.status_code, "message": str(response.error)}
 +            logging.info(f"Spoolman proxy: error {json.dumps(error)}")
 +        else:
-+            payload = response.json()
+             # Store the raw, uncleaned JSON response separately
++            payload_raw = response.json()
+             # Recursive cleaner to sanitize metadata against literal or escaped quotes
+            def clean_json_structure(obj):
+                if isinstance(obj, dict):
+                    return {k: clean_json_structure(v) for k, v in obj.items()}
+                elif isinstance(obj, list):
+                    return [clean_json_structure(i) for i in obj]
+                elif isinstance(obj, str):
+                    # .strip('"') shaves off outer literal quotation marks at the string flanks
+                    # .replace() rules clean out lingering escaped symbols and backslashes
+                    return obj.strip('"').replace('"', '').replace('\\', '').strip()
+                return obj
+
+            # Process the raw payload into the final cleaned payload variable
+            if payload_raw:
+                payload = clean_json_structure(payload_raw)
+            else:
+                payload = None
 +            logging.info(f"Spoolman proxy: payload {json.dumps(payload)}")
 +            error = None
 +
