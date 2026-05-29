@@ -1,6 +1,4 @@
-import json
 import logging
-import os
 
 class AFCLaneState:
     EMPTY = "empty"
@@ -25,8 +23,14 @@ class AFCLane:
         self.print_task_config = None
         self.toolhead_sensor = None
         self.filament_feed = None
+        self._weight = 1000
 
         self.printer.register_event_handler("klippy:connect", self._handle_connect)
+        self.gcode.register_mux_command(
+            'SET_WEIGHT', 'LANE', self.name, self._cmd_set_weight)
+
+    def set_weight(self, weight):
+        self._weight = weight
 
     def _handle_connect(self):
         try:
@@ -45,6 +49,9 @@ class AFCLane:
                 self.toolhead_sensor = self.printer.lookup_object(self.toolhead_sensor_name)
             except:
                 pass
+
+    def _cmd_set_weight(self, gcmd):
+        self.set_weight(gcmd.get_float('WEIGHT', minval=0))
 
     def _get_state(self, eventtime=None):
         """Get filament info from print_task_config based on lane index"""
@@ -69,6 +76,7 @@ class AFCLane:
             state['type'] = dict(enumerate(status.get('filament_type', []))).get(self.lane_index, 'NONE')
             state['subtype'] = dict(enumerate(status.get('filament_sub_type', []))).get(self.lane_index, 'NONE')
             state['color'] = dict(enumerate(status.get('filament_color_rgba', []))).get(self.lane_index, 'FFFFFFFF')
+            state['spool_id'] = dict(enumerate(status.get('filament_spool_id', []))).get(self.lane_index, 0)
             if status.get('auto_replenish_filament', False):
                 state['runout_lane'] = 'AUTO'
 
@@ -104,9 +112,9 @@ class AFCLane:
         response['tool_loaded'] = state.get('tool_loaded', response['load'])
         response['loaded_to_hub'] = False
         response['material'] = state.get('type', 'NONE')
-        response['spool_id'] = None
+        response['spool_id'] = state.get('spool_id', 0)
         response['color'] = f"#{state.get('color', 'FFFFFFFF')[:6]}" # RGB only, ignore alpha
-        response['weight'] = 1000 # AFC doesn't track weight
+        response['weight'] = self._weight
         response['runout_lane'] = state.get('runout_lane', '?')
         response['filament_status'] = 'unknown'
         response['filament_status_led'] = 'gray'

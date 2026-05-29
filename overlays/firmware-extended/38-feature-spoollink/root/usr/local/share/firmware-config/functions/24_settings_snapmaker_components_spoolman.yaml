@@ -1,0 +1,60 @@
+settings:
+  snapmaker_components:
+    items:
+      spoolman:
+        label: Spoolman Integration
+        description: Track filament usage and metadata with Spoolman spool management.
+        help_url: http://snapmakeru1-extended-firmware.pages.dev/spoolman
+        get_cmd:
+          - bash
+          - -c
+          - /usr/local/bin/extended-config.py get /oem/printer_data/config/extended/moonraker/spoollink.cfg spoolman server 2>/dev/null | grep -q . && echo "enabled" || echo "disabled"
+        options:
+          enabled:
+            label: Enabled
+            confirm: "Enable Spoolman integration? Enter the Spoolman server URL below.\n\nSpoolman tracks filament usage and lets you manage spool metadata from your web frontend."
+            inputs:
+              - name: SPOOLMAN_URL
+                label: Spoolman URL
+                placeholder: "http://192.168.1.100:7912"
+                regex: "^https?://.+"
+            cmd:
+              - bash
+              - -c
+              - |
+                URL="${SPOOLMAN_URL%/}"
+                /usr/local/bin/spoollink.py --test "${URL}" || {
+                  echo "ERROR: Spoolman validation failed."
+                  exit 1
+                }
+                cp /usr/local/share/firmware-config/tweaks/moonraker/spoollink.cfg /oem/printer_data/config/extended/moonraker/spoollink.cfg || {
+                  echo "ERROR: Failed to copy spoollink config."
+                  exit 1
+                }
+                chown lava:lava /oem/printer_data/config/extended/moonraker/spoollink.cfg
+                /usr/local/bin/extended-config.py update /oem/printer_data/config/extended/moonraker/spoollink.cfg spoolman server "${URL}" || {
+                  echo "ERROR: Failed to set Spoolman server URL."
+                  exit 1
+                }
+                ln -sf /usr/local/share/firmware-config/tweaks/klipper/spoollink.cfg /oem/printer_data/config/extended/klipper/spoollink.cfg || {
+                  echo "ERROR: Failed to link spoollink Klipper config."
+                  exit 1
+                }
+                chown -h lava:lava /oem/printer_data/config/extended/klipper/spoollink.cfg
+                echo "Spoolman enabled. Restarting Klipper, Moonraker and starting Spoolman's SpoolLink..."
+                /etc/init.d/S60klipper restart
+                /etc/init.d/S61moonraker restart
+                /etc/init.d/S99spoollink restart
+          disabled:
+            label: Disabled
+            cmd:
+              - bash
+              - -xc
+              - |
+                /etc/init.d/S99spoollink stop
+                rm -vf /oem/printer_data/config/extended/klipper/spoollink.cfg
+                rm -vf /oem/printer_data/config/extended/moonraker/spoollink.cfg
+                echo "Spoolman's SpoolLink disabled. Restarting Klipper and Moonraker..."
+                /etc/init.d/S60klipper restart
+                /etc/init.d/S61moonraker restart
+        default: disabled

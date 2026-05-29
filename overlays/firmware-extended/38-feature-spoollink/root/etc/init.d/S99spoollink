@@ -1,0 +1,54 @@
+#!/bin/sh
+
+PIDFILE="/var/run/spoollink.pid"
+SPOOLMAN_CFG="/oem/printer_data/config/extended/moonraker/spoollink.cfg"
+
+start() {
+    SPOOLMAN_URL=$(/usr/local/bin/extended-config.py get "$SPOOLMAN_CFG" spoolman server 2>/dev/null)
+    if [ -z "$SPOOLMAN_URL" ]; then
+        echo "Spoolman not configured, not starting spoollink."
+        return 0
+    fi
+
+    if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
+        echo "spoollink already running"
+        return 0
+    fi
+
+    printf "Starting spoollink: "
+    start-stop-daemon -S -b -m \
+        -p "$PIDFILE" \
+        -x /usr/bin/python3 -- /usr/local/bin/spoollink.py "$SPOOLMAN_URL"
+    echo "OK"
+}
+
+stop() {
+    printf "Stopping spoollink: "
+    if [ -f "$PIDFILE" ]; then
+        start-stop-daemon -K -p "$PIDFILE" -s TERM
+        rm -f "$PIDFILE"
+        echo "OK"
+    else
+        echo "not running"
+    fi
+}
+
+case "$1" in
+    start)
+        start
+        ;;
+    stop)
+        stop
+        ;;
+    restart|reload)
+        stop
+        sleep 1
+        start
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|restart}"
+        exit 1
+        ;;
+esac
+
+exit $?
