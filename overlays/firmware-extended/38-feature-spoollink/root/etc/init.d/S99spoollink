@@ -2,6 +2,7 @@
 
 PIDFILE="/var/run/spoollink.pid"
 SPOOLMAN_CFG="/oem/printer_data/config/extended/moonraker/spoollink.cfg"
+CACHE_DIR="/oem/printer_data/config/extended/spoollink"
 
 start() {
     SPOOLMAN_URL=$(/usr/local/bin/extended-config.py get "$SPOOLMAN_CFG" spoolman server 2>/dev/null)
@@ -15,10 +16,12 @@ start() {
         return 0
     fi
 
+    mkdir -p "$CACHE_DIR"
     printf "Starting spoollink: "
     start-stop-daemon -S -b -m \
         -p "$PIDFILE" \
-        -x /usr/bin/python3 -- /usr/local/bin/spoollink.py "$SPOOLMAN_URL"
+        -x /usr/bin/python3 -- /usr/local/bin/spoollink.py "$SPOOLMAN_URL" \
+        --cache-dir "$CACHE_DIR"
     echo "OK"
 }
 

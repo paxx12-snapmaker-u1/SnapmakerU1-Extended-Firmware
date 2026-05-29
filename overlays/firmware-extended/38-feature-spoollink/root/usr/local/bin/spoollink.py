@@ -116,9 +116,42 @@ async def _test_connection(spoolman_url: str) -> bool:
 
 
 class SpoolLink:
-    def __init__(self, spoolman_url: str):
+    def __init__(self, spoolman_url: str, cache_dir: str = None):
         self._spoolman_url = spoolman_url.rstrip("/")
+        self._cache_dir = cache_dir
         self._msg_id = 0
+
+    def _cache_path(self, card_uid: str):
+        if not self._cache_dir:
+            return None
+        return os.path.join(self._cache_dir, f"{card_uid.upper()}.json")
+
+    def _load_cache(self, card_uid: str):
+        path = self._cache_path(card_uid)
+        if not path:
+            return None
+        try:
+            with open(path) as f:
+                spool = json.load(f)
+            logger.info("cache hit for card %s (spool %s)", card_uid, spool.get("id"))
+            return spool
+        except FileNotFoundError:
+            return None
+        except Exception as e:
+            logger.warning("cache read failed for %s: %s", card_uid, e)
+            return None
+
+    def _save_cache(self, card_uid: str, spool: dict):
+        path = self._cache_path(card_uid)
+        if not path:
+            return
+        try:
+            os.makedirs(self._cache_dir, exist_ok=True)
+            with open(path, "w") as f:
+                json.dump(spool, f)
+            logger.debug("cached spool %s for card %s", spool.get("id"), card_uid)
+        except Exception as e:
+            logger.warning("cache write failed for %s: %s", card_uid, e)
 
     def _next_id(self):
         self._msg_id += 1
@@ -224,23 +257,31 @@ class SpoolLink:
     async def _resolve_spool(self, session, ws, channel, spool_id=None, card_uid=None):
         spool_by_id = None
         spool_by_card = None
+        spoolman_ok = True
 
         if spool_id is not None:
             try:
                 spool_by_id = await self._retry(self._spoolman_get_by_id, session, spool_id)
             except Exception as e:
                 logger.error("ch%d: fetch spool %s failed: %s", channel, spool_id, e)
+                spoolman_ok = False
 
         if card_uid is not None:
             try:
                 spool_by_card = await self._retry(self._spoolman_get_by_card, session, card_uid)
             except Exception as e:
                 logger.error("ch%d: fetch by card failed: %s", channel, e)
+                spoolman_ok = False
 
         spool = spool_by_id or spool_by_card
         if spool is None:
-            logger.debug("ch%d: no spool resolved (spool_id=%s card=%s)", channel, spool_id, card_uid)
-            return
+            if card_uid is not None and not spoolman_ok:
+                spool = self._load_cache(card_uid)
+                if spool is not None:
+                    logger.warning("ch%d: using cached data for card %s", channel, card_uid)
+            if spool is None:
+                logger.debug("ch%d: no spool resolved (spool_id=%s card=%s)", channel, spool_id, card_uid)
+                return
 
         if card_uid is not None and spool_by_id is not None:
             if card_uid.upper() not in _parse_card_uids(spool_by_id):
@@ -251,6 +292,9 @@ class SpoolLink:
                     logger.info("ch%d: bound spool %s to card %s", channel, spool_by_id["id"], card_uid)
                 except Exception as e:
                     logger.error("ch%d: bind spool %s failed: %s", channel, spool_by_id["id"], e)
+
+        if card_uid is not None and spoolman_ok:
+            self._save_cache(card_uid, spool)
 
         await self._apply_spool(ws, channel, spool, card_uid or "")
 
@@ -294,15 +338,16 @@ def main():
     parser = argparse.ArgumentParser(prog="spoollink")
     parser.add_argument("url", metavar="spoolman-url", help="Spoolman base URL")
     parser.add_argument("--test", action="store_true", help="Validate connectivity and exit")
+    parser.add_argument("--cache-dir", metavar="DIR", help="Directory for card UID spool cache")
     args = parser.parse_args()
 
     if args.test:
         sys.exit(0 if asyncio.run(_test_connection(args.url)) else 1)
 
     _setup_logging()
-    logger.info("spoollink starting (spoolman: %s)", args.url)
+    logger.info("spoollink starting (spoolman: %s, cache: %s)", args.url, args.cache_dir or "disabled")
     try:
-        asyncio.run(SpoolLink(args.url).run())
+        asyncio.run(SpoolLink(args.url, cache_dir=args.cache_dir).run())
     except KeyboardInterrupt:
         logger.info("spoollink stopped")
 
