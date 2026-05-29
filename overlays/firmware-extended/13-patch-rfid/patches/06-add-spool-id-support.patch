@@ -16,6 +16,15 @@
              if self.filament_param_obj is not None:
                  tmp_print_task_config['filament_soft'][channel] = \
                      self.filament_param_obj.get_is_soft(info['VENDOR'], info['MAIN_TYPE'], info['SUB_TYPE'])
+@@ -374,6 +374,8 @@
+ 
+         # do not use run_script_from_command api
+         self.gcode.run_script(f"FLOW_RESET_K EXTRUDER={channel}\r\n")
++        if self.printer.lookup_object('gcode_macro _RESOLVE_FILAMENT_CONFIG', None) is not None:
++            self.gcode.run_script(f"_RESOLVE_FILAMENT_CONFIG EXTRUDER={channel}\r\n")
+ 
+     def get_extruder_map_table(self):
+         return self.print_task_config['extruder_map_table']
 @@ -282,6 +284,8 @@
              if self.print_task_config['filament_exist'][ch]:
                  if self.print_task_config['filament_official'][ch] == True:
@@ -42,15 +51,6 @@
 
              # alpha
              if filament_alpha == None:
-@@ -374,6 +374,8 @@
- 
-         # do not use run_script_from_command api
-         self.gcode.run_script(f"FLOW_RESET_K EXTRUDER={channel}\r\n")
-+        if self.printer.lookup_object('gcode_macro _RESOLVE_FILAMENT_CONFIG', None) is not None:
-+            self.gcode.run_script(f"_RESOLVE_FILAMENT_CONFIG EXTRUDER={channel}\r\n")
- 
-     def get_extruder_map_table(self):
-         return self.print_task_config['extruder_map_table']
 @@ -403,6 +411,7 @@
  
              tmp_print_task_config['filament_official'][config_extruder] = False
