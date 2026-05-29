@@ -63,6 +63,7 @@ Heavily expanded firmware with extensive features and customization:
 - [Faulty Toolhead Bypass](faulty_toolhead.md) - Temporary bypass for one failed toolhead thermistor so the other toolheads can still be used
 - [RFID Filament Tag Support](rfid_support.md) - NTAG213/215/216 support for OpenSpool format
 - [Alternative Filament Detection](rfid_support.md#alternative-detection-systems) - Alternative detection implementations with extended spool/tag support from Bambu, Creality, Anycubic, and others
+- [Spoolman Integration](spoolman.md) - Automatic filament metadata sync and spool tracking via Spoolman, resolving spools by ID or RFID card UID
 
 **Monitoring & Notifications:**
 

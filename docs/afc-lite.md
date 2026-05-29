@@ -76,3 +76,7 @@ rm /oem/printer_data/config/extended/klipper/afc.cfg
 
 ![AFC Tools Remapping](images/afc_tools.gif)
 
+## See Also
+
+- [Spoolman Integration](spoolman.md) — automatic spool lookup, card UID binding, and active spool tracking via the SpoolLink component
+
