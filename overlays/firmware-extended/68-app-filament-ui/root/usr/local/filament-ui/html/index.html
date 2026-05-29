@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Filament Manager</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+    <h1>Filament Manager</h1>
+    <div class="status-bar">
+        <span id="connection-status" class="status-dot disconnected"></span>
+        <span id="connection-text">Connecting…</span>
+        <button id="refresh-all" class="header-btn" disabled>Read spool tags</button>
+    </div>
+</header>
+
+<main class="content">
+    <div id="channels-grid" class="channels-grid"></div>
+    <div id="status-message" class="status-message"></div>
+</main>
+
+<!-- User Filament Modal -->
+<div id="overwrite-modal" class="tag-edit-overlay" style="display:none">
+    <div class="tag-edit-dialog" role="dialog" aria-modal="true">
+        <div class="tag-edit-header">
+            <h2 class="tag-edit-title" id="overwrite-modal-title">User Filament</h2>
+            <button class="tag-edit-close modal-close-ow" type="button" aria-label="Close">&times;</button>
+        </div>
+        <div class="tag-edit-body">
+            <form id="overwrite-form">
+                <input type="hidden" name="channel" value="0">
+
+                <div id="overwrite-warning" class="overwrite-warning" style="display:none"></div>
+
+                <label class="form-label field-block">Material *
+                    <div class="palette" id="ow-material-palette"></div>
+                    <input type="hidden" name="type" id="ow-material-value">
+                </label>
+
+                <label class="form-label field-block">Brand *
+                    <div class="palette" id="ow-brand-palette"></div>
+                    <input type="text" id="ow-brand-custom" class="brand-custom-input" placeholder="Enter custom brand" style="display:none">
+                    <input type="hidden" name="brand" id="ow-brand-value" value="Generic">
+                </label>
+
+                <label class="form-label field-block">Subtype
+                    <div class="palette" id="ow-subtype-palette"></div>
+                    <input type="hidden" name="subtype" id="ow-subtype-value" value="Basic">
+                </label>
+
+                <label class="form-label field-block">Colors
+                    <div class="color-list" id="ow-color-list"></div>
+                    <div class="opacity-input-group">
+                        <span class="opacity-label">Opacity</span>
+                        <input type="range" id="ow-color-opacity" min="0" max="100" value="100" step="1">
+                        <span class="opacity-value" id="ow-color-opacity-value">100%</span>
+                    </div>
+                </label>
+                <input type="hidden" name="alpha" id="ow-color-alpha" value="FF">
+                <div class="modal-actions">
+                    <button type="button" class="modal-btn-cancel modal-close-ow">Cancel</button>
+                    <button type="submit" class="modal-btn-submit">Save Filament</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div id="info-popover" class="info-popover" style="display:none"></div>
+
+<!-- Tag Mismatch Modal -->
+<div id="mismatch-modal" class="tag-edit-overlay" style="display:none">
+    <div class="tag-edit-dialog" role="dialog" aria-modal="true">
+        <div class="tag-edit-header">
+            <h2 class="tag-edit-title" id="mismatch-modal-title">Tag Mismatch</h2>
+            <button class="tag-edit-close" id="mismatch-close" type="button" aria-label="Close">&times;</button>
+        </div>
+        <div class="tag-edit-body">
+            <p class="mismatch-intro">The RFID tag currently detected differs from the printer's loaded configuration.</p>
+            <div id="mismatch-content" class="mismatch-table"></div>
+            <div class="modal-actions">
+                <button type="button" id="mismatch-apply" class="modal-btn-submit">Apply RFID to Printer</button>
+                <button type="button" id="mismatch-cancel" class="modal-btn-cancel">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Spoolman Spool Picker Modal -->
+<div id="spoolman-modal" class="tag-edit-overlay" style="display:none">
+    <div class="tag-edit-dialog spoolman-dialog" role="dialog" aria-modal="true">
+        <div class="tag-edit-header">
+            <h2 class="tag-edit-title" id="spoolman-modal-title">Pick Spool</h2>
+            <button class="tag-edit-close" id="spoolman-close" type="button" aria-label="Close">&times;</button>
+        </div>
+        <div class="tag-edit-body spoolman-body">
+            <input type="text" id="spoolman-search" class="spoolman-search" placeholder="Filter by name, brand, or material…" autocomplete="off">
+            <div id="spoolman-list" class="spoolman-list"></div>
+            <div class="modal-actions">
+                <button type="button" id="spoolman-clear" class="modal-btn-danger">Clear</button>
+                <button type="button" id="spoolman-cancel" class="modal-btn-cancel">Cancel</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>
