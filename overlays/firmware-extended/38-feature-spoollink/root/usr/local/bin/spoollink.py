@@ -156,7 +156,7 @@ class SpoolLink:
             os.makedirs(self._cache_dir, exist_ok=True)
             with open(path, "w") as f:
                 json.dump(spool, f)
-            logger.debug("cached spool %s for card %s", spool.get("id"), card_uid)
+            logger.info("cached spool %s for card %s", spool.get("id"), card_uid)
         except Exception as e:
             logger.warning("cache write failed for %s: %s", card_uid, e)
 
@@ -289,14 +289,14 @@ class SpoolLink:
         ) as resp:
             return await resp.json() if resp.status == 200 else None
 
-    async def _spoolman_get_by_card(self, session, card_uid):
+    async def _spoolman_find_by_card(self, session, card_uid):
         async with session.get(
             f"{self._spoolman_url}/api/v1/spool?limit=1000&allow_archived=true",
             raise_for_status=False,
         ) as resp:
             spools = await resp.json() if resp.status == 200 else []
         uid_upper = card_uid.upper()
-        return next((s for s in spools if uid_upper in _parse_card_uids(s)), None)
+        return [s for s in spools if uid_upper in _parse_card_uids(s)]
 
     async def _spoolman_add_card_uid(self, session, spool, card_uid):
         uid_upper = card_uid.upper()
@@ -315,9 +315,26 @@ class SpoolLink:
             body = await resp.text()
             raise RuntimeError(f"HTTP {resp.status}: {body}")
 
+    async def _spoolman_remove_card_uid(self, session, spool, card_uid):
+        uid_upper = card_uid.upper()
+        existing = _parse_card_uids(spool)
+        if uid_upper not in existing:
+            return spool
+        updated = [u for u in existing if u != uid_upper]
+        encoded = json.dumps(",".join(updated))
+        async with session.patch(
+            f"{self._spoolman_url}/api/v1/spool/{spool['id']}",
+            json={"extra": {"card_uids": encoded}},
+            raise_for_status=False,
+        ) as resp:
+            if resp.status == 200:
+                return await resp.json()
+            body = await resp.text()
+            raise RuntimeError(f"HTTP {resp.status}: {body}")
+
     async def _resolve_spool(self, session, ws, channel, spool_id=None, card_uid=None):
         spool_by_id = None
-        spool_by_card = None
+        spools_by_card = []
         spoolman_ok = True
 
         if spool_id is not None:
@@ -329,11 +346,12 @@ class SpoolLink:
 
         if card_uid is not None:
             try:
-                spool_by_card = await self._retry(self._spoolman_get_by_card, session, card_uid)
+                spools_by_card = await self._retry(self._spoolman_find_by_card, session, card_uid)
             except Exception as e:
                 logger.error("ch%d: fetch by card failed: %s", channel, e)
                 spoolman_ok = False
 
+        spool_by_card = spools_by_card[0] if spools_by_card else None
         spool = spool_by_id or spool_by_card
         if spool is None:
             if card_uid is not None and not spoolman_ok:
@@ -353,6 +371,15 @@ class SpoolLink:
                     logger.info("ch%d: bound spool %s to card %s", channel, spool_by_id["id"], card_uid)
                 except Exception as e:
                     logger.error("ch%d: bind spool %s failed: %s", channel, spool_by_id["id"], e)
+
+            for stale in spools_by_card:
+                if stale["id"] == spool_by_id["id"]:
+                    continue
+                try:
+                    await self._retry(self._spoolman_remove_card_uid, session, stale, card_uid)
+                    logger.info("ch%d: unbound card %s from spool %s", channel, card_uid, stale["id"])
+                except Exception as e:
+                    logger.error("ch%d: unbind card %s from spool %s failed: %s", channel, card_uid, stale["id"], e)
 
         if card_uid is not None and spoolman_ok:
             self._save_cache(card_uid, spool)
