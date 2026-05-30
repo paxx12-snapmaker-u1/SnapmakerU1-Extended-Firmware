@@ -1,0 +1,27 @@
+From 62351025f7a8bde0de99bc5b1ea3964d6d4f816b Mon Sep 17 00:00:00 2001
+From: jimmyjon711 <jcmadill1@gmail.com>
+Date: Sat, 30 May 2026 13:45:04 -0700
+Subject: [PATCH 1/1] Adding set_read_tolerance method to temperature_combined
+ file so that users can combine sensors to become one
+
+---
+ klippy/extras/temperature_combined.py | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/klippy/extras/temperature_combined.py b/klippy/extras/temperature_combined.py
+index 95416619..8f89aeb3 100644
+--- a/klippy/extras/temperature_combined.py
++++ b/klippy/extras/temperature_combined.py
+@@ -116,6 +116,9 @@ class PrinterSensorCombined:
+         # set next update time
+         return measured_time + REPORT_TIME
+ 
++    def set_read_tolerance(self, read_time_tol, min_update_ratio):
++        pass
++
+ 
+ def mean(values):
+     if not values:
+-- 
+2.32.0.windows.1
+
