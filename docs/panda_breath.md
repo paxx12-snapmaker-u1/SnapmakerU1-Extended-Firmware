@@ -27,6 +27,14 @@ Printable cooling solutions available on MakerWorld:
 
 See also: [Quick overview on fan mods applied for Snapmaker U1](https://www.reddit.com/r/SnapmakerU1/comments/1tlk27r/quick_overview_on_fan_mods_applied_for_snapmaker/) — community thread covering additional fan mod approaches (to be evaluated).
 
+### Cavity Over-Temperature Safety Cutoff
+
+Because the Panda Breath is exposed to Klipper as a `heater_generic`, it regulates **only on the Panda's own sensor** and has no awareness of the U1 enclosure temperature. Active motherboard cooling is the primary mitigation, but there is no independent cutoff if the enclosure still runs away (for example a stuck heater, a failed mainboard fan, or an unusually hot bed plus high ambient).
+
+To cover this, enabling Panda Breath also installs an independent safety guard. A self-rearming `[delayed_gcode]` watches the stock `[temperature_sensor cavity]` enclosure sensor and, if it exceeds a limit (default **70 °C**, a margin below the 85 °C SoC throttle point), forces chamber heating off (`M141 S0`), drives the `cavity_fan` to full, and prints a warning to the console. This runs in both auto and manual modes and is independent of the Panda device's own sensor and network connectivity.
+
+The guard is conservative by default (it cuts heating but does not interrupt the print). To tune the limit or have it pause the print on trip, override the guard's variables from your user config — see the comments at the top of `panda_breath_cavity_guard.cfg`.
+
 ## Prerequisites
 
 1. **Install motherboard cooling** — see [Risks and Warranty](#risks-and-warranty) above.
