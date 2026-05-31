@@ -142,6 +142,7 @@ To enable it, navigate to the [firmware-config](firmware_config.md) web interfac
 | [OpenSpool](https://openspool.io/) | Yes | - |
 | TigerTag | Yes | Fully offline implementation |
 | Qidi | Yes | - |
+| [SpoolEase](https://spoolease.io/) | No | NTAG NDEF tags; enable the processor to use |
 
 ### Bambu / Creality Spool Configuration
 
@@ -178,6 +179,13 @@ Enable them by removing the `#` prefix from the tag processor.
 
 ```
 # [elegoo_tag_processor]
+```
+
+[SpoolEase](https://spoolease.io/) tags (NTAG NDEF) are also supported but not
+enabled by default. Add the processor to the same file to use them:
+
+```ini
+[spoolease_tag_processor]
 ```
 
 ## Troubleshooting
