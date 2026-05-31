@@ -1,0 +1,23 @@
+status:
+  mmc:
+    title: eMMC & Performance
+    if_cmd: test -d /sys/bus/mmc/devices/mmc0:*
+    items:
+      - label: Uptime
+        cmd: |-
+          awk '{s=int($1); d=s/86400; h=s%86400/3600; m=s%3600/60; if(d>0) printf "%dd %dh %dm\n",d,h,m; else if(h>0) printf "%dh %dm\n",h,m; else printf "%dm\n",m}' /proc/uptime
+      - label: Load Avg
+        cmd: |-
+          awk '{print $1" "$2" "$3}' /proc/loadavg
+      - label: CPU Freq
+        cmd: |-
+          awk '{printf "%d MHz\n",$1/1000}' /sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq 2>/dev/null
+      - label: CPU Temp
+        cmd: |-
+          awk '{printf "%.1f C\n",$1/1000}' /sys/class/thermal/thermal_zone0/temp 2>/dev/null
+      - label: eMMC Pre-EOL
+        cmd: |-
+          awk '{if($0=="0x01") print "Normal"; else if($0=="0x02") print "Warning (80%+ used)"; else if($0=="0x03") print "Urgent (90%+ used)"; else print $0}' /sys/bus/mmc/devices/mmc0:*/pre_eol_info 2>/dev/null
+      - label: eMMC Life Time
+        cmd: |-
+          awk '{a=($1+0); b=($2+0); pa=(a==0?"N/A":(a<=10?(a-1)*10"%":">100%")); pb=(b==0?"N/A":(b<=10?(b-1)*10"%":">100%")); printf "%s / %s\n",pa,pb}' /sys/bus/mmc/devices/mmc0:*/life_time 2>/dev/null

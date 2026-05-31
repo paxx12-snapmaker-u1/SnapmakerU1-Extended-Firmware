@@ -1,9 +1,9 @@
 settings:
-  tweaks:
+  print_preferences:
     items:
       timelapse_force:
         label: Force Timelapse
-        description: Allows TIMELAPSE_START to work even when timelapse is not enabled in the Snapmaker app. Your slicer must call TIMELAPSE_START, TIMELAPSE_TAKE_FRAME, and TIMELAPSE_STOP.
+        description: Forces timelapse regardless if configured in the Snapmaker app. Your slicer must call TIMELAPSE_START, TIMELAPSE_TAKE_FRAME, and TIMELAPSE_STOP.
         help_url: http://snapmakeru1-extended-firmware.pages.dev/tweaks#force-timelapse
         get_cmd:
           - bash

@@ -1,5 +1,5 @@
 settings:
-  tweaks:
+  snapmaker_components:
     items:
       afc:
         label: AFC Lite via Fluidd/Mainsail

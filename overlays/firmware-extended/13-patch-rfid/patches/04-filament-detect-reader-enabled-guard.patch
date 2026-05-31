@@ -25,7 +25,7 @@
              self._fm175xx_reader.request_clear_card_info(channel)
 +        else:
 +            self._state[channel] = FILAMENT_DT_STATE_IDLE
-+            self._filament_info_update(channel, copy.deepcopy(filament_protocol.FILAMENT_INFO_STRUCT), True)
++            self._filament_info_update(channel, dict(filament_protocol.FILAMENT_INFO_STRUCT), True)
  
      def get_a_filament_info(self, channel):
          error = FILAMENT_DT_ERR

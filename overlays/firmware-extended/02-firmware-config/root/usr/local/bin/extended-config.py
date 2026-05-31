@@ -134,6 +134,25 @@ def uncomment_section(cfg_file, section_name):
     else:
         print(f"No section found to uncomment")
 
+def has_section(cfg_file, section):
+    """Check if a section exists in the config file."""
+    if not os.path.exists(cfg_file):
+        print(f"ERROR: Config file '{cfg_file}' does not exist", file=sys.stderr)
+        sys.exit(1)
+
+    with open(cfg_file, 'r') as f:
+        lines = f.readlines()
+
+    section_re = re.compile(rf"^\s*\[\s*{re.escape(section)}\s*\]\s*$")
+
+    for line in lines:
+        if section_re.match(line):
+            print("yes")
+            return
+
+    print("no")
+    sys.exit(1)
+
 def main():
     if len(sys.argv) < 2:
         print("Usage: extended-config.py <operation> <cfg_file> <section> [key] [value]", file=sys.stderr)
@@ -142,6 +161,7 @@ def main():
         print("  update <cfg_file> <section> <key> <value> - Update existing config value only", file=sys.stderr)
         print("  comment <cfg_file> <section>              - Comment section header", file=sys.stderr)
         print("  uncomment <cfg_file> <section>            - Uncomment section header", file=sys.stderr)
+        print("  has <cfg_file> <section>                  - Check if section exists (exit 0=yes, 1=no)", file=sys.stderr)
         sys.exit(1)
 
     if sys.argv[1] == 'get' and len(sys.argv) == 5:
@@ -162,6 +182,9 @@ def main():
     elif sys.argv[1] == 'uncomment' and len(sys.argv) == 4:
         _, cfg_file, section = sys.argv[1:4]
         uncomment_section(cfg_file, section)
+    elif sys.argv[1] == 'has' and len(sys.argv) == 4:
+        _, cfg_file, section = sys.argv[1:4]
+        has_section(cfg_file, section)
     else:
         print("ERROR: Invalid arguments", file=sys.stderr)
         sys.exit(1)

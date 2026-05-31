@@ -1,5 +1,5 @@
 settings:
-  tweaks:
+  print_preferences:
     items:
       bed_leveling_force:
         label: Force Bed Mesh Calibration
@@ -31,7 +31,7 @@ settings:
                 /etc/init.d/S60klipper restart
           adaptive:
             label: Force Adaptive Mesh
-            confirm: "Force adaptive bed mesh calibration before every print? Falls back to full mesh when exclude_object is not active."
+            confirm: "Force adaptive bed mesh calibration before every print? Falls back to full mesh when exclude_object is not active. Make sure to enable 'Exclude Object' in your slicer so Klipper receives object boundary data — without it, adaptive mesh always falls back to a full mesh."
             cmd:
               - bash
               - -xc
