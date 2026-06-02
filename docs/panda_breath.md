@@ -30,7 +30,7 @@ See also: [Quick overview on fan mods applied for Snapmaker U1](https://www.redd
 ## Prerequisites
 
 1. **Install motherboard cooling** — see [Risks and Warranty](#risks-and-warranty) above.
-2. Panda Breath device running firmware **v1.0.3** or later (required for auto mode).
+2. Panda Breath device running firmware **v1.0.3**.
 3. **Static DHCP leases** for both the printer and the Panda Breath device on your router. The printer IP is embedded into the Panda Breath device during setup and must not change on reboot. Klipper connects to the Panda Breath by IP address on every print.
 4. Power-cycle the Panda Breath and wait at least 5 seconds before enabling.
 
@@ -42,7 +42,7 @@ Two modes are available:
 
 | Mode | Description |
 |------|-------------|
-| **Auto** (recommended) | Klipper heats the chamber to target, then hands off hold and cool-down to Panda native auto mode. Requires firmware v1.0.3+. |
+| **Auto** (recommended) | Klipper heats the chamber to target, then hands off hold and cool-down to Panda native auto mode. Requires firmware v1.0.3. |
 | **Manual** (advanced) | Pure `heater_generic` control throughout. Legacy fallback; less safe if the device or network is lost during a print. |
 
 During setup the web interface will ask for the Panda Breath IP address and will automatically bind the device to the printer.
