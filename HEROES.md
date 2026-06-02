@@ -16,9 +16,17 @@ You can thank them here:
 | [@Argolein](https://github.com/Argolein) | `@Argolein` | TMC motor driver optimizations and Klipper patches | |
 | [@mcristina422](https://github.com/mcristina422) | | Tailscale VPN remote access | |
 | [@MaxKaenner](https://github.com/MaxKaenner) | | Filament auto-replenish bug fix | |
-| [@justinh-rahb](https://github.com/justinh-rahb) | `@wildtang3nt` | V4L2 camera controls and Mainsail Remote Screen support | [![Buy Me A Coffee](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://buymeacoffee.com/wildtang3nt) |
+| [@justinh-rahb](https://github.com/justinh-rahb) | `@wildtang3nt` | V4L2 camera controls, Mainsail Remote Screen support, Panda Breath chamber heater | [![Buy Me A Coffee](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://buymeacoffee.com/wildtang3nt) |
 | [@suchmememanyskill](https://github.com/suchmememanyskill) | `@Sims` | OpenRFID | [![Ko-Fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/suchmememanyskill) |
 | [@morgendagen](https://github.com/morgendagen) | | OpenSpool `subtype` field for material specification | |
+
+---
+
+## v1.4.0-paxx12-18
+
+| Contributor | Contribution | PR |
+|---|---|---|
+| [@justinh-rahb](https://github.com/justinh-rahb) | Panda Breath chamber heater support | [#347](https://github.com/paxx12/SnapmakerU1-Extended-Firmware/pull/347) |
 
 ---
 
