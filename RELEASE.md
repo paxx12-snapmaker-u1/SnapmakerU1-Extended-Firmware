@@ -2,6 +2,8 @@
 
 > **Warning**: While installing custom firmware does not automatically void the product warranty, any damage caused by or attributable to the installation or use of custom firmware is not covered under warranty. Use at your own risk. See [Snapmaker Terms of Use](https://www.snapmaker.com/terms-of-use) for details.
 >
+> If you notice a problem, always reproduce it on stock firmware before contacting Snapmaker support. Despite our best efforts, bugs can occur. Only contact support if the issue also occurs on stock firmware.
+>
 > Custom firmware is intended for users with appropriate technical knowledge. Ensure you understand the implications before proceeding.
 
 ## New Features and Key Changes
@@ -26,9 +28,7 @@ Quick steps:
 
 ## Troubleshooting
 
-- **Configuration change**: Since the `v1.1.0` all features has to be configured with http://IP/firmware-config.
 - **Klipper failed to start**: Open Firmware Config at `http://IP/firmware-config`, go to `Recovery` and select `Reset Extended to Defaults`. This will reset all extended settings and reboot the printer.
-- **AFC-Lite Stub**: Has number of [limitations](http://snapmakeru1-extended-firmware.pages.dev/afc-lite#limitations).
 
 ## Revert
 
