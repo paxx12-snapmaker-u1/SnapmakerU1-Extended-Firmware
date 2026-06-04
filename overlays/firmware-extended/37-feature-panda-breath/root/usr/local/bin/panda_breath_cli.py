@@ -9,12 +9,10 @@ import os
 import socket
 import struct
 import sys
-from time import sleep
+from time import monotonic, sleep
 
 host = "PandaBreath.local"
 port = 80
-sock = None
-settings = {}
 debug = False
 
 
@@ -24,12 +22,11 @@ def _debug_print(prefix, text):
 
 
 def ws_open(path="/ws", timeout=10.):
-    global sock, settings
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.settimeout(timeout)
-    s.connect((host, port))
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.settimeout(timeout)
+    sock.connect((host, port))
     key = base64.b64encode(os.urandom(16)).decode()
-    s.sendall((
+    sock.sendall((
         "GET {path} HTTP/1.1\r\n"
         "Host: {host}:{port}\r\n"
         "Upgrade: websocket\r\n"
@@ -40,18 +37,18 @@ def ws_open(path="/ws", timeout=10.):
     ).format(path=path, host=host, port=port, key=key).encode())
     buf = b""
     while b"\r\n\r\n" not in buf:
-        chunk = s.recv(1024)
+        chunk = sock.recv(1024)
         if not chunk:
             raise ConnectionError("WS handshake: connection closed")
         buf += chunk
     status_line = buf.split(b"\r\n")[0]
     if b"101" not in status_line:
         raise ConnectionError("WS handshake failed: %s" % status_line.decode(errors="replace"))
-    sock = s
-    settings = ws_recv_json()
+    settings = ws_recv_json(sock, match=lambda r: "settings" in r)
+    return sock, settings
 
 
-def ws_send(text):
+def ws_send(sock, text):
     _debug_print(">>", text)
     payload = text.encode("utf-8")
     length = len(payload)
@@ -66,17 +63,22 @@ def ws_send(text):
     sock.sendall(header + mask + masked)
 
 
-def ws_recv(match=None, timeout=30):
+def ws_recv(sock, match=None, sock_timeout=5, timeout=60):
+    deadline = monotonic() + timeout
+
     def recv_exact(n):
         buf = bytearray()
         while len(buf) < n:
+            remaining = deadline - monotonic()
+            if remaining <= 0:
+                raise TimeoutError("WS: no response received")
+            sock.settimeout(min(sock_timeout, remaining))
             chunk = sock.recv(n - len(buf))
             if not chunk:
                 raise ConnectionError("WS: connection closed mid-frame")
             buf.extend(chunk)
         return bytes(buf)
 
-    sock.settimeout(timeout)
     while True:
         header = recv_exact(2)
         opcode = header[0] & 0x0F
@@ -99,81 +101,118 @@ def ws_recv(match=None, timeout=30):
                 return text
 
 
-def ws_send_json(obj):
-    ws_send(json.dumps(obj))
+def ws_send_json(sock, obj):
+    ws_send(sock, json.dumps(obj))
 
 
-def ws_recv_json(match=None, timeout=30):
+def ws_recv_json(sock, match=None, sock_timeout=5, timeout=60):
     return json.loads(ws_recv(
+        sock,
         match=None if match is None else lambda text: match(json.loads(text)),
+        sock_timeout=sock_timeout,
         timeout=timeout,
     ))
 
 
-def ws_close():
-    global sock
+def ws_close(sock):
     try:
         sock.close()
     except Exception:
         pass
-    sock = None
 
 
-def unbind(device_settings):
-    state = device_settings.get("printer", {}).get("state", 0)
-    if state == 0:
-        print("Device is already disconnected.")
-        return
-    print(f"Disconnecting printer (state={state})...")
-    ws_send('{"printer":{"disconnect":1}}')
-    ws_recv_json(match=lambda r: r.get("printer", {}).get("state") == 0)
-    print()
-    print("Unbind successful.")
+def ws_open_retry(n=1, delay=1):
+    for attempt in range(n):
+        try:
+            return ws_open()
+        except Exception as e:
+            _debug_print("ws_open_retry", f"attempt {attempt + 1} failed: {e}, retrying in {delay}s")
+            sleep(delay)
+    return ws_open()
 
 
-def bind_klipper(printer_ip, printer_port, firmware_version, device_settings):
-    firmware = device_settings.get("settings", {}).get("fw_version", "")
-    if firmware != firmware_version:
-        print(f"Error: expected firmware {firmware_version}, got '{firmware}'", file=sys.stderr)
+def ws_conn(fn, *args):
+    sock, settings = ws_open_retry()
+    try:
+        return fn(sock, settings, *args)
+    finally:
+        ws_close(sock)
+
+
+def check_fw_version(sock, settings, expected):
+    firmware = settings.get("settings", {}).get("fw_version", "")
+    if firmware != expected:
+        print(f"Error: expected firmware {expected}, got '{firmware}'", file=sys.stderr)
         sys.exit(1)
     print(f"Firmware OK: {firmware}")
     print()
 
-    # state 1: invalid info, 2: connecting, 3: connected, 4: ip err, 5: sn err, 6: access code, 7: unknown err
 
-    if device_settings.get("printer", {}).get("state", 0) in [1, 2, 3, 4, 5, 6]:
-        print("Disconnecting any existing printer ...")
-        ws_send('{"printer":{"disconnect":1}}')
-        ws_recv_json(match=lambda r: r.get("printer", {}).get("state") == 0)
-        sleep(1)
+PRINTER_STATE_DISCONNECTED = 0
+PRINTER_STATE_INVALID_INFO = 1
+PRINTER_STATE_CONNECTING = 2
+PRINTER_STATE_CONNECTED = 3
+PRINTER_STATE_IP_ERROR = 4
+PRINTER_STATE_SN_ERROR = 5
+PRINTER_STATE_ACCESS_CODE_ERROR = 6
+PRINTER_STATE_UNKNOWN_ERROR = 7
 
-    if device_settings.get("settings", {}).get("printer_type") != 2:
-        print("Setting printer type to Klipper...")
-        ws_send_json({"settings": {"printer_type": 2}})
-        resp = ws_recv_json(match=lambda r: r.get("response", {}).get("type") == "printer_type")
-        if resp.get("response", {}).get("ok") != 1:
-            print("Error: printer_type change was not acknowledged", file=sys.stderr)
-            sys.exit(1)
-        print("Printer type set to Klipper.")
-        print()
-        sleep(1)
+PRINTER_TYPE_BAMBU = 1
+PRINTER_TYPE_KLIPPER = 2
 
+PRINTER_STATES_ACTIVE = {
+    PRINTER_STATE_CONNECTING,
+    PRINTER_STATE_CONNECTED,
+    PRINTER_STATE_IP_ERROR,
+    PRINTER_STATE_SN_ERROR,
+    PRINTER_STATE_ACCESS_CODE_ERROR,
+}
+
+
+def set_printer_type(sock, settings, printer_type):
+    if settings.get("settings", {}).get("printer_type") == printer_type:
+        return
+    print(f"Setting printer type to {printer_type}...")
+    ws_send_json(sock, {"settings": {"printer_type": printer_type}})
+    resp = ws_recv_json(sock, match=lambda r: r.get("response", {}).get("type") == "printer_type")
+    if resp.get("response", {}).get("ok") != 1:
+        print("Error: printer_type change was not acknowledged", file=sys.stderr)
+        sys.exit(1)
+    print(f"Printer type set to {printer_type}.")
+    print()
+
+
+def bind_printer(sock, settings, printer_ip, printer_port):
     print(f"Binding to {printer_ip}:{printer_port} ...")
-    ws_send_json({"printer": {"name": "Klipper", "ip": printer_ip, "port": printer_port}})
-    resp = ws_recv_json(match=lambda r: "state" in r.get("printer", {}) and r.get("printer", {}).get("state") != 2)
+    ws_send_json(sock, {"printer": {"name": "Klipper", "ip": printer_ip, "port": printer_port}})
+    resp = ws_recv_json(sock, match=lambda r: "state" in r.get("printer", {}) and r.get("printer", {}).get("state") != PRINTER_STATE_CONNECTING)
     state = resp.get("printer", {}).get("state")
-    if state == 3:
-        print("Device reported successful connection.")
+    if state == PRINTER_STATE_CONNECTED:
         print("Bind successful.")
         return
-    if state == 4:
+    if state == PRINTER_STATE_IP_ERROR:
         print("Error: printer IP address error", file=sys.stderr)
         sys.exit(1)
-    if state == 1:
+    if state == PRINTER_STATE_INVALID_INFO:
         print("Error: invalid printer info", file=sys.stderr)
         sys.exit(1)
     print(f"Device reported state {state}: unknown error", file=sys.stderr)
     sys.exit(1)
+
+
+def print_fw_version(sock, settings):
+    print(settings.get("settings", {}).get("fw_version", "unknown"))
+
+
+def unbind_printer(sock, settings):
+    state = settings.get("printer", {}).get("state", 0)
+    if state in (PRINTER_STATE_DISCONNECTED, PRINTER_STATE_INVALID_INFO):
+        return
+    print(f"Disconnecting printer (state={state})...")
+    ws_send_json(sock, {"printer": {"disconnect": 1}})
+    ws_recv_json(sock, match=lambda r: r.get("printer", {}).get("state") == PRINTER_STATE_DISCONNECTED)
+    print("Unbind successful.")
+    print()
 
 
 def main():
@@ -200,16 +239,17 @@ def main():
     debug = args.debug
 
     print(f"Connecting to ws://{host}:{port}/ws ...")
-    ws_open()
-    try:
-        if args.command == "version":
-            print(settings.get("settings", {}).get("fw_version", "unknown"))
-        elif args.command == "unbind":
-            unbind(settings)
-        elif args.command == "bind-klipper":
-            bind_klipper(args.printer_ip, args.printer_port, args.version, settings)
-    finally:
-        ws_close()
+    if args.command == "version":
+        ws_conn(print_fw_version)
+    elif args.command == "unbind":
+        ws_conn(unbind_printer)
+    elif args.command == "bind-klipper":
+        ws_conn(check_fw_version, args.version)
+        ws_conn(unbind_printer)
+        ws_conn(set_printer_type, PRINTER_TYPE_KLIPPER)
+        # unbind again in case printer_type change caused a reconnect (previously saved Klipper)
+        ws_conn(unbind_printer)
+        ws_conn(bind_printer, args.printer_ip, args.printer_port)
 
 
 if __name__ == "__main__":
