@@ -17,7 +17,7 @@ start_octoeverywhere() {
 
     printf "Starting moonraker_octoeverywhere: "
     mkdir -p "$OCTOEVERYWHERE_STATE_DIR"
-    mv "$OCTOEVERYWHERE_LOGFILE" "$OCTOEVERYWHERE_LOGFILE.old"
+    mv "$OCTOEVERYWHERE_LOGFILE" "$OCTOEVERYWHERE_LOGFILE.old" 2>/dev/null || true
 
     start-stop-daemon -S -b -m -u lava \
         -p "$OCTOEVERYWHERE_PIDFILE" \

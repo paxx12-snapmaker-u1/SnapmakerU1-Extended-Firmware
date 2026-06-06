@@ -1,9 +1,10 @@
 settings:
-  remote_access:
+  cloud:
     items:
       cloud:
-        label: Cloud Access (Experimental)
-        description: Enable alternative cloud access from outside your network.
+        label: Cloud Services
+        description: Enable cloud tools like remote access, AI failure detection, notifications, MPC, etc.
+        help_url: https://snapmakeru1-extended-firmware.pages.dev/cloud
         get_cmd:
           - /usr/local/bin/extended-config.py
           - get
@@ -21,21 +22,12 @@ settings:
                 /usr/local/bin/extended-config.py add /home/lava/printer_data/config/extended/extended2.cfg remote_access cloud none &&
                 /etc/init.d/S99cloud stop
                 /usr/local/bin/octoeverywhere-pkg clean
-                rm -rf /home/lava/printer_data/octoeverywhere-store
           octoeverywhere:
             label: OctoEverywhere
             cmd:
               - bash
               - -ec
               - |
-                if test -f /oem/printer_data/config/extended/moonraker/authorization.cfg; then
-                  echo "ERROR: Authentication is incompatible with OctoEverywhere companion mode."
-                  echo "Disable authentication first to enable OctoEverywhere."
-                  exit 1
-                fi
-                echo "WARNING: OctoEverywhere support is experimental. Higher resource usage may affect print quality."
-                sleep 5
-
                 echo ">> Downloading OctoEverywhere package..."
                 /usr/local/bin/octoeverywhere-pkg download
 

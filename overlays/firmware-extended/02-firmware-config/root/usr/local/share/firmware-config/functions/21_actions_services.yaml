@@ -1,6 +1,18 @@
 actions:
   services:
     items:
+      update-octoeverywhere:
+        label: Update OctoEverywhere
+        description: Update the OctoEverywhere plugin.
+        cmd:
+          - bash
+          - -ec
+          - |
+            echo ">> Updating OctoEverywhere..."
+            /usr/local/bin/octoeverywhere-pkg update
+            echo ">> Restarting OctoEverywhere service..."
+            /etc/init.d/S99cloud restart
+
       restart-klipper:
         label: Restart Klipper
         description: Restart the Klipper firmware service.
