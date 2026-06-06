@@ -12,6 +12,7 @@ actions:
             /usr/local/bin/octoeverywhere-pkg update
             echo ">> Restarting OctoEverywhere service..."
             /etc/init.d/S99cloud restart
+        message: "Updating OctoEverywhere..."
 
       restart-klipper:
         label: Restart Klipper
