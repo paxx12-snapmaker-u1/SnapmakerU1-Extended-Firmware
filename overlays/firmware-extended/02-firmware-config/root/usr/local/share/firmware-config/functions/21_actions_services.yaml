@@ -5,8 +5,8 @@ actions:
         label: Update OctoEverywhere
         description: Update the OctoEverywhere plugin.
         cmd:
-          - bash
-          - -ec
+          - /bin/bash
+          - -xc
           - |
             echo ">> Updating OctoEverywhere..."
             /usr/local/bin/octoeverywhere-pkg update
