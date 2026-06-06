@@ -1,26 +1,25 @@
 ---
-title: Cloud Remote Access (Experimental)
+title: Cloud
 ---
 
-# Cloud Remote Access (Experimental)
+# Cloud
 
-
-Control your printer remotely using cloud-based remote access providers.
+Cloud services provide features like remote access, AI failure detection, notifications, MCP servers, etc.
 
 > **Note**: Cloud providers are downloaded on-demand when enabled by the user. See [third-party integration design](design/third_party.md) for details on how external components are managed.
 
-> **Warning**: This feature is experimental. Cloud services consume additional CPU and memory resources which may affect print quality or reliability during active prints. It is recommended to monitor system performance closely.
 
 ## Supported Providers
 
-- **none** - Cloud access disabled (default)
-- **octoeverywhere** - Remote access via [OctoEverywhere.com](https://octoeverywhere.com)
+- **none** - Cloud disabled (default)
+- **octoeverywhere** - Enables [OctoEverywhere.com](https://octoeverywhere.com) Cloud Tools
 
 ## OctoEverywhere
 
 - Access your printer remotely from anywhere
 - AI print failure detection and notifications
 - Webcam streaming and timelapse
+- AI remote MCP server support
 - Requires no port forwarding or VPN configuration
 
 ### Using firmware-config Web UI (preferred)
