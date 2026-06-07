@@ -46,6 +46,10 @@ Heavily expanded firmware with extensive features and customization:
 - [Firmware Configuration](firmware_config.md) - Customize firmware behavior via web interface or config file
 - [Fluidd or Mainsail](firmware_config.md#web) (selectable) - Choose your preferred web interface
 
+**Recovery Options:**
+
+- [Recovery](recovery.md) - Touch-based boot-time menu for resets and diagnostics (tap the screen three times at power-on), web interface recovery actions, and USB recovery file
+
 **Camera & Media:**
 
 - [Camera Support](camera_support.md) - Hardware-accelerated camera stack with WebRTC streaming for internal and USB cameras

@@ -1,0 +1,52 @@
+#!/bin/sh
+
+TRIGGER="/usr/local/bin/recovery-trigger.py"
+DAEMON="/usr/local/bin/recovery-screen.py"
+CONFIG_DIR="/usr/local/share/recovery-screen"
+FB="/dev/fb0"
+TOUCH="/dev/input/event0"
+TAP_COUNT=3
+TAP_TIMEOUT=1
+TIMEOUT=60
+
+start() {
+    if [ ! -c "$FB" ] || [ ! -e "$TOUCH" ]; then
+        echo "recovery-screen: $FB or $TOUCH not available, skipping"
+        return 0
+    fi
+
+    # Ensure framebuffer is active and unblocked before rendering.
+    echo 0 > /sys/class/graphics/fb0/state
+    echo 0 > /sys/class/graphics/fb0/blank
+
+    printf "Starting recovery-trigger: "
+    /usr/bin/python3 "$TRIGGER" \
+        --fb "$FB" \
+        --touch "$TOUCH" \
+        --tap-count "$TAP_COUNT" \
+        --tap-timeout "$TAP_TIMEOUT" \
+        || { echo "skipped"; return 0; }
+    echo "OK"
+
+    printf "Starting recovery-screen: "
+    /usr/bin/python3 "$DAEMON" \
+        --fb "$FB" \
+        --touch "$TOUCH" \
+        --config-dir "$CONFIG_DIR" \
+        --timeout "$TIMEOUT"
+    echo "OK"
+}
+
+case "$1" in
+    start)
+        start
+        ;;
+    stop|restart|reload)
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|restart}"
+        exit 1
+        ;;
+esac
+
+exit 0
