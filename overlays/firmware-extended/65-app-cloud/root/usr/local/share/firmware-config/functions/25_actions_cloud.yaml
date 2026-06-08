@@ -1,0 +1,15 @@
+quick_actions:
+  upgrades:
+    items:
+      octoeverywhere-upgrade:
+        label: Upgrade OctoEverywhere
+        description: Download and install the latest pinned OctoEverywhere version.
+        if_cmd: /usr/local/bin/octoeverywhere-pkg needs_upgrade
+        confirm: "Upgrade OctoEverywhere and restart the cloud service?"
+        cmd:
+          - bash
+          - -ec
+          - |
+            /usr/local/bin/octoeverywhere-pkg upgrade
+            /etc/init.d/S99cloud restart
+        message: "Upgrading OctoEverywhere..."

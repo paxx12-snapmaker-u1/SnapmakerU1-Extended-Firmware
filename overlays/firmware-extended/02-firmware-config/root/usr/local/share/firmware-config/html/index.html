@@ -108,6 +108,11 @@
             <div id="status-container" class="info-grid"><div class="loading"><span class="spinner"></span> Loading...</div></div>
         </div>
 
+        <div class="card" id="quick-actions-card" style="display:none">
+            <div class="card-header"><span class="card-title">Quick Actions</span></div>
+            <div id="quick-actions-container"><div class="loading"><span class="spinner"></span> Loading...</div></div>
+        </div>
+
         <div class="card">
             <div class="card-header"><span class="card-title">Quick Links</span></div>
             <div id="links-container" class="links-grid"><div class="loading"><span class="spinner"></span> Loading...</div></div>
@@ -276,13 +281,23 @@
             }
         }
 
-        async function loadActions() {
-            const container = $('actions-container');
+        async function loadActions(containerId, apiPath, cardId) {
+            const container = $(containerId);
+            const card = cardId ? $(cardId) : null;
             try {
-                const grouped = await (await apiFetch('api/actions')).json();
-                actionsData = Object.values(grouped).flatMap(g => g.items);
+                const grouped = await (await apiFetch(apiPath)).json();
 
-                container.innerHTML = Object.entries(grouped).map(([_, group]) =>
+                if (card) {
+                    if (Object.keys(grouped).length === 0) {
+                        card.style.display = 'none';
+                        return;
+                    }
+                    card.style.display = 'block';
+                }
+
+                const groupActions = Object.values(grouped).flatMap(g => g.items);
+                actionsData.push(...groupActions);
+                container.innerHTML = Object.values(grouped).map(group =>
                     `<div class="group-section">
                         <div class="group-title">${group.label}</div>
                         ${group.items.filter(action => !action.hidden || showHidden).map(action =>
@@ -297,6 +312,7 @@
                     </div>`
                 ).join('');
             } catch (e) {
+                if (card) card.style.display = 'block';
                 container.innerHTML = `<div class="loading" style="color:var(--error)">Error: ${e.message}</div>`;
             }
         }
@@ -670,6 +686,7 @@
             try {
                 const resp = await apiFetch(`api/action/${id}`, { method: 'POST' });
                 await streamResponse(resp, id);
+                refreshAll();
             } catch (e) {
                 appendLog(`\nERROR: ${e.message}`);
                 setMessage('Failed', 'var(--error)');
@@ -800,8 +817,15 @@
             const btn = document.querySelector('h1 .btn');
             btn.innerHTML = '<span class="spinner"></span> Refresh';
             btn.disabled = true;
+            actionsData = [];
             try {
-                await Promise.all([loadStatus(), loadLinks(), loadSettings(), loadActions()]);
+                await Promise.all([
+                    loadStatus(),
+                    loadLinks(),
+                    loadSettings(),
+                    loadActions('quick-actions-container', 'api/quick-actions', 'quick-actions-card'),
+                    loadActions('actions-container', 'api/actions')
+                ]);
             } finally {
                 btn.innerHTML = '&#x21bb; Refresh';
                 btn.disabled = false;

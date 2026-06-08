@@ -22,18 +22,36 @@ check() {
     fi
 }
 
-download() {
+needs_upgrade() {
+    if [[ -L "$APP_DIR/latest" ]]; then
+        [[ "$(readlink "$APP_DIR/latest")" != "OctoPrint-OctoEverywhere-${VERSION}" ]]
+    else
+        return 1
+    fi
+}
+
+upgrade() {
+    download
+}
+
+clean() {
+    echo "Removing OctoEverywhere installation..."
     rm -rf "$APP_DIR"
-    mkdir -p "$APP_DIR"
+    echo "Removed."
+}
+
+download() {
+    rm -rf "$APP_DIR/tmp"
+    mkdir -p "$APP_DIR/tmp"
 
     echo "Downloading OctoEverywhere ${VERSION} From GitHub..."
-    if ! /usr/local/bin/curl -sfSL -o "$APP_DIR/octoeverywhere.zip" "$URL"; then
+    if ! /usr/local/bin/curl -sfSL -o "$APP_DIR/tmp/octoeverywhere.zip" "$URL"; then
         echo "Download failed"
         return 1
     fi
 
     echo "Verifying SHA256 checksum..."
-    ACTUAL_SHA256=$(sha256sum "$APP_DIR/octoeverywhere.zip" | awk '{print $1}')
+    ACTUAL_SHA256=$(sha256sum "$APP_DIR/tmp/octoeverywhere.zip" | awk '{print $1}')
     if [[ "$ACTUAL_SHA256" != "$SHA256" ]]; then
         echo "SHA256 mismatch!"
         echo "  Expected: $SHA256"
@@ -43,13 +61,13 @@ download() {
     echo "Checksum verified."
 
     echo "Extracting..."
-    if ! unzip -q "$APP_DIR/octoeverywhere.zip" -d "$APP_DIR"; then
+    if ! unzip -q "$APP_DIR/tmp/octoeverywhere.zip" -d "$APP_DIR/tmp"; then
         echo "Extraction failed"
         return 1
     fi
     echo "Extraction successful."
 
-    rm -rf "$APP_DIR/octoeverywhere.zip"
+    rm -rf "$APP_DIR/tmp/octoeverywhere.zip"
 
     echo "Setting up Python virtual environment (this can take up to 60 seconds)..."
     if ! python3 -m venv "$APP_DIR/venv"; then
@@ -58,7 +76,7 @@ download() {
     fi
 
     echo "Installing dependencies (this can also take a bit)..."
-    if ! "$APP_DIR/venv/bin/pip" install --disable-pip-version-check -r "$APP_DIR/OctoPrint-OctoEverywhere-${VERSION}/requirements.txt"; then
+    if ! "$APP_DIR/venv/bin/pip" install --disable-pip-version-check -r "$APP_DIR/tmp/OctoPrint-OctoEverywhere-${VERSION}/requirements.txt"; then
         echo "Failed to install dependencies"
         return 1
     fi
@@ -69,7 +87,9 @@ download() {
     fi
 
     # GitHub archives extract to OctoPrint-OctoEverywhere-<tag>
-    ln -s "OctoPrint-OctoEverywhere-${VERSION}" "$APP_DIR/latest"
+    rm -rf "$APP_DIR/OctoPrint-OctoEverywhere-"*
+    mv "$APP_DIR/tmp/OctoPrint-OctoEverywhere-${VERSION}" "$APP_DIR/"
+    ln -sf "OctoPrint-OctoEverywhere-${VERSION}" "$APP_DIR/latest"
     echo "OctoEverywhere installed successfully to $APP_DIR"
 }
 
@@ -77,30 +97,35 @@ case "$1" in
     check)
         check
         ;;
+    needs_upgrade)
+        needs_upgrade
+        ;;
     download)
         if check; then
             echo "OctoEverywhere is already installed."
             exit 0
         fi
+        if ! clean; then
+            echo "Failed to clean old installation"
+            exit 1
+        fi
         if ! download; then
             rm -rf "$APP_DIR"
             exit 1
         fi
         ;;
-    update)
-        echo "Updating OctoEverywhere..."
-        if ! download; then
-            rm -rf "$APP_DIR"
+    upgrade)
+        echo "Upgrading OctoEverywhere..."
+        if ! upgrade; then
+            rm -rf "$APP_DIR/tmp"
             exit 1
         fi
         ;;
     clean)
-        echo "Removing OctoEverywhere installation..."
-        rm -rf "$APP_DIR"
-        echo "Removed."
+        clean
         ;;
     *)
-        echo "Usage: $0 check|download|update|clean"
+        echo "Usage: $0 check|needs_upgrade|download|upgrade|clean"
         exit 1
         ;;
 esac

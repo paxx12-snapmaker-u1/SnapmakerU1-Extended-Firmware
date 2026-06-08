@@ -23,7 +23,7 @@ def deep_merge(base, override):
 
 def load_functions_from_dir(functions_dir):
     """Load and deep merge all YAML files from a directory in sorted order."""
-    config = {'links': {}, 'settings': {}, 'actions': {}, 'status': {}, 'upgrade_url': {}, 'upgrade_upload': {}}
+    config = {'links': {}, 'settings': {}, 'actions': {}, 'quick_actions': {}, 'status': {}, 'upgrade_url': {}, 'upgrade_upload': {}}
 
     if not os.path.isdir(functions_dir):
         log(f"Functions directory not found: {functions_dir}")
@@ -58,7 +58,7 @@ def shell_to_cmd(shell, *args):
 
 class FirmwareConfigHandler(SimpleHTTPRequestHandler):
     html_dir = None
-    functions = {'settings': {}, 'links': {}, 'actions': {}, 'status': {}, 'upgrade_url': {}, 'upgrade_upload': {}}
+    functions = {'settings': {}, 'links': {}, 'actions': {}, 'quick_actions': {}, 'status': {}, 'upgrade_url': {}, 'upgrade_upload': {}}
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=self.html_dir, **kwargs)
@@ -74,8 +74,10 @@ class FirmwareConfigHandler(SimpleHTTPRequestHandler):
             self.handle_get_settings()
         elif path == "/api/links":
             self.handle_get_links()
+        elif path == "/api/quick-actions":
+            self.handle_get_actions('quick_actions')
         elif path == "/api/actions":
-            self.handle_get_actions()
+            self.handle_get_actions('actions')
         else:
             super().do_GET()
 
@@ -380,22 +382,26 @@ class FirmwareConfigHandler(SimpleHTTPRequestHandler):
             self.send_error(500, str(e))
 
     def _get_action_config(self, action_key):
-        actions = self.functions.get('actions', {})
-        for group_key, group_cfg in actions.items():
-            items = group_cfg.get('items', {})
-            if action_key in items:
-                return items[action_key]
+        for actions_cfg in (self.functions.get('quick_actions', {}), self.functions.get('actions', {})):
+            for group_key, group_cfg in actions_cfg.items():
+                items = group_cfg.get('items', {})
+                if action_key in items:
+                    return items[action_key]
         return None
 
-    def handle_get_actions(self):
+    def handle_get_actions(self, key):
         try:
-            actions_cfg = self.functions.get('actions', {})
+            actions_cfg = self.functions.get(key, {})
             result = {}
             for group_key, group_cfg in actions_cfg.items():
                 group_label = group_cfg.get('label', group_key)
                 items = group_cfg.get('items', {})
                 actions_list = []
                 for action_id, cfg in items.items():
+                    if_cmd = cfg.get('if_cmd')
+                    if if_cmd and not self._check_condition(if_cmd):
+                        continue
+
                     actions_list.append({
                         "id": action_id,
                         "label": cfg.get("label", action_id),
@@ -414,7 +420,7 @@ class FirmwareConfigHandler(SimpleHTTPRequestHandler):
 
             self.send_json(result)
         except Exception as e:
-            log(f"Get actions error: {e}")
+            log(f"Get {key} error: {e}")
             self.send_error(500, str(e))
 
     def handle_update_setting(self, setting_key, value):
