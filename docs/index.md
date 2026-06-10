@@ -47,6 +47,7 @@ Heavily expanded firmware with extensive features and customization:
 
 - [Firmware Configuration](firmware_config.md) - Customize firmware behavior via web interface or config file
 - [Fluidd or Mainsail](firmware_config.md#web) (selectable) - Choose your preferred web interface
+- [Firmware Upgrade Channels](firmware_upgrade.md) - Redirect or disable the stock firmware-update check
 
 **Camera & Media:**
 
