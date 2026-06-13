@@ -68,7 +68,7 @@ settings:
               - |
                 echo ""
                 echo ">> Detecting printer IP address..."
-                PRINTER_IP=$((ip -4 -o addr show eth0 || ip -4 -o addr show wlan0) | awk '{print $4}' | cut -d/ -f1)
+                PRINTER_IP=$((ip -4 -o addr show eth0 2>/dev/null || ip -4 -o addr show wlan0 2>/dev/null) | awk '{print $4}' | cut -d/ -f1)
 
                 echo ""
                 echo ">> Binding Panda Breath at ${PANDA_BREATH_IP} to printer at ${PRINTER_IP}..."
@@ -117,7 +117,7 @@ settings:
               - |
                 echo ""
                 echo ">> Detecting printer IP address..."
-                PRINTER_IP=$((ip -4 -o addr show eth0 || ip -4 -o addr show wlan0) | awk '{print $4}' | cut -d/ -f1)
+                PRINTER_IP=$((ip -4 -o addr show eth0 2>/dev/null || ip -4 -o addr show wlan0 2>/dev/null) | awk '{print $4}' | cut -d/ -f1)
 
                 echo ""
                 echo ">> Binding Panda Breath at ${PANDA_BREATH_IP} to printer at ${PRINTER_IP}..."
