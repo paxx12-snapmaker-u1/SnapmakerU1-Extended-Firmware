@@ -23,12 +23,6 @@ settings:
                   echo "Please switch to Fluidd first."
                   exit 1
                 fi
-                CLOUD=$(/usr/local/bin/extended-config.py get /home/lava/printer_data/config/extended/extended2.cfg remote_access cloud none)
-                if [ "$CLOUD" = "octoeverywhere" ]; then
-                  echo "ERROR: OctoEverywhere companion mode is incompatible with authentication."
-                  echo "Disable OctoEverywhere first to enable authentication."
-                  exit 1
-                fi
                 URL="http://127.0.0.1:7125"
                 echo "Deleting existing admin user..."
                 /usr/local/bin/curl -s -X DELETE "$URL/access/user" -H "Content-Type: application/json" -d '{"username": "admin"}' > /dev/null 2>&1

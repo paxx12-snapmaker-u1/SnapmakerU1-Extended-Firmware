@@ -20,16 +20,18 @@ if [[ ! -e "$STATE_DIR" ]]; then
     exit 1
 fi
 
+# Note, be sure IsCompanion is false so local Moonraker auth can be used!
 config_json() {
     cat <<"EOF"
 {
+    "MoonrakerConfigFile": "/home/lava/printer_data/config/moonraker.conf",
     "ConfigFolder": "/home/lava/printer_data/config",
     "LogFolder": "/home/lava/printer_data/logs",
     "LocalFileStoragePath": "/home/lava/printer_data/octoeverywhere-store",
     "ServiceName": "octoeverywhere",
     "VirtualEnvPath": "/oem/apps/octoeverywhere/venv",
     "RepoRootFolder": "/oem/apps/octoeverywhere/latest",
-    "IsCompanion": true
+    "IsCompanion": false
 }
 EOF
 }

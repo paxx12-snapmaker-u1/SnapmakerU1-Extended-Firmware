@@ -3,6 +3,8 @@ settings:
     label: Web
   camera:
     label: Camera
+  cloud:
+    label: Cloud
   remote_access:
     label: Remote Access
   snapmaker_components:
