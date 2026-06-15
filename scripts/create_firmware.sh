@@ -88,16 +88,16 @@ for overlay; do
     popd > /dev/null
   fi
 
+  if [[ -d "$overlay/root/" ]]; then
+    echo ">> Copying custom files..."
+    cp -rv "$overlay/root/." "$ROOTFS_DIR/"
+  fi
+
   if [[ -d "$overlay/scripts/" ]]; then
     for scriptfile in "$overlay/scripts/"*.sh; do
       echo "[+] Running script: $(basename "$scriptfile")"
       ./"$scriptfile" "$ROOTFS_DIR"
     done
-  fi
-
-  if [[ -d "$overlay/root/" ]]; then
-    echo ">> Copying custom files..."
-    cp -rv "$overlay/root/." "$ROOTFS_DIR/"
   fi
 done
 
