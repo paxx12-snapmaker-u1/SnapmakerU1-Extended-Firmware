@@ -4,6 +4,7 @@ settings:
       cloud:
         label: Cloud Access (Experimental)
         description: Enable alternative cloud access from outside your network.
+        help_url: https://snapmakeru1-extended-firmware.pages.dev/cloud
         get_cmd:
           - /usr/local/bin/extended-config.py
           - get
@@ -50,6 +51,8 @@ settings:
                 echo "If you need help, follow this guide:"
                 echo "https://octoeverywhere.com/s/snapmaker-u1"
                 echo "Contact Support: https://octoeverywhere.com/support"
+                echo ""
+                echo "If the plugin is already connected to your account, you can ignore this message."
                 echo
 
                 for i in {1..15}; do
@@ -62,4 +65,5 @@ settings:
                 done
 
                 echo "Authorization URL not found in logs. Please check the logs for more details."
+                echo "If the plugin is already connected to your account, you can ignore this message."
         default: none
