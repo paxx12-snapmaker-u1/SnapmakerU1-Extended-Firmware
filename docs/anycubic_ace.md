@@ -55,8 +55,14 @@ Settings in this group:
 
 - **Anycubic ACE** — Disabled / Enabled
 - **ACE Model** — Auto Detect / Anycubic ACE Pro / Anycubic ACE 2 Pro
-- **Filament Assist Source** — Anycubic ACE / Snapmaker U1 Feeders / Off
-- **RFID / Filament Metadata** — Existing U1 Settings / Anycubic ACE Slots / Ignore RFID
+- **Filament Assist Source** — ACE Feed Assist / U1 Feeders / Off
+
+ACE also appears in the shared RFID settings:
+
+- **RFID Hardware** — Snapmaker / External / ACE
+- **RFID Software** — Snapmaker / OpenRFID / OpenRFID (generic) / ACE
+
+The ACE options in RFID Hardware and RFID Software only appear when Anycubic ACE is enabled.
 
 ### ACE Model
 
@@ -68,25 +74,34 @@ Settings in this group:
 
 Only one assist source can be active:
 
-- `Anycubic ACE` - ACE handles feed assist while printing
-- `Snapmaker U1 Feeders` - U1 feeders handle the assist path
+- `ACE Feed Assist` - ACE handles feed assist while printing
+- `U1 Feeders` - U1 feeders handle the assist path
 - `Off` - no feed assist
 
 This avoids unsafe combinations where both ACE and U1 feeder assist try to
 control the same filament path.
 
-### RFID / Filament Metadata
+### RFID Hardware / RFID Software
 
-- `Existing U1 Settings` - keep current U1/OpenRFID metadata behavior
-- `Anycubic ACE Slots` - ACE slot RFID updates filament metadata
-- `Ignore RFID` - ACE integration does not apply RFID metadata
+RFID detection is split into hardware (physical reader) and software (tag
+decoder). Select ACE as the hardware reader to use the ACE slot RFID
+reader. Select ACE as the software decoder to use ACE-format NTAG tags
+(written via U1-RFID app with Ace Format).
 
-`Existing U1 Settings` is the safest default because Extended Firmware already
-has RFID and OpenRFID settings.
+Valid combinations:
 
-## Verifying USB Detection
+| Hardware | Software | Effect |
+|---|---|---|
+| Snapmaker | Snapmaker | U1 built-in reader, stock decoder |
+| Snapmaker | OpenRFID | U1 built-in reader, OpenRFID decoder (Bambu/Creality) |
+| External | *(hidden)* | External reader, self-contained |
+| ACE | ACE | ACE slot reader, ACE-format tags |
+| ACE | OpenRFID | ACE slot reader, OpenRFID decoder (future) |
 
-Before enabling movement commands, verify that Linux sees the ACE device:
+## USB Detection
+
+With `device_model: auto`, the model and serial path are detected automatically
+— no manual configuration needed. If you need to verify or troubleshoot:
 
 ```bash
 lsusb
@@ -105,7 +120,8 @@ Expected ACE 2 Pro path pattern:
 /dev/serial/by-id/usb-1a86_USB_Single_Serial_*
 ```
 
-If the ACE appears with a different path, update `serial:` in:
+A manual `serial:` override is only needed if your ACE enumerates with a
+non-standard USB id. In that case update the path in:
 
 ```bash
 /oem/printer_data/config/extended/klipper/ace.cfg
@@ -119,9 +135,9 @@ Important values in `extended/klipper/ace.cfg`:
 
 ```ini
 device_model: auto
-assist_source: ace
-enable_feed_assist: True
-enable_feeder_mode: False
+assist_source: snapmaker
+enable_feed_assist: False
+enable_feeder_mode: True
 rfid_source: existing
 
 feed_length_slot1: 1000

@@ -65,9 +65,9 @@ class BunnyAce:
         self.feed_speed = config.getint("feed_speed", 50, minval=1)
         self.load_speed = config.getint("load_speed", 100, minval=1)
         self.retract_speed = config.getint("retract_speed", 50, minval=1)
-        self.assist_source = config.get("assist_source", "ace").lower()
+        self.assist_source = config.get("assist_source", "snapmaker").lower()
         if self.assist_source not in ("ace", "snapmaker", "off"):
-            self.assist_source = "ace"
+            self.assist_source = "snapmaker"
         self._enable_feed_assist_from_cfg = config.getboolean(
             "enable_feed_assist", False)
         self._enable_feeder_mode_from_cfg = config.getboolean(

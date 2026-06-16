@@ -287,6 +287,9 @@ class FirmwareConfigHandler(SimpleHTTPRequestHandler):
                 items = group_cfg.get('items', {})
                 settings_list = []
                 for setting_id, config in items.items():
+                    if_cmd = config.get("if_cmd")
+                    if if_cmd and not self._check_condition(if_cmd):
+                        continue
                     try:
                         cmd_result = subprocess.run(
                             config["get_cmd"],
@@ -300,6 +303,9 @@ class FirmwareConfigHandler(SimpleHTTPRequestHandler):
 
                     options_data = {}
                     for opt_key, opt_val in config["options"].items():
+                        opt_if_cmd = opt_val.get("if_cmd")
+                        if opt_if_cmd and not self._check_condition(opt_if_cmd):
+                            continue
                         opt_info = {"label": opt_val["label"]}
                         if "confirm" in opt_val:
                             opt_info["confirm"] = opt_val["confirm"]
@@ -425,11 +431,21 @@ class FirmwareConfigHandler(SimpleHTTPRequestHandler):
                 self.send_error(400, "Invalid setting key")
                 return
 
+            if_cmd = config.get("if_cmd")
+            if if_cmd and not self._check_condition(if_cmd):
+                self.send_error(400, "Setting is not available (if_cmd check failed)")
+                return
+
             if value not in config["options"]:
                 self.send_error(400, f"Invalid value. Must be one of: {', '.join(config['options'].keys())}")
                 return
 
             option_config = config["options"][value]
+
+            opt_if_cmd = option_config.get("if_cmd")
+            if opt_if_cmd and not self._check_condition(opt_if_cmd):
+                self.send_error(400, "Setting option is not available (if_cmd check failed)")
+                return
 
             input_values = {}
             content_length = int(self.headers.get('Content-Length', 0))

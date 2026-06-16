@@ -124,11 +124,19 @@ Use the **NFC Tools** app (iOS/Android) to inspect tags:
 
 The OpenRFID detection system is an alternative to Snapmaker's built-in filament tag detection, based on the [OpenRFID](https://github.com/suchmememanyskill/OpenRFID) project. It adds support for tagged spools from multiple manufacturers.
 
-To enable it, navigate to the [firmware-config](firmware_config.md) web interface, go to **Snapmaker Components > RFID Detection System**, and select **OpenRFID** or **OpenRFID (force generic vendor)**.
+RFID detection is split into two settings in [firmware-config](firmware_config.md):
+
+- **RFID Hardware** — Select the physical reader: `Snapmaker` (U1 built-in), `External` (external reader), or `ACE` (Anycubic ACE slot reader)
+- **RFID Software** — Select the tag processing software: `Snapmaker` (stock decoder), `OpenRFID`, `OpenRFID (force generic vendor)`, or `ACE` (ACE-format tags)
+
+To enable OpenRFID, set **RFID Hardware** to `Snapmaker` and **RFID Software** to `OpenRFID` or `OpenRFID (force generic vendor)`.
 
 - **OpenRFID** - Filament is identified by brand and type. Spools unrecognized by Snapmaker Orca are hidden in Snapmaker Orca.
 - **OpenRFID (force generic vendor)** - Same as OpenRFID, but spools are labeled as Generic so they always appear in Snapmaker Orca.
-- **External** - Disables the built-in readers entirely, useful for external readers such as [wasikuss/snapmaker-u1-remote-rfid-reader](https://github.com/wasikuss/snapmaker-u1-remote-rfid-reader).
+- **External** - When Hardware is set to External, the Software dropdown is hidden — external readers provide their own software stack.
+- **ACE** - When Hardware is set to ACE, the ACE slot reader handles its own tag detection. Select ACE Software for ACE-format NTAG tags, or OpenRFID for multi-format support via ACE hardware (future).
+
+See [Anycubic ACE Pro / ACE 2 Pro](anycubic_ace.md) for ACE setup.
 
 ### Supported Tags
 

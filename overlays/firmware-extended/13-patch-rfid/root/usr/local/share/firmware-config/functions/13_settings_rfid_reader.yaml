@@ -1,37 +1,61 @@
 settings:
   snapmaker_components:
-    label: Snapmaker Components
     items:
-      rfid:
-        label: Filament Detection
-        help_url: https://snapmakeru1-extended-firmware.pages.dev/rfid_support#alternative-detection-systems
-        description: Set how filament is detected.
+      rfid_hardware:
+        label: RFID Hardware
+        description: Select the physical RFID reader hardware.
         get_cmd:
-          - /usr/local/bin/extended-config.py
-          - get
-          - /oem/printer_data/config/extended/extended2.cfg
-          - components
-          - rfid
-          - snapmaker
+          - bash
+          - -c
+          - |
+            val=$(/usr/local/bin/extended-config.py get /oem/printer_data/config/extended/extended2.cfg components rfid_hardware 2>/dev/null)
+            if [ -z "$val" ]; then
+              val=$(/usr/local/bin/extended-config.py get /oem/printer_data/config/extended/extended2.cfg components rfid snapmaker 2>/dev/null)
+            fi
+            echo "${val:-snapmaker}"
         options:
-          external:
-            label: External
-            cmd:
-              - bash
-              - -xc
-              - |
-                /usr/local/bin/extended-config.py add /oem/printer_data/config/extended/extended2.cfg components rfid external
-                /etc/init.d/S99openrfid stop
-                /etc/init.d/S59rfid-support restart
-                /etc/init.d/S60klipper restart
           snapmaker:
             label: Snapmaker
             cmd:
               - bash
               - -xc
               - |
-                /usr/local/bin/extended-config.py add /oem/printer_data/config/extended/extended2.cfg components rfid snapmaker
-                /etc/init.d/S99openrfid stop
+                /usr/local/bin/extended-config.py add /oem/printer_data/config/extended/extended2.cfg components rfid_hardware snapmaker
                 /etc/init.d/S59rfid-support restart
+                /etc/init.d/S60klipper restart
+          external:
+            label: External
+            cmd:
+              - bash
+              - -xc
+              - |
+                /usr/local/bin/extended-config.py add /oem/printer_data/config/extended/extended2.cfg components rfid_hardware external
+                /etc/init.d/S59rfid-support restart
+                /etc/init.d/S60klipper restart
+        default: snapmaker
+
+      rfid_software:
+        label: RFID Software
+        description: Select the RFID tag processing software.
+        if_cmd: test "$(/usr/local/bin/extended-config.py get /oem/printer_data/config/extended/extended2.cfg components rfid_hardware 2>/dev/null || /usr/local/bin/extended-config.py get /oem/printer_data/config/extended/extended2.cfg components rfid snapmaker 2>/dev/null || echo snapmaker)" != "external"
+        get_cmd:
+          - bash
+          - -c
+          - |
+            val=$(/usr/local/bin/extended-config.py get /oem/printer_data/config/extended/extended2.cfg components rfid_software 2>/dev/null)
+            if [ -z "$val" ]; then
+              val=$(/usr/local/bin/extended-config.py get /oem/printer_data/config/extended/extended2.cfg components rfid snapmaker 2>/dev/null)
+            fi
+            echo "${val:-snapmaker}"
+        options:
+          snapmaker:
+            label: Snapmaker
+            if_cmd: test "$(/usr/local/bin/extended-config.py get /oem/printer_data/config/extended/extended2.cfg components rfid_hardware 2>/dev/null || echo snapmaker)" != "ace"
+            cmd:
+              - bash
+              - -xc
+              - |
+                /usr/local/bin/extended-config.py add /oem/printer_data/config/extended/extended2.cfg components rfid_software snapmaker
+                /etc/init.d/S99openrfid stop
                 /etc/init.d/S60klipper restart
         default: snapmaker
