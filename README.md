@@ -36,6 +36,10 @@ See [Building from Source](docs/development.md) for instructions on building cus
 - [snapmaker-u1-timelapse-recovery](https://github.com/horzadome/snapmaker-u1-timelapse-recovery) - Tool to recover corrupted timelapse videos
 - [rockchip-linux/kernel](https://github.com/rockchip-linux/kernel) - Rockchip kernel source for building additional kernel modules
 
+## Community Mods
+
+- 🇮🇹 [Snapmaker Italian GUI Mod](https://github.com/jotunn99/Snapmaker_ita_gui) - Complete Italian translation patch for the touchscreen UI (safe, one-line SSH installation script) by @jotunn99.
+
 ## Community
 
 Join the [Snapmaker Discord](https://discord.com/invite/snapmaker-official-1086575708903571536) and visit the **#u1-printer** channel to connect with other users using the custom firmware, share experiences, and get help.
