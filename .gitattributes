@@ -1,18 +1,4 @@
-.gitattributes text eol=lf
-*.sh text eol=lf
-Makefile text eol=lf
-*.mk text eol=lf
-*.patch text eol=lf
-*.py text eol=lf
-*.js text eol=lf
-*.conf text eol=lf
-*.cfg text eol=lf
-*.md text eol=lf
-*.yaml text eol=lf
-*.yml text eol=lf
-overlays/**/root/etc/init.d/* text eol=lf
-overlays/**/root/etc/profile.d/* text eol=lf
-overlays/**/root/usr/bin/* text eol=lf
-overlays/**/root/usr/sbin/* text eol=lf
-overlays/**/root/usr/local/bin/* text eol=lf
-overlays/**/root/usr/local/sbin/* text eol=lf
+* text=auto eol=lf
+
+*.gif binary
+*.png binary
