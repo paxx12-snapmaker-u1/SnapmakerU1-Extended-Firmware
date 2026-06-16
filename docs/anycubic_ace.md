@@ -19,6 +19,7 @@ This integration is a clean Extended Firmware port informed by these projects:
 - hakimio/U1-Ace `ace2`, commit `97e94b11f6f9b52e045dc89919f69405dda1d9cf`
 - utkabobr/DuckACE
 - printers-for-people/ACEResearch
+- decay71/multiACE issue #46 for CH340 USB-to-RS485 ACE 2 Pro validation notes
 
 ## Supported Models
 
@@ -120,6 +121,14 @@ Expected ACE 2 Pro path pattern:
 /dev/serial/by-id/usb-1a86_USB_Single_Serial_*
 ```
 
+Community-tested CH340 USB-to-RS485 adapters may enumerate differently:
+
+```bash
+/dev/serial/by-id/usb-1a86_USB_Serial-if00-port0
+/dev/ttyUSB0
+/dev/serial/by-path/platform-...-port0
+```
+
 A manual `serial:` override is only needed if your ACE enumerates with a
 non-standard USB id. In that case update the path in:
 
@@ -128,6 +137,127 @@ non-standard USB id. In that case update the path in:
 ```
 
 and restart Klipper.
+
+## Cable Requirements
+
+ACE Pro and ACE 2 Pro use different cable approaches.
+
+Parts by model:
+
+| Model | Required parts |
+|---|---|
+| ACE Pro | Micro-Fit 3.0 2x3P pigtail connector, USB 2.0 cable or USB-A breakout |
+| ACE 2 Pro | Micro-Fit 3.0 2x3P pigtail connector, CH343 USB-to-RS485 adapter preferred |
+
+**ACE 2 Pro only:** use a USB-to-RS485 adapter. Prefer CH343 when available
+because it is closest to the original Anycubic USB-to-RS485 signal cable
+behavior. CH340/CH341 adapters are cheaper and community-tested, but should be
+validated with longer prints.
+
+Do not use a direct USB cable for ACE 2 Pro.
+
+![Anycubic ACE signal connector pinout](images/ace-signal-pinout.png)
+
+```text
+ACE-side 6-pin signal connector, front/mating side
+Clip/latch side at the top
+
+             clip/latch
+                ||
+      +-------------------+
+      | [NC]  [D+]  [D-]  |
+      | [NC]  [GND] [5V]  |
+      +-------------------+
+```
+
+**Warning:** The `5V` pin is shown for identification only. Do not connect it to
+anything. Connecting `5V` can damage the ACE, adapter, printer, or host USB
+port. Use only the documented data/signal pins and ground.
+
+For ACE Pro, `D+` and `D-` are the USB data pair. For ACE 2 Pro, the same
+physical connector orientation is useful, but ACE 2 Pro needs an RS485 adapter
+path instead of direct host USB `D+`/`D-`.
+
+Typical USB 2.0 wire colors:
+
+| USB color | Typical signal |
+|---|---|
+| Red | `5V` - do not connect |
+| White | `D-` |
+| Green | `D+` |
+| Black | `GND` |
+
+Verify the cable with a multimeter before connecting it. Cheap USB cables do
+not always follow the color standard.
+
+### Anycubic ACE Pro
+
+ACE Pro uses the original SnapAce-style USB serial path:
+
+```text
+U1 USB port
+    |
+    |  USB 2.0 cable or USB-A breakout
+    |
+ [splice/join D-, D+, and GND]
+    |
+    |  Micro-Fit 3.0 2x3P pigtail connector
+    |
+ ACE Pro signal port
+```
+
+Wire the USB cable to the Micro-Fit pigtail:
+
+| USB cable wire | ACE Pro signal connector |
+|---|---|
+| USB `D-` | `D-` |
+| USB `D+` | `D+` |
+| USB `GND` | `GND` |
+| USB `5V` | Do not connect |
+
+### Anycubic ACE 2 Pro
+
+ACE 2 Pro uses an RS485 serial path:
+
+```text
+U1 USB port
+    |
+    |  USB
+    |
+ USB-to-RS485 adapter
+    |
+    |  RS485 A/B and GND
+    |
+ [splice/join A, B, and GND]
+    |
+    |  Micro-Fit 3.0 2x3P pigtail connector
+    |
+ ACE 2 Pro signal port
+```
+
+Wire the RS485 adapter to the Micro-Fit pigtail:
+
+| Adapter label | ACE 2 Pro signal |
+|---|---|
+| `GND` | Ground |
+| `A`, `485+`, or adapter `D+` | RS485 positive |
+| `B`, `485-`, or adapter `D-` | RS485 negative |
+| `VCC` | Do not connect |
+
+Notes:
+
+- ACE 2 Pro should be on firmware `1.1.31` or newer.
+- If the adapter enumerates but ACE commands do not respond, swap RS485 `A`
+  and `B`.
+- CH340/CH341 adapters may enumerate as `1a86:7523` and may need this udev
+  rule:
+
+```text
+SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="7523", MODE="0666", GROUP="dialout"
+```
+
+After adding the rule, reload udev rules and reconnect the adapter or reboot
+the printer.
 
 ## Configuration
 
@@ -173,8 +303,6 @@ feeding to the stock U1 path.
 
 ## Limitations
 
-- ACE 2 Pro must enumerate as a USB serial device before firmware can connect.
-- ACE 2 Pro support is based on the published `hakimio/U1-Ace` ACE2 branch and
-  needs physical validation on U1 hardware.
-- RFID metadata ownership is intentionally modeled as one policy setting to
-  avoid conflicting with existing Extended Firmware RFID/OpenRFID settings.
+- ACE hardware must enumerate as a serial device before firmware can connect.
+- RFID ownership is intentionally limited to one active source to avoid
+  conflicts with existing Extended Firmware RFID/OpenRFID settings.
