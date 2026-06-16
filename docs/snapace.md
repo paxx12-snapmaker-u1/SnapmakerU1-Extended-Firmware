@@ -40,6 +40,37 @@ Open Firmware Config at `http://<printer-ip>/firmware-config/`, then enable:
 The setting copies the default `ace.cfg` into the extended Klipper config
 directory and restarts Klipper.
 
+When SnapAce is disabled, the editable config file does not exist. Firmware
+Config creates it at enable time from this built-in template:
+
+```bash
+/usr/local/share/firmware-config/tweaks/klipper/ace.cfg
+```
+
+After enabling, edit or inspect the active config here:
+
+```bash
+/oem/printer_data/config/extended/klipper/ace.cfg
+```
+
+## Verifying the ACE Serial Path
+
+Before running ACE feed or retract commands, verify that Linux sees the ACE Pro
+USB serial device:
+
+```bash
+ls -l /dev/serial/by-id/
+```
+
+The default `ace.cfg` expects:
+
+```ini
+serial: /dev/serial/by-id/usb-ANYCUBIC_ACE_1-if00
+```
+
+If your ACE Pro appears with a different name, update the `serial:` value in
+`/oem/printer_data/config/extended/klipper/ace.cfg` and restart Klipper.
+
 ## Configuration
 
 Tune these values in `extended/klipper/ace.cfg`:

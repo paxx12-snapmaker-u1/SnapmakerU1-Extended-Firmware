@@ -15,7 +15,9 @@ settings:
             confirm: |
               Enable SnapAce support for Anycubic ACE Pro?
 
-              Before enabling, connect the ACE Pro over USB, verify the serial path in ace.cfg, and tune feed_length/retract_length after installation. This is experimental and changes filament loading behavior while enabled.
+              This creates /oem/printer_data/config/extended/klipper/ace.cfg from the built-in template and restarts Klipper.
+
+              Before using ACE movement commands, connect the ACE Pro over USB, verify the serial path in the created ace.cfg, and tune feed_length/retract_length. This is experimental and changes filament loading behavior while enabled.
             cmd:
               - bash
               - -ec
