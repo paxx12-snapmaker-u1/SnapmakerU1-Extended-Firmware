@@ -1,0 +1,27 @@
+--- a/klippy/kinematics/extruder.py
++++ b/klippy/kinematics/extruder.py
+@@ -1181,6 +1181,7 @@ class PrinterExtruder:
+         action = None
+         params = gcmd.get_command_parameters()
+         is_grab_complete = False
++        ace = self.printer.lookup_object('ace', None)
+         if 'ACTION' in params:
+             action = params['ACTION']
+
+@@ -1513,3 +1514,6 @@ class PrinterExtruder:
++            if ace is not None:
++                ace._disable_feed_assist(self.extruder_num)
++                gcmd.respond_info("ACE disable feed_assist for extruder %s" % (self.name,))
+             if action == 'PARK':
+                 raise ExtruderParkAction("park action success!!!")
+
+@@ -1551,6 +1555,9 @@ class PrinterExtruder:
+
+             if switch_complete == True:
+                 # Activating extruder
++                if ace is not None:
++                    ace._enable_feed_assist(self.extruder_num)
++                    gcmd.respond_info("ACE enable feed_assist for extruder %s" % (self.name,))
+                 gcmd.respond_info("Activating extruder %s" % (self.name,))
+                 toolhead.flush_step_generation()
+                 toolhead.set_extruder(self, self.last_position)

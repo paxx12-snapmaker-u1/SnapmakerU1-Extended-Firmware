@@ -19,6 +19,7 @@ You can thank them here:
 | [@justinh-rahb](https://github.com/justinh-rahb) | `@wildtang3nt` | V4L2 camera controls, Mainsail Remote Screen support, Panda Breath chamber heater | [![Buy Me A Coffee](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://buymeacoffee.com/wildtang3nt) |
 | [@suchmememanyskill](https://github.com/suchmememanyskill) | `@Sims` | OpenRFID | [![Ko-Fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/suchmememanyskill) |
 | [@morgendagen](https://github.com/morgendagen) | | OpenSpool `subtype` field for material specification | |
+| [@BlackFrogKok](https://github.com/BlackFrogKok) | | SnapAce upstream Anycubic ACE Pro integration | |
 
 ---
 

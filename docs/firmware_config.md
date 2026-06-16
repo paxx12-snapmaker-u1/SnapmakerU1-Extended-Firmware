@@ -50,6 +50,7 @@ Toggle settings directly from the web interface:
 | VPN Provider | None, Tailscale | Enable VPN remote access (Experimental) |
 | Cloud | None, OctoEverywhere | Enable Cloud-based remote access (Experimental) |
 | Tweaks | TMC AutoTune, TMC Reduced Current, Object Processing, AFC Stub | Experimental Klipper tweaks ([tweaks](tweaks.md)) |
+| Snapmaker Components | AFC Lite, Panda Breath, SnapAce / Anycubic ACE Pro | Optional Klipper integrations for filament management and chamber hardware |
 | Troubleshooting | Faulty Toolhead Bypass | Temporary toolhead thermistor bypass so the remaining toolheads can still be used ([faulty_toolhead](faulty_toolhead.md)) |
 | RFID Detection System | External, Snapmaker, OpenRFID, OpenRFID (force generic vendor) | Set how filament is detected ([rfid_support](rfid_support.md)) |
 
@@ -164,6 +165,10 @@ Note: Remote screen requires additional Moonraker configuration. See [Remote Scr
 - `openrfid-generic` - Same as openrfid, labels all spool vendors as generic
 
 See [Alternative Filament Detection](rfid_support.md#alternative-detection-systems) for setup instructions.
+
+SnapAce / Anycubic ACE Pro is configured through the Firmware Config web
+interface and installs `extended/klipper/ace.cfg` when enabled. See
+[SnapAce / Anycubic ACE Pro](snapace.md) for setup and tuning.
 
 #### [remote_access]
 
