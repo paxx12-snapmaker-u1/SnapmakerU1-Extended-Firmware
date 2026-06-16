@@ -5,7 +5,7 @@ server {
     # uncomment the next line to activate IPv6
     # listen [::]:80 default_server;
 
-    # access_log /var/log/nginx/mainsail-access.log;
+    access_log off;
     error_log /var/log/nginx/mainsail-error.log;
 
     # disable this section on smaller hardware like a pi zero
