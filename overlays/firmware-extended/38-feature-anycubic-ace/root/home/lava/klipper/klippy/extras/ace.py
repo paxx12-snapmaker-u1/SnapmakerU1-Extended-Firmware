@@ -68,6 +68,10 @@ class BunnyAce:
         self.assist_source = config.get("assist_source", "ace").lower()
         if self.assist_source not in ("ace", "snapmaker", "off"):
             self.assist_source = "ace"
+        self._enable_feed_assist_from_cfg = config.getboolean(
+            "enable_feed_assist", False)
+        self._enable_feeder_mode_from_cfg = config.getboolean(
+            "enable_feeder_mode", False)
         self._sync_assist_compatibility_fields()
         self.rfid_source = config.get("rfid_source", "existing").lower()
         if self.rfid_source not in ("existing", "ace", "none"):
