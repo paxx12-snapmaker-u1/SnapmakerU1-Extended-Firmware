@@ -1,3 +1,4 @@
+import glob
 import json
 import logging
 import queue
@@ -6,10 +7,36 @@ import traceback
 
 import serial
 
+from . import ace2_protocol
+
 
 GATE_UNKNOWN = -1
 GATE_EMPTY = 0
 GATE_AVAILABLE = 1
+
+MODEL_AUTO = "auto"
+MODEL_ACE_PRO = "ace_pro"
+MODEL_ACE_2_PRO = "ace_2_pro"
+
+ACE_PRO_GLOB = "/dev/serial/by-id/usb-ANYCUBIC*"
+ACE_2_PRO_GLOB = "/dev/serial/by-id/usb-1a86_USB_Single_Serial_*"
+ACE_PRO_DEFAULT_SERIAL = "/dev/serial/by-id/usb-ANYCUBIC_ACE_1-if00"
+ACE_2_PRO_DEFAULT_SERIAL = "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5B5F070433-if00"
+
+MODEL_INFO = {
+    MODEL_ACE_PRO: {
+        "display_name": "Anycubic ACE Pro",
+        "protocol": "json",
+        "baud": 115200,
+        "default_serial": ACE_PRO_DEFAULT_SERIAL,
+    },
+    MODEL_ACE_2_PRO: {
+        "display_name": "Anycubic ACE 2 Pro",
+        "protocol": "protobuf",
+        "baud": 230400,
+        "default_serial": ACE_2_PRO_DEFAULT_SERIAL,
+    },
+}
 
 
 class AceException(Exception):
@@ -24,12 +51,47 @@ class BunnyAce:
         self.reactor = self.printer.get_reactor()
         self.gcode = self.printer.lookup_object("gcode")
 
-        self.serial_id = config.get("serial", "/dev/ttyACM0")
-        self.baud = config.getint("baud", 115200)
+        self.device_model = config.get("device_model", MODEL_AUTO).lower()
+        if self.device_model not in (MODEL_AUTO, MODEL_ACE_PRO, MODEL_ACE_2_PRO):
+            logging.warning("ACE: invalid device_model '%s', using auto",
+                            self.device_model)
+            self.device_model = MODEL_AUTO
+        self.configured_serial = config.get("serial", ACE_PRO_DEFAULT_SERIAL)
+        self.configured_baud = config.getint("baud", 115200)
+        self.detected_model, self.serial_id = self._detect_model_and_serial()
+        self.model_info = MODEL_INFO[self.detected_model]
+        self._is_v2 = self.detected_model == MODEL_ACE_2_PRO
+        self.baud = self.model_info["baud"] if self._is_v2 else self.configured_baud
         self.feed_speed = config.getint("feed_speed", 50, minval=1)
+        self.load_speed = config.getint("load_speed", 100, minval=1)
         self.retract_speed = config.getint("retract_speed", 50, minval=1)
-        self.retract_length = config.getint("retract_length", 100, minval=1)
-        self.feed_length = config.getint("feed_length", 100, minval=1)
+        self.assist_source = config.get("assist_source", "ace").lower()
+        if self.assist_source not in ("ace", "snapmaker", "off"):
+            self.assist_source = "ace"
+        self.rfid_source = config.get("rfid_source", "existing").lower()
+        if self.rfid_source not in ("existing", "ace", "none"):
+            self.rfid_source = "existing"
+        self.force_generic = config.getboolean("force_generic", False)
+        old_retract_length = config.getint("retract_length", 100, minval=1)
+        old_feed_length = config.getint("feed_length", 100, minval=1)
+        self.feed_lengths = [
+            config.getint("feed_length_slot%d" % (i + 1), old_feed_length, minval=1)
+            for i in range(4)
+        ]
+        self.load_lengths = [
+            config.getint("load_length_slot%d" % (i + 1), 850, minval=1)
+            for i in range(4)
+        ]
+        self.retract_lengths = [
+            config.getint("retract_length_slot%d" % (i + 1), old_retract_length, minval=1)
+            for i in range(4)
+        ]
+        self.retract_length = self.retract_lengths[0]
+        self.feed_length = self.feed_lengths[0]
+        self.feed_check_len = config.getint("feed_check_len", 254, minval=1, maxval=255)
+        self.feed_check_error_len = config.getint(
+            "feed_check_error_len", 254, minval=1, maxval=255
+        )
         self.max_dryer_temperature = config.getint(
             "max_dryer_temperature", 55, minval=1
         )
@@ -44,9 +106,16 @@ class BunnyAce:
         self._heartbeat_timer = None
         self._ace_dev_fd = None
         self.read_buffer = bytearray()
+        self._v2_seq = 0
+        self._v2_callback_map = {}
         self.gate_status = [GATE_UNKNOWN] * 4
         self._info = {
             "status": "disconnected",
+            "device_model": self.detected_model,
+            "display_name": self.model_info["display_name"],
+            "protocol": self.model_info["protocol"],
+            "serial": self.serial_id,
+            "baud": self.baud,
             "dryer_status": {
                 "status": "stop",
                 "target_temp": 0,
@@ -107,10 +176,44 @@ class BunnyAce:
             self.cmd_ACE_RETRACT,
             desc="Retracts filament back to ACE",
         )
+        self.gcode.register_command(
+            "ACE_GET_STATUS",
+            self.cmd_ACE_GET_STATUS,
+            desc="Reports ACE connection and slot status",
+        )
+        self.gcode.register_command(
+            "ACE_GET_TEMP",
+            self.cmd_ACE_GET_TEMP,
+            desc="Reports ACE temperature status",
+        )
+
+    def _detect_model_and_serial(self):
+        ace_pro_devices = glob.glob(ACE_PRO_GLOB)
+        ace_2_pro_devices = glob.glob(ACE_2_PRO_GLOB)
+        if self.device_model == MODEL_ACE_PRO:
+            serial_id = ace_pro_devices[0] if ace_pro_devices else self.configured_serial
+            return MODEL_ACE_PRO, serial_id
+        if self.device_model == MODEL_ACE_2_PRO:
+            serial_id = ace_2_pro_devices[0] if ace_2_pro_devices else (
+                self.configured_serial
+                if "1a86" in self.configured_serial
+                else ACE_2_PRO_DEFAULT_SERIAL
+            )
+            return MODEL_ACE_2_PRO, serial_id
+        if ace_pro_devices:
+            return MODEL_ACE_PRO, ace_pro_devices[0]
+        if ace_2_pro_devices:
+            return MODEL_ACE_2_PRO, ace_2_pro_devices[0]
+        if "1a86" in self.configured_serial:
+            return MODEL_ACE_2_PRO, self.configured_serial
+        return MODEL_ACE_PRO, self.configured_serial
 
     def _handle_ready(self):
         self.toolhead = self.printer.lookup_object("toolhead")
-        logging.info("ACE: connecting to %s", self.serial_id)
+        logging.info(
+            "ACE: connecting to %s on %s @ %d baud",
+            self.model_info["display_name"], self.serial_id, self.baud
+        )
         self._connect_timer = self.reactor.register_timer(
             self._connect, self.reactor.NOW
         )
@@ -148,10 +251,12 @@ class BunnyAce:
                 port=self.serial_id,
                 baudrate=self.baud,
                 exclusive=True,
-                rtscts=True,
+                rtscts=not self._is_v2,
                 timeout=0,
                 write_timeout=0,
             )
+            if self._is_v2:
+                self._initialize_v2_transport()
             self._connected = True
             self._info["status"] = "ready"
             self._request_id = 0
@@ -162,6 +267,17 @@ class BunnyAce:
                 self._periodic_heartbeat_event, self.reactor.NOW
             )
             self.send_request({"method": "get_info"}, self._handle_info_response)
+            if self._is_v2:
+                self.send_request(
+                    {
+                        "method": "set_feed_check",
+                        "params": {
+                            "check_len": self.feed_check_len,
+                            "error_len": self.feed_check_error_len,
+                        },
+                    },
+                    self._command_callback(None),
+                )
             if self._feed_assist_index != -1:
                 self._enable_feed_assist(self._feed_assist_index)
             logging.info("ACE: connected to %s", self.serial_id)
@@ -179,6 +295,37 @@ class BunnyAce:
             logging.info("ACE: connection error: %s", traceback.format_exc())
             return eventtime + 5.0
 
+    def _initialize_v2_transport(self):
+        self._serial.timeout = 0.2
+        self._serial.reset_input_buffer()
+        self._serial.write(ace2_protocol.build_discover_packet(seq=1))
+        self._serial.flush()
+        buffer = bytearray()
+        deadline = self.reactor.monotonic() + 1.5
+        uids = None
+        while self.reactor.monotonic() < deadline:
+            waiting = self._serial.in_waiting
+            if waiting:
+                buffer.extend(self._serial.read(waiting))
+                packets, buffer = ace2_protocol.parse_stream(buffer)
+                for packet in packets:
+                    if (
+                        packet["is_resp"]
+                        and packet["cmd"] == ace2_protocol.CMD_DISCOVER_DEVICE
+                    ):
+                        uids = ace2_protocol.parse_discover_response(packet["payload"])
+                        break
+            if uids is not None:
+                break
+            self.reactor.pause(self.reactor.monotonic() + 0.05)
+        if uids is not None:
+            self._serial.write(ace2_protocol.build_assign_id_packet(
+                uids[0], uids[1], uids[2], dev_id=1, seq=2
+            ))
+            self._serial.flush()
+        self._serial.timeout = 0
+        self._serial.reset_input_buffer()
+
     def _serial_disconnect(self):
         if self._serial is not None and self._serial.is_open:
             self._serial.close()
@@ -192,8 +339,13 @@ class BunnyAce:
             self._ace_dev_fd = None
 
     def _send_request(self, request):
+        if self._is_v2:
+            return self._send_v2_request(request)
+        return self._send_json_request(request)
+
+    def _send_json_request(self, request):
         if not self._connected or self._serial is None:
-            raise AceException("ACE Pro is not connected")
+            raise AceException("%s is not connected" % (self.model_info["display_name"],))
         if "id" not in request:
             request["id"] = self._get_next_request_id()
         payload = json.dumps(request).encode("utf-8")
@@ -217,6 +369,30 @@ class BunnyAce:
             self._serial_disconnect()
             raise AceException("ACE serial write failed")
 
+    def _send_v2_request(self, request):
+        if not self._connected or self._serial is None:
+            raise AceException("%s is not connected" % (self.model_info["display_name"],))
+        encoded = ace2_protocol.encode_v1_request(request)
+        if encoded is None:
+            raise AceException("ACE 2 Pro command is not supported: %s" % (
+                request.get("method"),
+            ))
+        cmd, payload, decoder = encoded
+        self._v2_seq = (self._v2_seq + 1) & 0xFFFF
+        if self._v2_seq == 0:
+            self._v2_seq = 1
+        self._v2_callback_map[self._v2_seq] = (
+            self._callback_map.pop(request.get("id"), None),
+            decoder,
+        )
+        try:
+            self._serial.write(
+                ace2_protocol.build_packet(cmd, payload, seq=self._v2_seq)
+            )
+        except Exception:
+            self._serial_disconnect()
+            raise AceException("ACE 2 Pro serial write failed")
+
     def send_request(self, request, callback):
         msg_id = self._get_next_request_id()
         request["id"] = msg_id
@@ -236,6 +412,9 @@ class BunnyAce:
             )
 
     def _process_data(self, raw_bytes):
+        if self._is_v2:
+            self._process_v2_data(raw_bytes)
+            return
         self.read_buffer += raw_bytes
         while len(self.read_buffer) >= 7:
             start = self.read_buffer.find(b"\xff\xaa")
@@ -272,14 +451,40 @@ class BunnyAce:
             if not self._callback_map:
                 self._info["status"] = "ready"
 
+    def _process_v2_data(self, raw_bytes):
+        self.read_buffer += raw_bytes
+        packets, self.read_buffer = ace2_protocol.parse_stream(self.read_buffer)
+        for packet in packets:
+            if not packet["is_resp"]:
+                continue
+            callback, decoder = self._v2_callback_map.pop(
+                packet["seq"], (None, None)
+            )
+            if callback is None or decoder is None:
+                continue
+            try:
+                response = decoder(packet["payload"])
+            except Exception:
+                logging.info("ACE: invalid ACE 2 Pro response: %s",
+                             traceback.format_exc())
+                continue
+            callback(response)
+        if not self._v2_callback_map and not self._callback_map:
+            self._info["status"] = "ready"
+
     def _handle_info_response(self, response):
         if response.get("code", 0) != 0:
             self.log_error("ACE Error: %s" % (response.get("msg"),))
             return
         result = response.get("result", {})
         self.log_always(
-            "ACE: Connected to %s\n Firmware Version: %s"
-            % (result.get("model", "Unknown"), result.get("firmware", "Unknown"))
+            "ACE: Connected to %s on %s @ %d baud\n Firmware Version: %s"
+            % (
+                self.model_info["display_name"],
+                self.serial_id,
+                self.baud,
+                result.get("firmware", result.get("version", "Unknown")),
+            )
         )
 
     def _periodic_heartbeat_event(self, eventtime):
@@ -295,6 +500,7 @@ class BunnyAce:
                         lambda et, gate=i: self._pre_load(gate)
                     )
                 if (
+                    self.rfid_source == "ace" and
                     slot.get("rfid") == 2
                     and self._info.get("slots", [{}] * 4)[i].get("rfid") != 2
                 ):
@@ -311,11 +517,16 @@ class BunnyAce:
         return eventtime + 1.0
 
     def _sync_slot_to_print_task_config(self, index, slot):
+        if self.rfid_source != "ace":
+            return
         color = slot.get("color") or [0, 0, 0]
         try:
             rgb = "%02X%02X%02X" % (int(color[0]), int(color[1]), int(color[2]))
         except Exception:
             rgb = "000000"
+        vendor = slot.get("brand", "Generic")
+        if self.force_generic:
+            vendor = "Generic"
         self.gcode.run_script_from_command(
             'SET_PRINT_FILAMENT_CONFIG CONFIG_EXTRUDER=%d FILAMENT_TYPE="%s" '
             'FILAMENT_COLOR_RGBA=%s VENDOR="%s" FILAMENT_SUBTYPE=""'
@@ -323,21 +534,23 @@ class BunnyAce:
                 index,
                 slot.get("type", "PLA"),
                 rgb,
-                slot.get("brand", "Generic"),
+                vendor,
             )
         )
 
     def _pre_load(self, gate):
-        self._feed(gate, self.feed_length, self.feed_speed, 0)
+        self._feed(gate, self.feed_lengths[gate], self.feed_speed, 0)
         self.log_always("Select AutoLoad from the menu")
 
     def wait_ace_ready(self):
         if not self._connected:
-            raise AceException("ACE Pro is not connected")
+            raise AceException("%s is not connected" % (self.model_info["display_name"],))
         deadline = self.reactor.monotonic() + 30.0
         while self._info.get("status") != "ready":
             if self.reactor.monotonic() >= deadline:
-                raise AceException("Timed out waiting for ACE Pro")
+                raise AceException("Timed out waiting for %s" % (
+                    self.model_info["display_name"],
+                ))
             self.reactor.pause(self.reactor.monotonic() + 0.5)
 
     def is_ace_ready(self):
@@ -357,7 +570,9 @@ class BunnyAce:
 
     def cmd_ACE_START_DRYING(self, gcmd):
         try:
-            temperature = gcmd.get_int("TEMP", 55, minval=1)
+            temperature = gcmd.get_int(
+                "TEMP", gcmd.get_int("TEMPERATURE", 55, minval=1), minval=1
+            )
             duration = gcmd.get_int("DURATION", 240, minval=1)
             if temperature > self.max_dryer_temperature:
                 raise gcmd.error("Wrong temperature")
@@ -387,6 +602,8 @@ class BunnyAce:
             raise gcmd.error(str(e))
 
     def _enable_feed_assist(self, index):
+        if self.assist_source != "ace":
+            return
         self.wait_ace_ready()
         self._retract(index, 5, 10)
         self.wait_ace_ready()
@@ -459,7 +676,7 @@ class BunnyAce:
         self.dwell((length / float(speed)) + 0.1)
 
     def retract_fil(self, index):
-        self._retract(index, self.retract_length, self.retract_speed)
+        self._retract(index, self.retract_lengths[index], self.retract_speed)
 
     def cmd_ACE_RETRACT(self, gcmd):
         try:
@@ -476,10 +693,55 @@ class BunnyAce:
             self._command_callback(None),
         )
 
+    def cmd_ACE_GET_STATUS(self, gcmd):
+        status = self.get_status()
+        gcmd.respond_info(
+            "ACE Status\n"
+            "  Model: %s\n"
+            "  Protocol: %s\n"
+            "  Serial: %s\n"
+            "  Baud: %s\n"
+            "  Connected: %s\n"
+            "  Status: %s\n"
+            "  Assist Source: %s\n"
+            "  RFID Source: %s\n"
+            "  Gates: %s"
+            % (
+                status["display_name"],
+                status["protocol"],
+                status["serial"],
+                status["baud"],
+                "yes" if status["connected"] else "no",
+                status["status"],
+                status["assist_source"],
+                status["rfid_source"],
+                status["gate_status"],
+            )
+        )
+
+    def cmd_ACE_GET_TEMP(self, gcmd):
+        try:
+            self.wait_ace_ready()
+            self.send_request(
+                {"method": "get_temp"},
+                lambda response: gcmd.respond_info("ACE temperature: %s" % (
+                    response.get("result", response),
+                )),
+            )
+        except AceException as e:
+            raise gcmd.error(str(e))
+
     def get_status(self, eventtime=None):
         return {
             "connected": self._connected,
             "status": self._info.get("status"),
+            "device_model": self.detected_model,
+            "display_name": self.model_info["display_name"],
+            "protocol": self.model_info["protocol"],
+            "serial": self.serial_id,
+            "baud": self.baud,
+            "assist_source": self.assist_source,
+            "rfid_source": self.rfid_source,
             "temp": self._info.get("temp", 0),
             "dryer_status": self._info.get("dryer_status", {}),
             "gate_status": self.gate_status,

@@ -1,10 +1,10 @@
 settings:
   snapmaker_components:
     items:
-      snapace:
-        label: SnapAce / Anycubic ACE Pro
-        description: Optional Anycubic ACE Pro storage, feed assist, and dryer integration.
-        help_url: http://snapmakeru1-extended-firmware.pages.dev/snapace
+      anycubic_ace:
+        label: Anycubic ACE Pro / ACE 2 Pro
+        description: Optional Anycubic ACE storage, feed assist, dryer, and status integration.
+        help_url: http://snapmakeru1-extended-firmware.pages.dev/anycubic_ace
         get_cmd:
           - bash
           - -c
@@ -13,11 +13,11 @@ settings:
           enabled:
             label: Enabled
             confirm: |
-              Enable SnapAce support for Anycubic ACE Pro?
+              Enable Anycubic ACE Pro / ACE 2 Pro support?
 
               This creates /oem/printer_data/config/extended/klipper/ace.cfg from the built-in template and restarts Klipper.
 
-              Before using ACE movement commands, connect the ACE Pro over USB, verify the serial path in the created ace.cfg, and tune feed_length/retract_length. This is experimental and changes filament loading behavior while enabled.
+              Before running ACE movement commands, connect the ACE over USB, verify the serial path in the created ace.cfg, and tune the slot feed/load/retract lengths. This is experimental and changes filament loading behavior while enabled.
             cmd:
               - bash
               - -ec
@@ -25,7 +25,7 @@ settings:
                 mkdir -p /oem/printer_data/config/extended/klipper
                 cp -n /usr/local/share/firmware-config/tweaks/klipper/ace.cfg /oem/printer_data/config/extended/klipper/ace.cfg
                 chown lava:lava /oem/printer_data/config/extended/klipper/ace.cfg
-                echo "SnapAce enabled. Review /oem/printer_data/config/extended/klipper/ace.cfg and tune feed_length/retract_length. Restarting Klipper..."
+                echo "Anycubic ACE enabled. Review /oem/printer_data/config/extended/klipper/ace.cfg and tune slot lengths. Restarting Klipper..."
                 /etc/init.d/S60klipper restart
           disabled:
             label: Disabled
@@ -34,6 +34,147 @@ settings:
               - -ec
               - |
                 rm -f /oem/printer_data/config/extended/klipper/ace.cfg
-                echo "SnapAce disabled. Restarting Klipper..."
+                echo "Anycubic ACE disabled. Restarting Klipper..."
                 /etc/init.d/S60klipper restart
         default: disabled
+
+      anycubic_ace_model:
+        label: ACE Model
+        description: Select which Anycubic ACE model/protocol to use.
+        help_url: http://snapmakeru1-extended-firmware.pages.dev/anycubic_ace#ace-model
+        get_cmd:
+          - bash
+          - -c
+          - |
+            cfg=/oem/printer_data/config/extended/klipper/ace.cfg
+            test -f "$cfg" || { echo "auto"; exit 0; }
+            awk -F': *' '/^device_model:/ {print $2; found=1} END {if (!found) print "auto"}' "$cfg"
+        options:
+          auto:
+            label: Auto Detect
+            cmd:
+              - bash
+              - -ec
+              - |
+                cfg=/oem/printer_data/config/extended/klipper/ace.cfg
+                test -f "$cfg" || { echo "Error: Enable Anycubic ACE first"; exit 0; }
+                sed -i 's/^device_model:.*/device_model: auto/' "$cfg"
+                echo "ACE Model: Auto Detect. Restarting Klipper..."
+                /etc/init.d/S60klipper restart
+          ace_pro:
+            label: Anycubic ACE Pro
+            cmd:
+              - bash
+              - -ec
+              - |
+                cfg=/oem/printer_data/config/extended/klipper/ace.cfg
+                test -f "$cfg" || { echo "Error: Enable Anycubic ACE first"; exit 0; }
+                sed -i 's/^device_model:.*/device_model: ace_pro/' "$cfg"
+                echo "ACE Model: Anycubic ACE Pro. Restarting Klipper..."
+                /etc/init.d/S60klipper restart
+          ace_2_pro:
+            label: Anycubic ACE 2 Pro
+            cmd:
+              - bash
+              - -ec
+              - |
+                cfg=/oem/printer_data/config/extended/klipper/ace.cfg
+                test -f "$cfg" || { echo "Error: Enable Anycubic ACE first"; exit 0; }
+                sed -i 's/^device_model:.*/device_model: ace_2_pro/' "$cfg"
+                echo "ACE Model: Anycubic ACE 2 Pro. Restarting Klipper..."
+                /etc/init.d/S60klipper restart
+        default: auto
+
+      anycubic_ace_assist_source:
+        label: Filament Assist Source
+        description: Choose the single system allowed to provide filament assist.
+        help_url: http://snapmakeru1-extended-firmware.pages.dev/anycubic_ace#filament-assist-source
+        get_cmd:
+          - bash
+          - -c
+          - |
+            cfg=/oem/printer_data/config/extended/klipper/ace.cfg
+            test -f "$cfg" || { echo "ace"; exit 0; }
+            awk -F': *' '/^assist_source:/ {print $2; found=1} END {if (!found) print "ace"}' "$cfg"
+        options:
+          ace:
+            label: Anycubic ACE
+            cmd:
+              - bash
+              - -ec
+              - |
+                cfg=/oem/printer_data/config/extended/klipper/ace.cfg
+                test -f "$cfg" || { echo "Error: Enable Anycubic ACE first"; exit 0; }
+                sed -i 's/^assist_source:.*/assist_source: ace/' "$cfg"
+                echo "Filament Assist Source: Anycubic ACE. Restarting Klipper..."
+                /etc/init.d/S60klipper restart
+          snapmaker:
+            label: Snapmaker U1 Feeders
+            cmd:
+              - bash
+              - -ec
+              - |
+                cfg=/oem/printer_data/config/extended/klipper/ace.cfg
+                test -f "$cfg" || { echo "Error: Enable Anycubic ACE first"; exit 0; }
+                sed -i 's/^assist_source:.*/assist_source: snapmaker/' "$cfg"
+                echo "Filament Assist Source: Snapmaker U1 Feeders. Restarting Klipper..."
+                /etc/init.d/S60klipper restart
+          "off":
+            label: "Off"
+            cmd:
+              - bash
+              - -ec
+              - |
+                cfg=/oem/printer_data/config/extended/klipper/ace.cfg
+                test -f "$cfg" || { echo "Error: Enable Anycubic ACE first"; exit 0; }
+                sed -i 's/^assist_source:.*/assist_source: off/' "$cfg"
+                echo "Filament Assist Source: Off. Restarting Klipper..."
+                /etc/init.d/S60klipper restart
+        default: ace
+
+      anycubic_ace_rfid_source:
+        label: RFID / Filament Metadata
+        description: Choose whether ACE slot RFID should update filament metadata.
+        help_url: http://snapmakeru1-extended-firmware.pages.dev/anycubic_ace#rfid--filament-metadata
+        get_cmd:
+          - bash
+          - -c
+          - |
+            cfg=/oem/printer_data/config/extended/klipper/ace.cfg
+            test -f "$cfg" || { echo "existing"; exit 0; }
+            awk -F': *' '/^rfid_source:/ {print $2; found=1} END {if (!found) print "existing"}' "$cfg"
+        options:
+          existing:
+            label: Existing U1 Settings
+            cmd:
+              - bash
+              - -ec
+              - |
+                cfg=/oem/printer_data/config/extended/klipper/ace.cfg
+                test -f "$cfg" || { echo "Error: Enable Anycubic ACE first"; exit 0; }
+                sed -i 's/^rfid_source:.*/rfid_source: existing/' "$cfg"
+                echo "RFID / Filament Metadata: Existing U1 Settings. Restarting Klipper..."
+                /etc/init.d/S60klipper restart
+          ace:
+            label: Anycubic ACE Slots
+            cmd:
+              - bash
+              - -ec
+              - |
+                cfg=/oem/printer_data/config/extended/klipper/ace.cfg
+                test -f "$cfg" || { echo "Error: Enable Anycubic ACE first"; exit 0; }
+                sed -i 's/^rfid_source:.*/rfid_source: ace/' "$cfg"
+                echo "RFID / Filament Metadata: Anycubic ACE Slots. Restarting Klipper..."
+                /etc/init.d/S60klipper restart
+          none:
+            label: Ignore RFID
+            cmd:
+              - bash
+              - -ec
+              - |
+                cfg=/oem/printer_data/config/extended/klipper/ace.cfg
+                test -f "$cfg" || { echo "Error: Enable Anycubic ACE first"; exit 0; }
+                sed -i 's/^rfid_source:.*/rfid_source: none/' "$cfg"
+                echo "RFID / Filament Metadata: Ignore RFID. Restarting Klipper..."
+                /etc/init.d/S60klipper restart
+        default: existing
