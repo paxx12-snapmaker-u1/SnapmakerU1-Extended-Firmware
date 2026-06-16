@@ -68,6 +68,7 @@ class BunnyAce:
         self.assist_source = config.get("assist_source", "ace").lower()
         if self.assist_source not in ("ace", "snapmaker", "off"):
             self.assist_source = "ace"
+        self._sync_assist_compatibility_fields()
         self.rfid_source = config.get("rfid_source", "existing").lower()
         if self.rfid_source not in ("existing", "ace", "none"):
             self.rfid_source = "existing"
@@ -139,7 +140,7 @@ class BunnyAce:
 
         self.save_variables = self.printer.lookup_object("save_variables", None)
         if self.save_variables is None:
-            raise config.error("SnapAce requires a [save_variables] section")
+            raise config.error("Anycubic ACE requires a [save_variables] section")
         if self.VARS_ACE_REVISION not in self.save_variables.allVariables:
             self.save_variables.allVariables[self.VARS_ACE_REVISION] = 0
 
@@ -186,6 +187,20 @@ class BunnyAce:
             self.cmd_ACE_GET_TEMP,
             desc="Reports ACE temperature status",
         )
+
+    def _sync_assist_compatibility_fields(self):
+        if self.assist_source == "ace":
+            self.enable_feed_assist = True
+            self.enable_feeder_mode = False
+        elif self.assist_source == "snapmaker":
+            self.enable_feed_assist = False
+            self.enable_feeder_mode = True
+        else:
+            self.enable_feed_assist = False
+            self.enable_feeder_mode = False
+
+    def uses_ace_assist(self):
+        return self.assist_source == "ace" and self.enable_feed_assist
 
     def _detect_model_and_serial(self):
         ace_pro_devices = glob.glob(ACE_PRO_GLOB)
@@ -602,7 +617,7 @@ class BunnyAce:
             raise gcmd.error(str(e))
 
     def _enable_feed_assist(self, index):
-        if self.assist_source != "ace":
+        if not self.uses_ace_assist():
             return
         self.wait_ace_ready()
         self._retract(index, 5, 10)
@@ -704,6 +719,8 @@ class BunnyAce:
             "  Connected: %s\n"
             "  Status: %s\n"
             "  Assist Source: %s\n"
+            "  Enable Feed Assist: %s\n"
+            "  Enable Feeder Mode: %s\n"
             "  RFID Source: %s\n"
             "  Gates: %s"
             % (
@@ -714,6 +731,8 @@ class BunnyAce:
                 "yes" if status["connected"] else "no",
                 status["status"],
                 status["assist_source"],
+                "yes" if status["enable_feed_assist"] else "no",
+                "yes" if status["enable_feeder_mode"] else "no",
                 status["rfid_source"],
                 status["gate_status"],
             )
@@ -741,6 +760,8 @@ class BunnyAce:
             "serial": self.serial_id,
             "baud": self.baud,
             "assist_source": self.assist_source,
+            "enable_feed_assist": self.enable_feed_assist,
+            "enable_feeder_mode": self.enable_feeder_mode,
             "rfid_source": self.rfid_source,
             "temp": self._info.get("temp", 0),
             "dryer_status": self._info.get("dryer_status", {}),

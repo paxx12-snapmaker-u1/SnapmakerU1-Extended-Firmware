@@ -89,7 +89,7 @@
                          if self.channel_error[ch] != FEED_OK:
                              self._hang_neutral(ch)
                              raise ValueError('logic error!')
-+                    if self.ace is not None:
++                    if self.ace is not None and self.ace.uses_ace_assist():
 +                        self.ace._enable_feed_assist(self.filament_ch[ch])
 
                      self.gcode.run_script_from_command("M104 S%d\r\n" % (filament_feed_temp))

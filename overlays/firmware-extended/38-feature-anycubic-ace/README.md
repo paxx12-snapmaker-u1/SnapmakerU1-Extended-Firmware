@@ -1,7 +1,9 @@
 # Anycubic ACE Pro / ACE 2 Pro integration
 
+Overlay: `38-feature-anycubic-ace`
+
 This overlay adds optional Anycubic ACE Pro / ACE 2 Pro support based on
-SnapAce and U1-focused ACE references:
+upstream SnapAce and U1-focused ACE references:
 
 https://github.com/BlackFrogKok/SnapAce
 https://github.com/DnG-Crafts/U1-Ace

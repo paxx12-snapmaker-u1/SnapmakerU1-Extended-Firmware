@@ -49,7 +49,14 @@ After enabling, edit or inspect the active config here:
 
 Open Firmware Config at `http://<printer-ip>/firmware-config/`, then use:
 
-**Snapmaker Components > Anycubic ACE Pro / ACE 2 Pro**
+**Snapmaker Components > Anycubic ACE**
+
+Settings in this group:
+
+- **Anycubic ACE** — Disabled / Enabled
+- **ACE Model** — Auto Detect / Anycubic ACE Pro / Anycubic ACE 2 Pro
+- **Filament Assist Source** — Anycubic ACE / Snapmaker U1 Feeders / Off
+- **RFID / Filament Metadata** — Existing U1 Settings / Anycubic ACE Slots / Ignore RFID
 
 ### ACE Model
 
@@ -113,6 +120,8 @@ Important values in `extended/klipper/ace.cfg`:
 ```ini
 device_model: auto
 assist_source: ace
+enable_feed_assist: True
+enable_feeder_mode: False
 rfid_source: existing
 
 feed_length_slot1: 1000
@@ -132,6 +141,8 @@ movement tests before running full load/unload workflows.
 - `ACE_DISABLE_FEED_ASSIST INDEX=<0-3>`
 - `ACE_START_DRYING TEMP=<C> DURATION=<minutes>`
 - `ACE_STOP_DRYING`
+- `ACE_GET_STATUS`
+- `ACE_GET_TEMP`
 
 Convenience macros are also provided:
 
@@ -140,7 +151,7 @@ Convenience macros are also provided:
 
 ## Disabling
 
-Set **Anycubic ACE Pro / ACE 2 Pro** back to **Disabled** in Firmware Config.
+Set **Anycubic ACE** back to **Disabled** in Firmware Config.
 This removes `extended/klipper/ace.cfg` and restarts Klipper, returning filament
 feeding to the stock U1 path.
 

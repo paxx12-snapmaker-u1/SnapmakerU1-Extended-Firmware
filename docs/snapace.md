@@ -1,10 +1,9 @@
 ---
-title: SnapAce / Anycubic ACE
+title: Anycubic ACE (legacy redirect)
 ---
 
-# SnapAce / Anycubic ACE
+# Anycubic ACE
 
-The SnapAce-derived integration has been expanded into the Anycubic ACE Pro /
-ACE 2 Pro integration.
+This page has moved.
 
 See [Anycubic ACE Pro / ACE 2 Pro](anycubic_ace.md).

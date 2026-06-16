@@ -2,8 +2,8 @@ settings:
   snapmaker_components:
     items:
       anycubic_ace:
-        label: Anycubic ACE Pro / ACE 2 Pro
-        description: Optional Anycubic ACE storage, feed assist, dryer, and status integration.
+        label: Anycubic ACE
+        description: Optional Anycubic ACE Pro / ACE 2 Pro storage, feed assist, dryer, and status integration.
         help_url: http://snapmakeru1-extended-firmware.pages.dev/anycubic_ace
         get_cmd:
           - bash
@@ -106,6 +106,8 @@ settings:
                 cfg=/oem/printer_data/config/extended/klipper/ace.cfg
                 test -f "$cfg" || { echo "Error: Enable Anycubic ACE first"; exit 0; }
                 sed -i 's/^assist_source:.*/assist_source: ace/' "$cfg"
+                sed -i 's/^enable_feed_assist:.*/enable_feed_assist: True/' "$cfg"
+                sed -i 's/^enable_feeder_mode:.*/enable_feeder_mode: False/' "$cfg"
                 echo "Filament Assist Source: Anycubic ACE. Restarting Klipper..."
                 /etc/init.d/S60klipper restart
           snapmaker:
@@ -117,6 +119,8 @@ settings:
                 cfg=/oem/printer_data/config/extended/klipper/ace.cfg
                 test -f "$cfg" || { echo "Error: Enable Anycubic ACE first"; exit 0; }
                 sed -i 's/^assist_source:.*/assist_source: snapmaker/' "$cfg"
+                sed -i 's/^enable_feed_assist:.*/enable_feed_assist: False/' "$cfg"
+                sed -i 's/^enable_feeder_mode:.*/enable_feeder_mode: True/' "$cfg"
                 echo "Filament Assist Source: Snapmaker U1 Feeders. Restarting Klipper..."
                 /etc/init.d/S60klipper restart
           "off":
@@ -128,6 +132,8 @@ settings:
                 cfg=/oem/printer_data/config/extended/klipper/ace.cfg
                 test -f "$cfg" || { echo "Error: Enable Anycubic ACE first"; exit 0; }
                 sed -i 's/^assist_source:.*/assist_source: off/' "$cfg"
+                sed -i 's/^enable_feed_assist:.*/enable_feed_assist: False/' "$cfg"
+                sed -i 's/^enable_feeder_mode:.*/enable_feeder_mode: False/' "$cfg"
                 echo "Filament Assist Source: Off. Restarting Klipper..."
                 /etc/init.d/S60klipper restart
         default: ace
