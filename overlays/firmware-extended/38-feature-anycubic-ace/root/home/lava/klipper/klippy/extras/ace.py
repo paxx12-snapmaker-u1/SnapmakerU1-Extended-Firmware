@@ -19,7 +19,10 @@ MODEL_ACE_PRO = "ace_pro"
 MODEL_ACE_2_PRO = "ace_2_pro"
 
 ACE_PRO_GLOB = "/dev/serial/by-id/usb-ANYCUBIC*"
-ACE_2_PRO_GLOB = "/dev/serial/by-id/usb-1a86_USB_Single_Serial_*"
+ACE_2_PRO_GLOBS = (
+    "/dev/serial/by-id/usb-1a86_USB_Single_Serial_*",
+    "/dev/serial/by-id/usb-1a86_USB_Serial*",
+)
 ACE_PRO_DEFAULT_SERIAL = "/dev/serial/by-id/usb-ANYCUBIC_ACE_1-if00"
 ACE_2_PRO_DEFAULT_SERIAL = "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5B5F070433-if00"
 
@@ -208,7 +211,11 @@ class BunnyAce:
 
     def _detect_model_and_serial(self):
         ace_pro_devices = glob.glob(ACE_PRO_GLOB)
-        ace_2_pro_devices = glob.glob(ACE_2_PRO_GLOB)
+        ace_2_pro_devices = [
+            device
+            for pattern in ACE_2_PRO_GLOBS
+            for device in glob.glob(pattern)
+        ]
         if self.device_model == MODEL_ACE_PRO:
             serial_id = ace_pro_devices[0] if ace_pro_devices else self.configured_serial
             return MODEL_ACE_PRO, serial_id
