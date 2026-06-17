@@ -1,0 +1,66 @@
+#!/bin/bash
+
+EXTENDED_CFG="/home/lava/printer_data/config/extended/extended2.cfg"
+CAMERA_INTERNAL=$(/usr/local/bin/extended-config.py get "$EXTENDED_CFG" camera internal snapmaker)
+
+if [[ "$CAMERA_INTERNAL" != "paxx12-ai" ]]; then
+    exec /usr/bin/unisrv.org-ai "$@"
+fi
+
+if [[ ! -e /dev/video11 ]]; then
+    echo "MIPI camera device /dev/video11 not found, skipping AI services."
+    exec /usr/bin/unisrv.org-ai "$@"
+fi
+
+CMD_PYTHON3=/usr/bin/python3
+
+BED_CHECK_MODEL=/etc/unisrv/camera_service/model/bed_check.fp.rknn
+BED_CHECK_LABELS=item,nozzle,legend_text,extrusion_line
+
+PRINT_CHECK_MODEL=/etc/unisrv/camera_service/model/print_check.fp.rknn
+PRINT_CHECK_LABELS=noodle
+
+NOODLE_VERIFY_MODEL=/etc/unisrv/camera_service/model/noodle_verify.fp.rknn
+NOODLE_VERIFY_LABELS=verify_noodle
+
+CHILD_PIDS=""
+
+stop_children() {
+    for pid in $CHILD_PIDS; do
+        kill "$pid" 2>/dev/null
+    done
+    wait
+}
+
+trap stop_children EXIT INT TERM
+
+$CMD_PYTHON3 /usr/local/bin/detect-rknn-yolo11.py \
+    --model "$BED_CHECK_MODEL" --labels "$BED_CHECK_LABELS" \
+    --sock /tmp/detect-bed-check.sock &
+CHILD_PIDS="$CHILD_PIDS $!"
+
+$CMD_PYTHON3 /usr/local/bin/detect-rknn-yolo11.py \
+    --model "$PRINT_CHECK_MODEL" --labels "$PRINT_CHECK_LABELS" \
+    --sock /tmp/detect-print-check.sock &
+CHILD_PIDS="$CHILD_PIDS $!"
+
+$CMD_PYTHON3 /usr/local/bin/detect-rknn-yolo11.py \
+    --model "$NOODLE_VERIFY_MODEL" --labels "$NOODLE_VERIFY_LABELS" \
+    --sock /tmp/detect-noodle-verify.sock &
+CHILD_PIDS="$CHILD_PIDS $!"
+
+$CMD_PYTHON3 /usr/local/bin/detect-http.py \
+    --port 8091 --bind 127.0.0.1 \
+    --jpeg-sock /tmp/capture-mipi-jpeg.sock \
+    --detect-sock /tmp/detect-bed-check.sock \
+    --detect-sock /tmp/detect-print-check.sock \
+    --detect-sock /tmp/detect-noodle-verify.sock &
+CHILD_PIDS="$CHILD_PIDS $!"
+
+$CMD_PYTHON3 /usr/local/bin/fake-camera-agent.py \
+    --jpeg-sock /tmp/capture-mipi-jpeg.sock \
+    --detect-sock "/tmp/detect-bed-check.sock:$BED_CHECK_LABELS" \
+    --detect-sock "/tmp/detect-print-check.sock:$PRINT_CHECK_LABELS" \
+    --detect-sock "/tmp/detect-noodle-verify.sock:$NOODLE_VERIFY_LABELS" &
+CHILD_PIDS="$CHILD_PIDS $!"
+wait

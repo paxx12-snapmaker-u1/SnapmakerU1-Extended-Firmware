@@ -21,6 +21,5 @@ settings:
               - -xc
               - |
                 /usr/local/bin/extended-config.py add /home/lava/printer_data/config/extended/extended2.cfg camera internal paxx12-ai &&
-                /etc/init.d/S90lmd stop &&
-                /etc/init.d/S99detect-rknn restart &&
+                /etc/init.d/S90lmd restart &&
                 /etc/init.d/S99v4l2-mpp-mipi restart
