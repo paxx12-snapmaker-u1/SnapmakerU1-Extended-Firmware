@@ -76,19 +76,6 @@ static bool load_config(void)
     if (g_initialized)
         return true;
 
-    // check if current process is unisrv, read self process name
-    char self_path[256];
-    ssize_t len = readlink("/proc/self/exe", self_path, sizeof(self_path) - 1);
-    if (len >= 0) {
-        self_path[len] = '\0';
-        const char *basename = strrchr(self_path, '/');
-        basename = basename ? basename + 1 : self_path;
-        if (strcmp(basename, "unisrv") != 0) {
-            LOG_INFO("Current process is not unisrv (%s)", basename);
-            return false;
-        }
-    }
-
     g_initialized = 1;
 
     env = getenv("V4L2_IMPOSTER_DEBUG");
