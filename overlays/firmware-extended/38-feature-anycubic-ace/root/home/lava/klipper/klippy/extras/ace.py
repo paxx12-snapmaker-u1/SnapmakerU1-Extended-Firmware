@@ -109,6 +109,7 @@ class BunnyAce:
         self._queue = queue.Queue()
         self._request_id = 0
         self._callback_map = {}
+        self._callback_deadlines = {}
         self._feed_assist_index = -1
         self._connect_timer = None
         self._heartbeat_timer = None
@@ -116,6 +117,8 @@ class BunnyAce:
         self.read_buffer = bytearray()
         self._v2_seq = 0
         self._v2_callback_map = {}
+        self._v2_callback_deadlines = {}
+        self._request_timeout = 5.0
         self.gate_status = [GATE_UNKNOWN] * 4
         self._info = {
             "status": "disconnected",
@@ -357,6 +360,10 @@ class BunnyAce:
             self._serial.close()
         self._connected = False
         self._info["status"] = "disconnected"
+        self._callback_map.clear()
+        self._callback_deadlines.clear()
+        self._v2_callback_map.clear()
+        self._v2_callback_deadlines.clear()
         if self._heartbeat_timer is not None:
             self.reactor.unregister_timer(self._heartbeat_timer)
             self._heartbeat_timer = None
@@ -400,6 +407,11 @@ class BunnyAce:
             raise AceException("%s is not connected" % (self.model_info["display_name"],))
         encoded = ace2_protocol.encode_v1_request(request)
         if encoded is None:
+            msg_id = request.get("id")
+            self._callback_map.pop(msg_id, None)
+            self._callback_deadlines.pop(msg_id, None)
+            if not self._callback_map and not self._v2_callback_map:
+                self._info["status"] = "ready"
             raise AceException("ACE 2 Pro command is not supported: %s" % (
                 request.get("method"),
             ))
@@ -407,9 +419,13 @@ class BunnyAce:
         self._v2_seq = (self._v2_seq + 1) & 0xFFFF
         if self._v2_seq == 0:
             self._v2_seq = 1
+        msg_id = request.get("id")
         self._v2_callback_map[self._v2_seq] = (
-            self._callback_map.pop(request.get("id"), None),
+            self._callback_map.pop(msg_id, None),
             decoder,
+        )
+        self._v2_callback_deadlines[self._v2_seq] = self._callback_deadlines.pop(
+            msg_id, self.reactor.monotonic() + self._request_timeout
         )
         try:
             self._serial.write(
@@ -419,11 +435,13 @@ class BunnyAce:
             self._serial_disconnect()
             raise AceException("ACE 2 Pro serial write failed")
 
-    def send_request(self, request, callback):
+    def send_request(self, request, callback, mark_busy=True):
         msg_id = self._get_next_request_id()
         request["id"] = msg_id
         self._callback_map[msg_id] = callback
-        self._info["status"] = "busy"
+        self._callback_deadlines[msg_id] = self.reactor.monotonic() + self._request_timeout
+        if mark_busy:
+            self._info["status"] = "busy"
         self._send_request(request)
 
     def _reader_cb(self, eventtime):
@@ -472,6 +490,7 @@ class BunnyAce:
                 continue
             msg_id = response.get("id")
             callback = self._callback_map.pop(msg_id, None)
+            self._callback_deadlines.pop(msg_id, None)
             if callback is not None:
                 callback(response)
             if not self._callback_map:
@@ -486,6 +505,7 @@ class BunnyAce:
             callback, decoder = self._v2_callback_map.pop(
                 packet["seq"], (None, None)
             )
+            self._v2_callback_deadlines.pop(packet["seq"], None)
             if callback is None or decoder is None:
                 continue
             try:
@@ -496,6 +516,27 @@ class BunnyAce:
                 continue
             callback(response)
         if not self._v2_callback_map and not self._callback_map:
+            self._info["status"] = "ready"
+
+    def _prune_stale_callbacks(self):
+        now = self.reactor.monotonic()
+        stale_json_ids = [
+            msg_id for msg_id, deadline in self._callback_deadlines.items()
+            if deadline <= now
+        ]
+        for msg_id in stale_json_ids:
+            self._callback_map.pop(msg_id, None)
+            self._callback_deadlines.pop(msg_id, None)
+            logging.info("ACE: dropped stale request id %s", msg_id)
+        stale_v2_ids = [
+            seq for seq, deadline in self._v2_callback_deadlines.items()
+            if deadline <= now
+        ]
+        for seq in stale_v2_ids:
+            self._v2_callback_map.pop(seq, None)
+            self._v2_callback_deadlines.pop(seq, None)
+            logging.info("ACE: dropped stale ACE 2 Pro request seq %s", seq)
+        if not self._callback_map and not self._v2_callback_map and self._connected:
             self._info["status"] = "ready"
 
     def _handle_info_response(self, response):
@@ -537,7 +578,10 @@ class BunnyAce:
             self._info.update(result)
 
         try:
-            self.send_request({"method": "get_status"}, callback)
+            self._prune_stale_callbacks()
+            if self._callback_map or self._v2_callback_map:
+                return eventtime + 1.0
+            self.send_request({"method": "get_status"}, callback, mark_busy=False)
         except AceException:
             pass
         return eventtime + 1.0
@@ -573,6 +617,7 @@ class BunnyAce:
             raise AceException("%s is not connected" % (self.model_info["display_name"],))
         deadline = self.reactor.monotonic() + 30.0
         while self._info.get("status") != "ready":
+            self._prune_stale_callbacks()
             if self.reactor.monotonic() >= deadline:
                 raise AceException("Timed out waiting for %s" % (
                     self.model_info["display_name"],
@@ -751,6 +796,25 @@ class BunnyAce:
 
     def cmd_ACE_GET_TEMP(self, gcmd):
         try:
+            if self._is_v2:
+                status = self.get_status()
+                dryer = status.get("dryer_status") or {}
+                gcmd.respond_info(
+                    "ACE temperature\n"
+                    "  Temp: %s\n"
+                    "  Humidity: %s\n"
+                    "  Dryer: %s\n"
+                    "  Target: %s\n"
+                    "  Remaining: %s"
+                    % (
+                        status.get("temp", 0),
+                        self._info.get("humidity", 0),
+                        dryer.get("status", "unknown"),
+                        dryer.get("target_temp", 0),
+                        dryer.get("remain_time", 0),
+                    )
+                )
+                return
             self.wait_ace_ready()
             self.send_request(
                 {"method": "get_temp"},
