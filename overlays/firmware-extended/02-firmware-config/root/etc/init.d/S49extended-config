@@ -4,7 +4,9 @@ DEFAULT_DIR="/usr/local/share/firmware-config/extended"
 EXTENDED_DIR="/home/lava/printer_data/config/extended"
 
 start() {
-    if [ -f /mnt/udisk/extended-recover.txt ] || [ -f /oem/.extended-recover ]; then
+    # `.txt.txt` covers Windows users with "Hide extensions for known file types" enabled,
+    # who type `extended-recover.txt` but get a double extension from Explorer.
+    if [ -f /mnt/udisk/extended-recover.txt ] || [ -f /mnt/udisk/extended-recover.txt.txt ] || [ -f /oem/.extended-recover ]; then
         # Move existing extended config to a backup location
         # find the next available backup number
         if [ -d "$EXTENDED_DIR" ]; then
@@ -14,7 +16,7 @@ start() {
             done
             mv "$EXTENDED_DIR" "$EXTENDED_DIR.backup.$BACKUP_NUM"
         fi
-        rm -f /mnt/udisk/extended-recover.txt /oem/.extended-recover
+        rm -f /mnt/udisk/extended-recover.txt /mnt/udisk/extended-recover.txt.txt /oem/.extended-recover
     fi
 
     mkdir -p "$EXTENDED_DIR"

@@ -254,35 +254,12 @@ The `.default` files are updated on each boot to reflect the current firmware de
 
 ## Recovery & Reset
 
-### Reset to Default Configuration
-
-To restore default extended configuration, remove or rename the `extended` folder in Fluidd/Mainsail Configuration tab, then reboot.
-
-### Password Recovery
-
-If you forget your Moonraker admin password when Require Login/Password (Fluidd only) is enabled:
-
-1. Create an empty file named `extended-recover.txt` on a USB drive
-2. Insert the USB drive into the printer
-3. Restart the printer
-4. The extended configuration (including authentication settings) will be backed up and reset
-5. Remove the USB drive
-6. Re-enable Require Login/Password (Fluidd only) in Firmware Config to generate a new admin password
-
-**Important:** The `extended-recover.txt` method resets ALL extended configuration, not just authentication. Your other settings (camera, VPN, etc.) will also be reset to defaults.
-
-### Recovery from Configuration Issues
-
-If an invalid configuration breaks Moonraker (printer won't connect to WiFi):
-
-1. Create an empty file named `extended-recover.txt` on a USB drive
-2. Insert the USB drive into the printer
-3. Restart the printer
-4. The extended configuration will be backed up to `extended.backup.N` and reset to defaults
-5. Remove the USB drive (the recovery file will be automatically deleted)
+See **[Recovery](recovery.md)** for all recovery methods — touch-based
+recovery screen, web interface actions, and USB recovery file.
 
 ## Related Documentation
 
+- [Recovery Screen](recovery.md) - Touch-based boot-time recovery and diagnostics menu
 - [Camera Support](camera_support.md) - Camera features and WebRTC streaming
 - [Klipper and Moonraker Custom Includes](klipper_includes.md) - Add custom configuration files
 - [Klipper Print Hooks](klipper_hooks.md) - React to print lifecycle events via hook macros

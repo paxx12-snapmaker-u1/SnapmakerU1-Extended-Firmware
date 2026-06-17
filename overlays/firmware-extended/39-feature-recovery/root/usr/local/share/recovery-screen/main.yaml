@@ -1,0 +1,108 @@
+screens:
+  main:
+    title: The paxx12 Boot Options
+    items:
+      - type: label
+        label: Press a button or wait to continue normal boot.
+      - type: button
+        label: Continue Boot
+        screen: false
+      - type: button
+        label: Information
+        cmd: |
+          serial=$(grep -m1 'Serial' /proc/cpuinfo | awk '{print $3}' 2>/dev/null || echo N/A)
+          wifi=$(cat /oem/printer_data/network/wlan0.address 2>/dev/null || cat /sys/class/net/wlan0/address 2>/dev/null || echo N/A)
+          eth=$(cat /oem/printer_data/network/eth0.address 2>/dev/null || cat /sys/class/net/eth0/address 2>/dev/null || echo N/A)
+          emmc=$(cat /sys/class/block/mmcblk0/device/life_time 2>/dev/null || echo N/A)
+          base=$(cat /etc/FULLVERSION 2>/dev/null || echo N/A)
+          version=$(cat /etc/BUILD_VERSION 2>/dev/null || echo N/A)
+          profile=$(cat /etc/BUILD_PROFILE 2>/dev/null || echo N/A)
+          slot=$(awk '/android.*slot.*=/{gsub(/.*=/,""); print ($0=="_a")?"A":"B"}' /proc/cmdline 2>/dev/null || echo N/A)
+          echo "Serial:   $serial"
+          echo "WiFi MAC: $wifi"
+          echo "Eth MAC:  $eth"
+          echo "eMMC:     $emmc"
+          echo "Base:     $base"
+          echo "Version:  $version"
+          echo "Profile:  $profile"
+          echo "Slot:     $slot"
+      - type: button
+        label: Recovery Options
+        screen: recovery-options
+
+  recovery-options:
+    title: Recovery Options
+    items:
+      - type: button
+        label: Reset Extended to Defaults
+        screen: confirm-reset
+      - type: button
+        label: Reset Data Persistence
+        screen: confirm-debug
+      - type: button
+        label: Reset User Changes
+        screen: confirm-factory
+      - type: button
+        label: Switch to Backup Firmware
+        screen: confirm-backup
+      - type: button
+        label: Back
+        screen: main
+
+  confirm-reset:
+    title: Reset Extended to Defaults
+    items:
+      - type: label
+        label: This will clear all extended settings and reboot.
+      - type: button
+        label: Confirm Reset
+        cmd: |
+          touch /oem/.extended-recover &&
+          /sbin/reboot
+      - type: button
+        label: Cancel
+        screen: recovery-options
+
+  confirm-debug:
+    title: Reset Data Persistence
+    items:
+      - type: label
+        label: This will remove debug/persistence data and reboot.
+      - type: button
+        label: Confirm Reset
+        cmd: |
+          rm -f /oem/.debug &&
+          /sbin/reboot
+      - type: button
+        label: Cancel
+        screen: recovery-options
+
+  confirm-factory:
+    title: Reset User Changes
+    items:
+      - type: label
+        label: This will erase user changes, settings and reboot.
+      - type: button
+        label: Confirm Reset
+        cmd: |
+          touch /oem/.extended-recover &&
+          rm -f /oem/.printer_data /oem/.debug &&
+          /sbin/reboot
+      - type: button
+        label: Cancel
+        screen: recovery-options
+
+  confirm-backup:
+    title: Switch to Backup Firmware
+    items:
+      - type: label
+        label: This will switch to the backup firmware slot and reboot.
+      - type: button
+        label: Confirm Switch
+        cmd: |
+          rm -f /oem/.printer_data /oem/.debug &&
+          updateEngine --misc=other --reboot
+      - type: button
+        label: Cancel
+        screen: recovery-options
+
