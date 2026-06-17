@@ -10,6 +10,9 @@ jobs:
     runs-on: ubuntu-24.04-arm
     permissions:
       contents: write
+    outputs:
+      hashes: ${{ steps.hash.outputs.hashes }}
+      version: ${{ steps.version.outputs.version }}
     steps:
     - name: Checkout
       uses: actions/checkout@v3
@@ -47,16 +50,26 @@ jobs:
         key: kernels-${{ runner.os }}-${{ runner.arch }}-${{ env.KERNEL_SHA }}
 
     - name: Set GIT_VERSION
+      id: version
       shell: bash
       run: |
         nextVer=$(./scripts/next_version.sh paxx12)
         echo "GIT_VERSION=${nextVer//v/}" | tee -a $GITHUB_ENV
+        echo "version=${nextVer//v/}" >> "$GITHUB_OUTPUT"
 
     - name: Download firmware
       run: ./dev.sh make firmware
 
     - name: Build with Extended Fluidd firmware
       run: ./dev.sh make build PROFILE=extended OUTPUT_FILE=U1_extended_${{ env.GIT_VERSION }}_upgrade.bin
+
+    - name: Generate checksums
+      id: hash
+      shell: bash
+      run: |
+        set -euo pipefail
+        sha256sum U1_*_upgrade.bin > SHA256SUMS
+        echo "hashes=$(base64 -w0 < SHA256SUMS)" >> "$GITHUB_OUTPUT"
 
     - name: Generate Changelog
       run: make changelog >> RELEASE.md
@@ -69,7 +82,7 @@ jobs:
         updateOnlyUnreleased: true
         draft: true
         bodyFile: RELEASE.md
-        artifacts: "U1_*_upgrade.bin"
+        artifacts: "U1_*_upgrade.bin,SHA256SUMS"
 
     - name: Save Firmwares Cache
       if: steps.cache-firmwares.outputs.cache-hit != 'true'
@@ -84,3 +97,39 @@ jobs:
       with:
         path: tmp/kernel/
         key: kernels-${{ runner.os }}-${{ runner.arch }}-${{ env.KERNEL_SHA }}
+
+  provenance:
+    needs: [custom-firmware-build]
+    if: ${{ github.repository == 'paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware' }}
+    permissions:
+      actions: read
+      id-token: write
+      contents: write
+    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.1.0
+    with:
+      base64-subjects: ${{ needs.custom-firmware-build.outputs.hashes }}
+      provenance-name: "U1_${{ needs.custom-firmware-build.outputs.version }}.intoto.jsonl"
+      upload-assets: false
+
+  attach-provenance:
+    needs: [custom-firmware-build, provenance]
+    if: ${{ github.repository == 'paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware' }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+    - name: Download provenance
+      uses: actions/download-artifact@v4
+      with:
+        name: ${{ needs.provenance.outputs.provenance-name }}
+
+    - name: Attach provenance to draft release
+      uses: ncipollo/release-action@v1
+      with:
+        tag: "v${{ needs.custom-firmware-build.outputs.version }}"
+        allowUpdates: true
+        updateOnlyUnreleased: true
+        draft: true
+        omitBodyDuringUpdate: true
+        omitNameDuringUpdate: true
+        artifacts: "${{ needs.provenance.outputs.provenance-name }}"
