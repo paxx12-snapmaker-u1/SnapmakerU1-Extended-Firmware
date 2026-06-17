@@ -20,7 +20,14 @@ settings:
               - bash
               - -ec
               - |
-                if ! ls /dev/serial/by-id/usb-ANYCUBIC* /dev/serial/by-id/usb-1a86_USB_Single_Serial_* /dev/serial/by-id/usb-1a86_USB_Serial* >/dev/null 2>&1; then
+                ace_found=0
+                for ace_device in /dev/serial/by-id/usb-ANYCUBIC* /dev/serial/by-id/usb-1a86_USB_Single_Serial_* /dev/serial/by-id/usb-1a86_USB_Serial*; do
+                  if [ -e "$ace_device" ]; then
+                    ace_found=1
+                    break
+                  fi
+                done
+                if [ "$ace_found" -ne 1 ]; then
                   echo "ERROR: No Anycubic ACE detected on USB. Connect the ACE and try again."
                   exit 1
                 fi
