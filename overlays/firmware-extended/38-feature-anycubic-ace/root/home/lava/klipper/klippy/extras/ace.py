@@ -2,6 +2,7 @@ import glob
 import json
 import logging
 import queue
+import threading
 import traceback
 
 import serial
@@ -125,6 +126,12 @@ class AceManager:
         self._v2_seq = 0
         self._v2_callback_map = {}
         self._v2_callback_deadlines = {}
+        self._v2_callback_lock = threading.Lock()
+        self._v2_reader_stop = None
+        self._v2_reader_thread = None
+        self._v2_writer_stop = None
+        self._v2_writer_thread = None
+        self._v2_writer_queue = None
         self._request_timeout = 5.0
         self.gate_status = [GATE_UNKNOWN] * 4
         self._info = {
@@ -263,20 +270,29 @@ class AceManager:
                 baudrate=self.baud,
                 exclusive=True,
                 rtscts=not self._is_v2,
-                timeout=0,
-                write_timeout=0,
+                timeout=0.1 if self._is_v2 else 0,
+                write_timeout=1.0 if self._is_v2 else 0,
             )
             if self._is_v2:
-                self._initialize_v2_transport()
+                self._serial.reset_input_buffer()
             self._connected = True
             self._info["status"] = "ready"
             self._request_id = 0
-            self._ace_dev_fd = self.reactor.register_fd(
-                self._serial.fileno(), self._reader_cb
-            )
+            if self._is_v2:
+                self._start_v2_reader_thread()
+                self._start_v2_writer_thread()
+            else:
+                self._ace_dev_fd = self.reactor.register_fd(
+                    self._serial.fileno(), self._reader_cb
+                )
             self._heartbeat_timer = self.reactor.register_timer(
                 self._periodic_heartbeat_event, self.reactor.NOW
             )
+            if self._is_v2:
+                self.send_request(
+                    {"method": "discover_device"},
+                    self._command_callback(None),
+                )
             self.send_request({"method": "get_info"}, self._handle_info_response)
             if self._is_v2:
                 self.send_request(
@@ -306,52 +322,119 @@ class AceManager:
             logging.info("ACE: connection error: %s", traceback.format_exc())
             return eventtime + 5.0
 
-    def _initialize_v2_transport(self):
-        self._serial.timeout = 0.2
-        self._serial.reset_input_buffer()
-        self._serial.write(ace2_protocol.build_discover_packet(seq=1))
-        self._serial.flush()
-        buffer = bytearray()
-        deadline = self.reactor.monotonic() + 1.5
-        uids = None
-        while self.reactor.monotonic() < deadline:
-            waiting = self._serial.in_waiting
-            if waiting:
-                buffer.extend(self._serial.read(waiting))
-                packets, buffer = ace2_protocol.parse_stream(buffer)
-                for packet in packets:
-                    if (
-                        packet["is_resp"]
-                        and packet["cmd"] == ace2_protocol.CMD_DISCOVER_DEVICE
-                    ):
-                        uids = ace2_protocol.parse_discover_response(packet["payload"])
-                        break
-            if uids is not None:
-                break
-            self.reactor.pause(self.reactor.monotonic() + 0.05)
-        if uids is not None:
-            self._serial.write(ace2_protocol.build_assign_id_packet(
-                uids[0], uids[1], uids[2], dev_id=1, seq=2
-            ))
-            self._serial.flush()
-        self._serial.timeout = 0
-        self._serial.reset_input_buffer()
-
     def _serial_disconnect(self):
+        reader_stop = self._v2_reader_stop
+        writer_stop = self._v2_writer_stop
+        if reader_stop is not None:
+            reader_stop.set()
+        if writer_stop is not None:
+            writer_stop.set()
         if self._serial is not None and self._serial.is_open:
             self._serial.close()
+        current_thread = threading.current_thread()
+        if (
+            self._v2_reader_thread is not None
+            and self._v2_reader_thread is not current_thread
+        ):
+            self._v2_reader_thread.join(1.0)
+        if (
+            self._v2_writer_thread is not None
+            and self._v2_writer_thread is not current_thread
+        ):
+            self._v2_writer_thread.join(1.0)
+        self._v2_reader_stop = None
+        self._v2_reader_thread = None
+        self._v2_writer_stop = None
+        self._v2_writer_thread = None
+        self._v2_writer_queue = None
         self._connected = False
         self._info["status"] = "disconnected"
         self._callback_map.clear()
         self._callback_deadlines.clear()
-        self._v2_callback_map.clear()
-        self._v2_callback_deadlines.clear()
+        with self._v2_callback_lock:
+            self._v2_callback_map.clear()
+            self._v2_callback_deadlines.clear()
         if self._heartbeat_timer is not None:
             self.reactor.unregister_timer(self._heartbeat_timer)
             self._heartbeat_timer = None
         if self._ace_dev_fd is not None:
             self.reactor.set_fd_wake(self._ace_dev_fd, False, False)
             self._ace_dev_fd = None
+
+    def _start_v2_reader_thread(self):
+        if self._v2_reader_thread is not None:
+            return
+        self._v2_reader_stop = threading.Event()
+        self._v2_reader_thread = threading.Thread(
+            target=self._v2_reader_loop,
+            name="ace2-reader",
+        )
+        self._v2_reader_thread.daemon = True
+        self._v2_reader_thread.start()
+
+    def _start_v2_writer_thread(self):
+        if self._v2_writer_thread is not None:
+            return
+        self._v2_writer_stop = threading.Event()
+        self._v2_writer_queue = queue.Queue()
+        self._v2_writer_thread = threading.Thread(
+            target=self._v2_writer_loop,
+            name="ace2-writer",
+        )
+        self._v2_writer_thread.daemon = True
+        self._v2_writer_thread.start()
+
+    def _v2_reader_loop(self):
+        while (
+            self._v2_reader_stop is not None
+            and not self._v2_reader_stop.is_set()
+        ):
+            try:
+                if self._serial is None or not self._serial.is_open:
+                    return
+                data = self._serial.read(128)
+                if data:
+                    self._process_v2_data(data)
+            except serial.SerialException:
+                logging.info("ACE: ACE 2 Pro read error: %s", traceback.format_exc())
+                self._restart_after_v2_transport_error()
+                return
+            except Exception:
+                logging.info("ACE: ACE 2 Pro process error: %s", traceback.format_exc())
+
+    def _v2_writer_loop(self):
+        while (
+            self._v2_writer_stop is not None
+            and not self._v2_writer_stop.is_set()
+        ):
+            try:
+                packet = self._v2_writer_queue.get(timeout=0.1)
+            except queue.Empty:
+                continue
+            try:
+                if self._serial is None or not self._serial.is_open:
+                    return
+                self._serial.write(packet)
+                self._serial.flush()
+            except serial.SerialTimeoutException:
+                logging.info("ACE: ACE 2 Pro write timeout")
+                self._restart_after_v2_transport_error()
+                return
+            except serial.SerialException:
+                logging.info("ACE: ACE 2 Pro write error: %s", traceback.format_exc())
+                self._restart_after_v2_transport_error()
+                return
+
+    def _restart_after_v2_transport_error(self):
+        self.reactor.register_async_callback(
+            lambda eventtime: self._restart_v2_connection(eventtime)
+        )
+
+    def _restart_v2_connection(self, eventtime):
+        self._serial_disconnect()
+        self._connect_timer = self.reactor.register_timer(
+            self._connect, self.reactor.monotonic() + 1.0
+        )
 
     def _send_request(self, request):
         if self._is_v2:
@@ -395,17 +478,19 @@ class AceManager:
         if self._v2_seq == 0:
             self._v2_seq = 1
         msg_id = request.get("id")
-        self._v2_callback_map[self._v2_seq] = (
-            self._callback_map.pop(msg_id, None),
-            decoder,
-        )
-        self._v2_callback_deadlines[self._v2_seq] = self._callback_deadlines.pop(
-            msg_id, self.reactor.monotonic() + self._request_timeout
-        )
-        try:
-            self._serial.write(
-                ace2_protocol.build_packet(cmd, payload, seq=self._v2_seq)
+        with self._v2_callback_lock:
+            self._v2_callback_map[self._v2_seq] = (
+                self._callback_map.pop(msg_id, None),
+                decoder,
             )
+            self._v2_callback_deadlines[self._v2_seq] = self._callback_deadlines.pop(
+                msg_id, self.reactor.monotonic() + self._request_timeout
+            )
+        try:
+            packet = ace2_protocol.build_packet(cmd, payload, seq=self._v2_seq)
+            if self._v2_writer_queue is None:
+                raise AceException("ACE 2 Pro writer is not running")
+            self._v2_writer_queue.put(packet)
         except Exception:
             self._serial_disconnect()
             raise AceException("ACE 2 Pro serial write failed")
@@ -450,10 +535,11 @@ class AceManager:
         for packet in packets:
             if not packet["is_resp"]:
                 continue
-            callback, decoder = self._v2_callback_map.pop(
-                packet["seq"], (None, None)
-            )
-            self._v2_callback_deadlines.pop(packet["seq"], None)
+            with self._v2_callback_lock:
+                callback, decoder = self._v2_callback_map.pop(
+                    packet["seq"], (None, None)
+                )
+                self._v2_callback_deadlines.pop(packet["seq"], None)
             if callback is None or decoder is None:
                 continue
             try:
@@ -462,8 +548,12 @@ class AceManager:
                 logging.info("ACE: invalid ACE 2 Pro response: %s",
                              traceback.format_exc())
                 continue
-            callback(response)
-        if not self._v2_callback_map and not self._callback_map:
+            self.reactor.register_async_callback(
+                lambda eventtime, cb=callback, res=response: cb(res)
+            )
+        with self._v2_callback_lock:
+            no_v2_callbacks = not self._v2_callback_map
+        if no_v2_callbacks and not self._callback_map:
             self._info["status"] = "ready"
 
     def _prune_stale_callbacks(self):
@@ -476,15 +566,17 @@ class AceManager:
             self._callback_map.pop(msg_id, None)
             self._callback_deadlines.pop(msg_id, None)
             logging.info("ACE: dropped stale request id %s", msg_id)
-        stale_v2_ids = [
-            seq for seq, deadline in self._v2_callback_deadlines.items()
-            if deadline <= now
-        ]
-        for seq in stale_v2_ids:
-            self._v2_callback_map.pop(seq, None)
-            self._v2_callback_deadlines.pop(seq, None)
-            logging.info("ACE: dropped stale ACE 2 Pro request seq %s", seq)
-        if not self._callback_map and not self._v2_callback_map and self._connected:
+        with self._v2_callback_lock:
+            stale_v2_ids = [
+                seq for seq, deadline in self._v2_callback_deadlines.items()
+                if deadline <= now
+            ]
+            for seq in stale_v2_ids:
+                self._v2_callback_map.pop(seq, None)
+                self._v2_callback_deadlines.pop(seq, None)
+                logging.info("ACE: dropped stale ACE 2 Pro request seq %s", seq)
+            no_v2_callbacks = not self._v2_callback_map
+        if not self._callback_map and no_v2_callbacks and self._connected:
             self._info["status"] = "ready"
 
     def _handle_info_response(self, response):
@@ -666,17 +758,33 @@ class AceManager:
         except AceException as e:
             raise gcmd.error(str(e))
 
-    def _feed(self, index, length, speed, how_wait=None):
+    def _motion_callback(self, result):
+        def callback(response):
+            code = response.get("code", 0)
+            result["done"] = True
+            result["ok"] = code == 0
+            if code != 0:
+                msg = response.get("msg") or "code %s" % (code,)
+                result["msg"] = msg
+                self.log_error("ACE Error: %s" % (msg,))
+        return callback
+
+    def _feed(self, index, length, speed, how_wait=None, completion_message=None):
         self.wait_ace_ready()
+        result = {"done": False, "ok": None, "msg": ""}
         self.send_request(
             {
                 "method": "feed_filament",
                 "params": {"index": index, "length": length, "speed": speed},
             },
-            self._command_callback(None),
+            self._motion_callback(result),
         )
         wait_len = how_wait if how_wait is not None else length
         self.dwell((wait_len / float(speed)) + 0.1)
+        if completion_message and not result.get("done"):
+            self.wait_ace_ready()
+        if completion_message and result.get("ok") is not False:
+            self.gcode.respond_info(completion_message)
 
     def cmd_ACE_FEED(self, gcmd):
         try:
@@ -684,20 +792,30 @@ class AceManager:
             length = gcmd.get_int("LENGTH", minval=1)
             speed = gcmd.get_int("SPEED", self.feed_speed, minval=1)
             self.gcode.respond_info("ACE feed slot %d: starting %d mm at %d mm/s" % (index, length, speed))
-            self._feed(index, length, speed)
+            self._feed(
+                index,
+                length,
+                speed,
+                completion_message="ACE feed slot %d: complete" % (index,),
+            )
         except AceException as e:
             raise gcmd.error(str(e))
 
-    def _retract(self, index, length, speed):
+    def _retract(self, index, length, speed, completion_message=None):
         self.wait_ace_ready()
+        result = {"done": False, "ok": None, "msg": ""}
         self.send_request(
             {
                 "method": "unwind_filament",
                 "params": {"index": index, "length": length, "speed": speed},
             },
-            self._command_callback(None),
+            self._motion_callback(result),
         )
         self.dwell((length / float(speed)) + 0.1)
+        if completion_message and not result.get("done"):
+            self.wait_ace_ready()
+        if completion_message and result.get("ok") is not False:
+            self.gcode.respond_info(completion_message)
 
     def retract_fil(self, index):
         self._retract(index, self.retract_lengths[index], self.retract_speed)
@@ -708,7 +826,12 @@ class AceManager:
             length = gcmd.get_int("LENGTH", minval=1)
             speed = gcmd.get_int("SPEED", self.retract_speed, minval=1)
             self.gcode.respond_info("ACE retract slot %d: starting %d mm at %d mm/s" % (index, length, speed))
-            self._retract(index, length, speed)
+            self._retract(
+                index,
+                length,
+                speed,
+                completion_message="ACE retract slot %d: complete" % (index,),
+            )
         except AceException as e:
             raise gcmd.error(str(e))
 

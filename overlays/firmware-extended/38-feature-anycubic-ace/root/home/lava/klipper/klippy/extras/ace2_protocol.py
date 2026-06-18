@@ -258,7 +258,11 @@ def _decode_info(payload):
 
 def _decode_generic(payload):
     fields = pb_decode(payload)
-    return {"code": pb_first(fields, 1, 0), "msg": ""}
+    code = pb_first(fields, 1, 0)
+    msg = pb_first_str(fields, 2, "")
+    if code and not msg:
+        msg = "code %s" % (code,)
+    return {"code": code, "msg": msg}
 
 
 def _decode_temp(payload):
@@ -382,6 +386,5 @@ def encode_v1_request(request):
         )
         return CMD_SET_FEED_CHECK, payload, _decode_generic
     return None
-
 
 
