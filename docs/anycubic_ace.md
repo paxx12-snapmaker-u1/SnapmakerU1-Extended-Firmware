@@ -20,6 +20,8 @@ This integration is a clean Extended Firmware port informed by these projects:
 - utkabobr/DuckACE
 - printers-for-people/ACEResearch
 - decay71/multiACE issue #46 for CH340 USB-to-RS485 ACE 2 Pro validation notes
+- Extended Firmware U1 + ACE 2 Pro validation with a CH340 `1a86:7523`
+  USB-to-RS485 adapter
 
 ## Supported Models
 
@@ -129,6 +131,12 @@ Community-tested CH340 USB-to-RS485 adapters may enumerate differently:
 /dev/serial/by-path/platform-...-port0
 ```
 
+The CH340 path `usb-1a86_USB_Serial-if00-port0` has been validated with ACE
+2 Pro using a USB-to-RS485 adapter. If the adapter appears in `lsusb` and
+`/dev/serial/by-id/` but ACE commands time out, the firmware is usually
+sending successfully but not receiving an RS485 reply. In that case, keep
+`GND` connected and swap only the RS485 `A`/`B` pair.
+
 A manual `serial:` override is only needed if your ACE enumerates with a
 non-standard USB id. In that case update the path in:
 
@@ -147,12 +155,13 @@ Parts by model:
 | Model | Required parts |
 |---|---|
 | ACE Pro | Micro-Fit 3.0 2x3P pigtail connector, USB 2.0 cable or USB-A breakout |
-| ACE 2 Pro | Micro-Fit 3.0 2x3P pigtail connector, CH343 USB-to-RS485 adapter preferred |
+| ACE 2 Pro | Micro-Fit 3.0 2x3P pigtail connector, USB-to-RS485 adapter |
 
 **ACE 2 Pro only:** use a USB-to-RS485 adapter. Prefer CH343 when available
 because it is closest to the original Anycubic USB-to-RS485 signal cable
-behavior. CH340/CH341 adapters are cheaper and community-tested, but should be
-validated with longer prints.
+behavior. CH340/CH341 adapters are cheaper and community-tested; CH340
+adapters that enumerate as `1a86:7523` have been validated for basic ACE 2 Pro
+status, temperature, gate status, and dryer control.
 
 Do not use a direct USB cable for ACE 2 Pro.
 
@@ -237,18 +246,21 @@ U1 USB port
 
 Wire the RS485 adapter to the Micro-Fit pigtail:
 
-| Adapter label | ACE 2 Pro signal |
-|---|---|
-| `GND` | Ground |
-| `A`, `485+`, or adapter `D+` | RS485 positive |
-| `B`, `485-`, or adapter `D-` | RS485 negative |
-| `VCC` | Do not connect |
+| Adapter label | ACE 2 Pro signal | Notes |
+|---|---|---|
+| `GND` | Ground | Always required |
+| `A`, `485+`, or `D+` | Try both `D+` and `D-` | Swap if ACE commands time out |
+| `B`, `485-`, or `D-` | Try both `D-` and `D+` | Swap if ACE commands time out |
+| `VCC` | Do not connect | Always leave disconnected |
 
 Notes:
 
 - ACE 2 Pro should be on firmware `1.1.31` or newer.
-- If the adapter enumerates but ACE commands do not respond, swap RS485 `A`
-  and `B`.
+- **RS485 adapter labels are not standardized.** The most common issue is
+  swapped `A`/`B` polarity: keep `GND` connected and try both orientations
+  for the `A`/`B` pair. If the adapter enumerates but ACE commands time out,
+  swap only the RS485 `A` and `B` wires. A working link should show real
+  `ACE_GET_TEMP` values and non-timeout `ACE_GET_STATUS` responses.
 - CH340/CH341 adapters may enumerate as `1a86:7523` and may need this udev
   rule:
 
@@ -259,6 +271,39 @@ SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="7523", MODE="0666"
 After adding the rule, reload udev rules and reconnect the adapter or reboot
 the printer.
 
+### ACE 2 Pro Validation
+
+After enabling Anycubic ACE and selecting Auto Detect or Anycubic ACE 2 Pro,
+restart Klipper and run:
+
+```gcode
+ACE_GET_STATUS
+ACE_GET_TEMP
+ACE_DRYING_ON
+ACE_GET_STATUS
+ACE_GET_TEMP
+ACE_DRYING_OFF
+```
+
+A working ACE 2 Pro link should report:
+
+- `Model: Anycubic ACE 2 Pro`
+- `Protocol: protobuf`
+- `Connected: yes`
+- gate status such as `[0, 0, 0, 0]`
+- non-zero temperature and humidity values
+- dryer status changing to `keeping` after `ACE_DRYING_ON`
+
+If the adapter enumerates but the commands time out, check Klipper logs:
+
+```bash
+grep -iE 'ACE: dropped stale ACE 2 Pro|ACE 2 Pro reader error|ACE 2 Pro writer error' /home/lava/printer_data/logs/klippy.log | tail -80
+```
+
+Repeated stale ACE 2 Pro requests with no successful status, temperature, or
+dryer response usually means the RS485 receive side is not wired correctly.
+The most common fix is swapping `A` and `B` while leaving `GND` unchanged.
+
 ## Configuration
 
 Important values in `extended/klipper/ace.cfg`:
@@ -266,8 +311,6 @@ Important values in `extended/klipper/ace.cfg`:
 ```ini
 device_model: auto
 assist_source: snapmaker
-enable_feed_assist: False
-enable_feeder_mode: True
 rfid_source: existing
 
 feed_length_slot1: 1000
@@ -290,10 +333,13 @@ movement tests before running full load/unload workflows.
 - `ACE_GET_STATUS`
 - `ACE_GET_TEMP`
 
-Convenience macros are also provided:
+Convenience macros:
 
-- `ACE_DRYING_ON`
-- `ACE_DRYING_OFF`
+- `ACE_FEED_SLOT1`–`ACE_FEED_SLOT4`
+- `ACE_RETRACT_SLOT1`–`ACE_RETRACT_SLOT4`
+- `ACE_ASSIST_ON` / `ACE_ASSIST_OFF`
+- `ACE_STATUS` / `ACE_TEMP`
+- `ACE_DRYING_ON` / `ACE_DRYING_OFF`
 
 ## Disabling
 
@@ -301,8 +347,25 @@ Set **Anycubic ACE** back to **Disabled** in Firmware Config.
 This removes `extended/klipper/ace.cfg` and restarts Klipper, returning filament
 feeding to the stock U1 path.
 
+## RFID Filament Detection
+
+When `rfid_source: ace` and an ACE slot RFID tag is detected, the ACE driver
+automatically sets filament configuration for the matching extruder. For ACE
+2 Pro, a separate `get_filament_info` request is sent to retrieve richer data
+including:
+
+- Filament type and vendor
+- Color (RGBA)
+- Extruder temperature range (min/max)
+- Hot bed temperature range (min/max)
+- Filament diameter
+
+For ACE Pro, color and type are read directly from the status response.
+
 ## Limitations
 
 - ACE hardware must enumerate as a serial device before firmware can connect.
+- ACE 2 Pro-specific protocol features (`ACE_UPDATE_SPEED`, `ACE_UNWIND_ASSIST`)
+  are not available on ACE Pro.
 - RFID ownership is intentionally limited to one active source to avoid
   conflicts with existing Extended Firmware RFID/OpenRFID settings.

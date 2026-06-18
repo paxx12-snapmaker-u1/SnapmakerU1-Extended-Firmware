@@ -2,12 +2,12 @@ import glob
 import json
 import logging
 import queue
-import struct
 import traceback
 
 import serial
 
 from . import ace2_protocol
+from . import ace_protocol
 
 
 GATE_UNKNOWN = -1
@@ -41,12 +41,24 @@ MODEL_INFO = {
     },
 }
 
+ASSIST_SOURCE_LABELS = {
+    "ace": "ACE Feed Assist",
+    "snapmaker": "U1 Feeders",
+    "off": "Off",
+}
+
+RFID_SOURCE_LABELS = {
+    "existing": "Existing U1/OpenRFID metadata",
+    "ace": "ACE slot RFID metadata",
+    "none": "Off",
+}
+
 
 class AceException(Exception):
     pass
 
 
-class BunnyAce:
+class AceManager:
     VARS_ACE_REVISION = "ace__revision"
 
     def __init__(self, config):
@@ -71,11 +83,6 @@ class BunnyAce:
         self.assist_source = config.get("assist_source", "snapmaker").lower()
         if self.assist_source not in ("ace", "snapmaker", "off"):
             self.assist_source = "snapmaker"
-        self._enable_feed_assist_from_cfg = config.getboolean(
-            "enable_feed_assist", False)
-        self._enable_feeder_mode_from_cfg = config.getboolean(
-            "enable_feeder_mode", False)
-        self._sync_assist_compatibility_fields()
         self.rfid_source = config.get("rfid_source", "existing").lower()
         if self.rfid_source not in ("existing", "ace", "none"):
             self.rfid_source = "existing"
@@ -122,11 +129,6 @@ class BunnyAce:
         self.gate_status = [GATE_UNKNOWN] * 4
         self._info = {
             "status": "disconnected",
-            "device_model": self.detected_model,
-            "display_name": self.model_info["display_name"],
-            "protocol": self.model_info["protocol"],
-            "serial": self.serial_id,
-            "baud": self.baud,
             "dryer_status": {
                 "status": "stop",
                 "target_temp": 0,
@@ -198,19 +200,8 @@ class BunnyAce:
             desc="Reports ACE temperature status",
         )
 
-    def _sync_assist_compatibility_fields(self):
-        if self.assist_source == "ace":
-            self.enable_feed_assist = True
-            self.enable_feeder_mode = False
-        elif self.assist_source == "snapmaker":
-            self.enable_feed_assist = False
-            self.enable_feeder_mode = True
-        else:
-            self.enable_feed_assist = False
-            self.enable_feeder_mode = False
-
     def uses_ace_assist(self):
-        return self.assist_source == "ace" and self.enable_feed_assist
+        return self.assist_source == "ace"
 
     def _detect_model_and_serial(self):
         ace_pro_devices = glob.glob(ACE_PRO_GLOB)
@@ -264,15 +255,6 @@ class BunnyAce:
         if self._request_id >= 300000:
             self._request_id = 0
         return self._request_id
-
-    def _calc_crc(self, buffer):
-        crc = 0xFFFF
-        for byte in buffer:
-            data = byte
-            data ^= crc & 0xFF
-            data ^= (data & 0x0F) << 4
-            crc = ((data << 8) | (crc >> 8)) ^ (data >> 4) ^ (data << 3)
-        return crc
 
     def _connect(self, eventtime):
         try:
@@ -382,20 +364,13 @@ class BunnyAce:
         if "id" not in request:
             request["id"] = self._get_next_request_id()
         payload = json.dumps(request).encode("utf-8")
-        if len(payload) > 1024:
-            raise AceException("ACE payload too large")
-        crc = self._calc_crc(payload)
+        data, crc = ace_protocol.encode_json_frame(payload)
         attempts = 0
         while crc == 0xAAFF and attempts < 10:
             request["id"] = self._get_next_request_id()
             payload = json.dumps(request).encode("utf-8")
-            crc = self._calc_crc(payload)
+            data, crc = ace_protocol.encode_json_frame(payload)
             attempts += 1
-        data = b"\xff\xaa"
-        data += struct.pack("<H", len(payload))
-        data += payload
-        data += struct.pack("<H", crc)
-        data += b"\xfe"
         try:
             self._serial.write(data)
         except Exception:
@@ -460,34 +435,7 @@ class BunnyAce:
             self._process_v2_data(raw_bytes)
             return
         self.read_buffer += raw_bytes
-        while len(self.read_buffer) >= 7:
-            start = self.read_buffer.find(b"\xff\xaa")
-            if start < 0:
-                self.read_buffer = (
-                    self.read_buffer[-1:]
-                    if self.read_buffer.endswith(b"\xff")
-                    else bytearray()
-                )
-                break
-            if start > 0:
-                self.read_buffer = self.read_buffer[start:]
-            if len(self.read_buffer) < 4:
-                break
-            payload_len = struct.unpack("<H", self.read_buffer[2:4])[0]
-            if payload_len > 2048:
-                self.read_buffer = self.read_buffer[2:]
-                continue
-            total_len = 4 + payload_len + 2 + 1
-            if len(self.read_buffer) < total_len:
-                break
-            packet = self.read_buffer[:total_len]
-            payload = packet[4:4 + payload_len]
-            self.read_buffer = self.read_buffer[total_len:]
-            try:
-                response = json.loads(payload.decode("utf-8"))
-            except Exception:
-                logging.info("ACE: invalid JSON response")
-                continue
+        for response in ace_protocol.parse_json_frames(self.read_buffer):
             msg_id = response.get("id")
             callback = self._callback_map.pop(msg_id, None)
             self._callback_deadlines.pop(msg_id, None)
@@ -687,8 +635,11 @@ class BunnyAce:
 
     def cmd_ACE_ENABLE_FEED_ASSIST(self, gcmd):
         try:
+            if not self.uses_ace_assist():
+                raise gcmd.error("Feed assist source is not set to ACE")
             index = gcmd.get_int("INDEX", minval=0, maxval=3)
             self._enable_feed_assist(index)
+            self.gcode.respond_info("Enabled ACE feed assist")
         except AceException as e:
             raise gcmd.error(str(e))
 
@@ -700,7 +651,7 @@ class BunnyAce:
         self.wait_ace_ready()
         self.send_request(
             {"method": "stop_feed_assist", "params": {"index": index}},
-            self._command_callback("Disabled ACE feed assist"),
+            self._command_callback(None),
         )
         self._feed_assist_index = -1
         self.wait_ace_ready()
@@ -711,6 +662,7 @@ class BunnyAce:
         try:
             index = gcmd.get_int("INDEX", self._feed_assist_index, minval=0, maxval=3)
             self._disable_feed_assist(index)
+            self.gcode.respond_info("Disabled ACE feed assist")
         except AceException as e:
             raise gcmd.error(str(e))
 
@@ -731,6 +683,7 @@ class BunnyAce:
             index = gcmd.get_int("INDEX", minval=0, maxval=3)
             length = gcmd.get_int("LENGTH", minval=1)
             speed = gcmd.get_int("SPEED", self.feed_speed, minval=1)
+            self.gcode.respond_info("ACE feed slot %d: starting %d mm at %d mm/s" % (index, length, speed))
             self._feed(index, length, speed)
         except AceException as e:
             raise gcmd.error(str(e))
@@ -754,6 +707,7 @@ class BunnyAce:
             index = gcmd.get_int("INDEX", minval=0, maxval=3)
             length = gcmd.get_int("LENGTH", minval=1)
             speed = gcmd.get_int("SPEED", self.retract_speed, minval=1)
+            self.gcode.respond_info("ACE retract slot %d: starting %d mm at %d mm/s" % (index, length, speed))
             self._retract(index, length, speed)
         except AceException as e:
             raise gcmd.error(str(e))
@@ -773,11 +727,9 @@ class BunnyAce:
             "  Serial: %s\n"
             "  Baud: %s\n"
             "  Connected: %s\n"
-            "  Status: %s\n"
-            "  Assist Source: %s\n"
-            "  Enable Feed Assist: %s\n"
-            "  Enable Feeder Mode: %s\n"
-            "  RFID Source: %s\n"
+            "  Device Status: %s\n"
+            "  Filament Assist: %s\n"
+            "  RFID Metadata: %s\n"
             "  Gates: %s"
             % (
                 status["display_name"],
@@ -786,10 +738,8 @@ class BunnyAce:
                 status["baud"],
                 "yes" if status["connected"] else "no",
                 status["status"],
-                status["assist_source"],
-                "yes" if status["enable_feed_assist"] else "no",
-                "yes" if status["enable_feeder_mode"] else "no",
-                status["rfid_source"],
+                ASSIST_SOURCE_LABELS.get(status["assist_source"], status["assist_source"]),
+                RFID_SOURCE_LABELS.get(status["rfid_source"], status["rfid_source"]),
                 status["gate_status"],
             )
         )
@@ -835,8 +785,6 @@ class BunnyAce:
             "serial": self.serial_id,
             "baud": self.baud,
             "assist_source": self.assist_source,
-            "enable_feed_assist": self.enable_feed_assist,
-            "enable_feeder_mode": self.enable_feeder_mode,
             "rfid_source": self.rfid_source,
             "temp": self._info.get("temp", 0),
             "dryer_status": self._info.get("dryer_status", {}),
@@ -846,4 +794,4 @@ class BunnyAce:
 
 
 def load_config(config):
-    return BunnyAce(config)
+    return AceManager(config)

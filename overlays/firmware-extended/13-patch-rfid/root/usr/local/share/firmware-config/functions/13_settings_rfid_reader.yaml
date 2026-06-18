@@ -16,6 +16,7 @@ settings:
         options:
           snapmaker:
             label: Snapmaker
+            if_cmd: test ! -f /oem/printer_data/config/extended/klipper/ace.cfg
             cmd:
               - bash
               - -xc
@@ -50,7 +51,7 @@ settings:
         options:
           snapmaker:
             label: Snapmaker
-            if_cmd: test "$(/usr/local/bin/extended-config.py get /oem/printer_data/config/extended/extended2.cfg components rfid_hardware 2>/dev/null || echo snapmaker)" != "ace"
+            if_cmd: test "$(/usr/local/bin/extended-config.py get /oem/printer_data/config/extended/extended2.cfg components rfid_hardware 2>/dev/null || echo snapmaker)" != "ace" -a ! -f /oem/printer_data/config/extended/klipper/ace.cfg
             cmd:
               - bash
               - -xc

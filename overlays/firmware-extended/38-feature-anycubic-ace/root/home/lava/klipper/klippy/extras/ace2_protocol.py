@@ -2,7 +2,6 @@
 # ACE 2 Pro transport: CH343 USB-UART, 230400 baud, protobuf payloads.
 import struct
 
-BAUD = 230400
 PREAMBLE = b"\xff\xaa"
 END_MARKER = 0xFE
 FLAG_REQUEST = 0x00
@@ -30,7 +29,18 @@ SLOT_ROLLBACK = 2
 SLOT_ASSISTING = 3
 SLOT_ROLLBACK_ASSISTING = 4
 SLOT_PRELOADING = 5
+SLOT_UPGRADING = 6
 SLOT_FEED_ERROR = 129
+
+SLOT_ERROR_STATUS_BY_RAW = {
+    SLOT_FEED_ERROR: "feed_error",
+    130: "rollback_error",
+    131: "assist_error",
+    132: "preload_error",
+    133: "stuck",
+    134: "tangled",
+    135: "motor_error",
+}
 
 FILAMENT_EMPTY = 0
 FILAMENT_IDENTIFIED = 2
@@ -196,6 +206,9 @@ def _slot_status_to_v1(slot_state, filament_state):
         return "unwinding"
     if slot_state in (SLOT_ASSISTING, SLOT_ROLLBACK_ASSISTING):
         return "assisting"
+    err = SLOT_ERROR_STATUS_BY_RAW.get(slot_state)
+    if err is not None:
+        return err
     if slot_state >= SLOT_FEED_ERROR:
         return "error"
     return "ready"
@@ -293,10 +306,21 @@ def _decode_filament_info(payload):
     }}
 
 
+def _decode_discover(payload):
+    fields = pb_decode(payload)
+    return {"result": {
+        "uid1": pb_first(fields, 1, 0),
+        "uid2": pb_first(fields, 2, 0),
+        "uid3": pb_first(fields, 3, 0),
+    }}
+
+
 def encode_v1_request(request):
     method = request.get("method")
     params = request.get("params") or {}
 
+    if method == "discover_device":
+        return CMD_DISCOVER_DEVICE, b"", _decode_discover
     if method == "get_status":
         return CMD_GET_STATUS, b"", _decode_status
     if method == "get_info":
@@ -329,13 +353,24 @@ def encode_v1_request(request):
             + pb_uint32(4, FEED_MODE_FEED_ASSIST)
         )
         return CMD_FEED_OR_ROLLBACK, payload, _decode_generic
+    if method == "unwind_assist":
+        payload = (
+            pb_uint32(1, params.get("index", 0))
+            + pb_uint32(2, 0)
+            + pb_uint32(3, 0)
+            + pb_uint32(4, FEED_MODE_UNWIND_ASSIST)
+        )
+        return CMD_FEED_OR_ROLLBACK, payload, _decode_generic
     if method in ("stop_feed_assist", "stop_feed_filament"):
         return CMD_STOP_FEED_OR_ROLLBACK, pb_uint32(1, params.get("index", 0)), _decode_generic
+    if method == "update_speed":
+        payload = pb_uint32(1, params.get("index", 0)) + pb_uint32(2, params.get("speed", 50))
+        return CMD_UPDATE_SPEED, payload, _decode_generic
     if method == "drying":
         payload = (
             pb_uint32(1, params.get("temp", 0))
             + pb_uint32(2, params.get("duration", 0))
-            + pb_bool(3, params.get("auto_roll", False))
+            + pb_bool(3, params.get("auto_roll", True))
         )
         return CMD_DRYING, payload, _decode_generic
     if method == "drying_stop":
@@ -349,15 +384,4 @@ def encode_v1_request(request):
     return None
 
 
-def build_discover_packet(seq=1):
-    return build_packet(CMD_DISCOVER_DEVICE, b"", seq=seq)
 
-
-def build_assign_id_packet(uid1, uid2, uid3, dev_id=1, seq=2):
-    payload = pb_uint32(1, uid1) + pb_uint32(2, uid2) + pb_uint32(3, uid3) + pb_uint32(4, dev_id)
-    return build_packet(CMD_ASSIGN_DEVICE_ID, payload, seq=seq)
-
-
-def parse_discover_response(payload):
-    fields = pb_decode(payload)
-    return pb_first(fields, 1, 0), pb_first(fields, 2, 0), pb_first(fields, 3, 0)

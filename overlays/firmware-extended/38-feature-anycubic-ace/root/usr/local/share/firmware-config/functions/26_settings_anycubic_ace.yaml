@@ -34,6 +34,8 @@ settings:
                 mkdir -p /oem/printer_data/config/extended/klipper
                 cp -n /usr/local/share/firmware-config/tweaks/klipper/ace.cfg /oem/printer_data/config/extended/klipper/ace.cfg
                 chown lava:lava /oem/printer_data/config/extended/klipper/ace.cfg
+                /usr/local/bin/extended-config.py add /oem/printer_data/config/extended/extended2.cfg components rfid_hardware ace
+                /usr/local/bin/extended-config.py add /oem/printer_data/config/extended/extended2.cfg components rfid_software ace
                 echo "Anycubic ACE enabled. Review /oem/printer_data/config/extended/klipper/ace.cfg and tune slot lengths. Restarting Klipper..."
                 /etc/init.d/S60klipper restart
           disabled:
@@ -43,6 +45,8 @@ settings:
               - -ec
               - |
                 rm -f /oem/printer_data/config/extended/klipper/ace.cfg
+                /usr/local/bin/extended-config.py add /oem/printer_data/config/extended/extended2.cfg components rfid_hardware snapmaker
+                /usr/local/bin/extended-config.py add /oem/printer_data/config/extended/extended2.cfg components rfid_software snapmaker
                 echo "Anycubic ACE disabled. Restarting Klipper..."
                 /etc/init.d/S60klipper restart
         default: disabled
@@ -117,8 +121,6 @@ settings:
                 cfg=/oem/printer_data/config/extended/klipper/ace.cfg
                 test -f "$cfg" || { echo "Error: Enable Anycubic ACE first"; exit 0; }
                 sed -i 's/^assist_source:.*/assist_source: ace/' "$cfg"
-                sed -i 's/^enable_feed_assist:.*/enable_feed_assist: True/' "$cfg"
-                sed -i 's/^enable_feeder_mode:.*/enable_feeder_mode: False/' "$cfg"
                 echo "Filament Assist Source: ACE Feed Assist. Restarting Klipper..."
                 /etc/init.d/S60klipper restart
           snapmaker:
@@ -130,8 +132,6 @@ settings:
                 cfg=/oem/printer_data/config/extended/klipper/ace.cfg
                 test -f "$cfg" || { echo "Error: Enable Anycubic ACE first"; exit 0; }
                 sed -i 's/^assist_source:.*/assist_source: snapmaker/' "$cfg"
-                sed -i 's/^enable_feed_assist:.*/enable_feed_assist: False/' "$cfg"
-                sed -i 's/^enable_feeder_mode:.*/enable_feeder_mode: True/' "$cfg"
                 echo "Filament Assist Source: U1 Feeders. Restarting Klipper..."
                 /etc/init.d/S60klipper restart
           "off":
@@ -143,8 +143,6 @@ settings:
                 cfg=/oem/printer_data/config/extended/klipper/ace.cfg
                 test -f "$cfg" || { echo "Error: Enable Anycubic ACE first"; exit 0; }
                 sed -i 's/^assist_source:.*/assist_source: off/' "$cfg"
-                sed -i 's/^enable_feed_assist:.*/enable_feed_assist: False/' "$cfg"
-                sed -i 's/^enable_feeder_mode:.*/enable_feeder_mode: False/' "$cfg"
                 echo "Filament Assist Source: Off. Restarting Klipper..."
                 /etc/init.d/S60klipper restart
         default: snapmaker
