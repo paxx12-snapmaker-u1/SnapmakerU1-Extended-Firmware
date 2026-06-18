@@ -34,8 +34,6 @@ settings:
                 mkdir -p /oem/printer_data/config/extended/klipper
                 cp -n /usr/local/share/firmware-config/tweaks/klipper/ace.cfg /oem/printer_data/config/extended/klipper/ace.cfg
                 chown lava:lava /oem/printer_data/config/extended/klipper/ace.cfg
-                /usr/local/bin/extended-config.py add /oem/printer_data/config/extended/extended2.cfg components rfid_hardware ace
-                /usr/local/bin/extended-config.py add /oem/printer_data/config/extended/extended2.cfg components rfid_software ace
                 echo "Anycubic ACE enabled. Review /oem/printer_data/config/extended/klipper/ace.cfg and tune slot lengths. Restarting Klipper..."
                 /etc/init.d/S60klipper restart
           disabled:
@@ -45,9 +43,15 @@ settings:
               - -ec
               - |
                 rm -f /oem/printer_data/config/extended/klipper/ace.cfg
-                /usr/local/bin/extended-config.py add /oem/printer_data/config/extended/extended2.cfg components rfid_hardware snapmaker
-                /usr/local/bin/extended-config.py add /oem/printer_data/config/extended/extended2.cfg components rfid_software snapmaker
+                if [ "$(/usr/local/bin/extended-config.py get /oem/printer_data/config/extended/extended2.cfg components rfid_hardware 2>/dev/null || true)" = "ace" ]; then
+                  /usr/local/bin/extended-config.py add /oem/printer_data/config/extended/extended2.cfg components rfid_hardware snapmaker
+                fi
+                if [ "$(/usr/local/bin/extended-config.py get /oem/printer_data/config/extended/extended2.cfg components rfid_software 2>/dev/null || true)" = "ace" ]; then
+                  /usr/local/bin/extended-config.py add /oem/printer_data/config/extended/extended2.cfg components rfid_software snapmaker
+                fi
                 echo "Anycubic ACE disabled. Restarting Klipper..."
+                /etc/init.d/S59rfid-support restart
+                /etc/init.d/S99openrfid restart
                 /etc/init.d/S60klipper restart
         default: disabled
 

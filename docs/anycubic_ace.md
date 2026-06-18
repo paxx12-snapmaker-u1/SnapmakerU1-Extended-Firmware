@@ -17,8 +17,6 @@ This integration is a clean Extended Firmware port informed by these projects:
 - BlackFrogKok/SnapAce, commit `34a06e87bcd59ca3ebc845ed32a794627505437c`
 - DnG-Crafts/U1-Ace, commit `f845339800445269069a60a55c9e517911c3f2f4`
 - hakimio/U1-Ace `ace2`, commit `97e94b11f6f9b52e045dc89919f69405dda1d9cf`
-- utkabobr/DuckACE
-- printers-for-people/ACEResearch
 - decay71/multiACE issue #46 for CH340 USB-to-RS485 ACE 2 Pro validation notes
 - Extended Firmware U1 + ACE 2 Pro validation with a CH340 `1a86:7523`
   USB-to-RS485 adapter
@@ -99,7 +97,6 @@ Valid combinations:
 | Snapmaker | OpenRFID | U1 built-in reader, OpenRFID decoder (Bambu/Creality) |
 | External | *(hidden)* | External reader, self-contained |
 | ACE | ACE | ACE slot reader, ACE-format tags |
-| ACE | OpenRFID | ACE slot reader, OpenRFID decoder (future) |
 
 ## USB Detection
 
@@ -319,8 +316,10 @@ retract_length_slot1: 3000
 max_dryer_temperature: 55
 ```
 
-Tune all four slot lengths for your tube routing. Start with short manual
-movement tests before running full load/unload workflows.
+Tune all four slot lengths for your tube routing. Start with status and dryer
+tests before running movement workflows. For feed and retract validation,
+prefer the slot macros or realistic lengths; very short ACE 2 Pro movement
+commands may be rejected by the ACE firmware.
 
 ## Commands
 
@@ -350,22 +349,21 @@ feeding to the stock U1 path.
 ## RFID Filament Detection
 
 When `rfid_source: ace` and an ACE slot RFID tag is detected, the ACE driver
-automatically sets filament configuration for the matching extruder. For ACE
-2 Pro, a separate `get_filament_info` request is sent to retrieve richer data
-including:
+automatically sets filament configuration for the matching extruder. For ACE 2
+Pro, a separate `get_filament_info` request can retrieve richer slot data for
+the ACE metadata sync path. Current v1 metadata sync uses:
 
-- Filament type and vendor
-- Color (RGBA)
-- Extruder temperature range (min/max)
-- Hot bed temperature range (min/max)
+- Filament type
+- Color
 - Filament diameter
 
-For ACE Pro, color and type are read directly from the status response.
+For ACE Pro, color and type are read directly from the status response. Vendor
+and temperature-range metadata are not currently surfaced by this integration.
 
 ## Limitations
 
 - ACE hardware must enumerate as a serial device before firmware can connect.
-- ACE 2 Pro-specific protocol features (`ACE_UPDATE_SPEED`, `ACE_UNWIND_ASSIST`)
-  are not available on ACE Pro.
+- ACE 2 Pro `update_speed` and `unwind_assist` protocol paths were explored but
+  are intentionally not exposed in v1 because they did not validate cleanly.
 - RFID ownership is intentionally limited to one active source to avoid
   conflicts with existing Extended Firmware RFID/OpenRFID settings.

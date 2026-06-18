@@ -134,7 +134,7 @@ To enable OpenRFID, set **RFID Hardware** to `Snapmaker` and **RFID Software** t
 - **OpenRFID** - Filament is identified by brand and type. Spools unrecognized by Snapmaker Orca are hidden in Snapmaker Orca.
 - **OpenRFID (force generic vendor)** - Same as OpenRFID, but spools are labeled as Generic so they always appear in Snapmaker Orca.
 - **External** - When Hardware is set to External, the Software dropdown is hidden — external readers provide their own software stack.
-- **ACE** - When Hardware is set to ACE, the ACE slot reader handles its own tag detection. Select ACE Software for ACE-format NTAG tags, or OpenRFID for multi-format support via ACE hardware (future).
+- **ACE** - When Hardware is set to ACE, the ACE slot reader handles its own tag detection. Select ACE Software for ACE-format NTAG tags.
 
 See [Anycubic ACE Pro / ACE 2 Pro](anycubic_ace.md) for ACE setup.
 
