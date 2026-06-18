@@ -161,7 +161,11 @@ settings:
               - -xc
               - |
                 /usr/local/bin/extended-config.py add /oem/printer_data/config/extended/extended2.cfg components rfid_hardware ace
+                /usr/local/bin/extended-config.py add /oem/printer_data/config/extended/extended2.cfg components rfid_software ace
+                cfg=/oem/printer_data/config/extended/klipper/ace.cfg
+                test -f "$cfg" && sed -i 's/^rfid_source:.*/rfid_source: ace/' "$cfg" || true
                 /etc/init.d/S59rfid-support restart
+                /etc/init.d/S99openrfid stop
                 /etc/init.d/S60klipper restart
 
       rfid_software:

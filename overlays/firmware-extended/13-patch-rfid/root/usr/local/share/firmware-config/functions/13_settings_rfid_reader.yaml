@@ -21,7 +21,11 @@ settings:
               - -xc
               - |
                 /usr/local/bin/extended-config.py add /oem/printer_data/config/extended/extended2.cfg components rfid_hardware snapmaker
+                /usr/local/bin/extended-config.py add /oem/printer_data/config/extended/extended2.cfg components rfid_software snapmaker
+                cfg=/oem/printer_data/config/extended/klipper/ace.cfg
+                test -f "$cfg" && sed -i 's/^rfid_source:.*/rfid_source: existing/' "$cfg" || true
                 /etc/init.d/S59rfid-support restart
+                /etc/init.d/S99openrfid restart
                 /etc/init.d/S60klipper restart
           external:
             label: External
@@ -37,7 +41,7 @@ settings:
       rfid_software:
         label: RFID Software
         description: Select the RFID tag processing software.
-        if_cmd: test "$(/usr/local/bin/extended-config.py get /oem/printer_data/config/extended/extended2.cfg components rfid_hardware 2>/dev/null || /usr/local/bin/extended-config.py get /oem/printer_data/config/extended/extended2.cfg components rfid snapmaker 2>/dev/null || echo snapmaker)" != "external"
+        if_cmd: test "$(/usr/local/bin/extended-config.py get /oem/printer_data/config/extended/extended2.cfg components rfid_hardware 2>/dev/null || /usr/local/bin/extended-config.py get /oem/printer_data/config/extended/extended2.cfg components rfid snapmaker 2>/dev/null || echo snapmaker)" != "external" -a "$(/usr/local/bin/extended-config.py get /oem/printer_data/config/extended/extended2.cfg components rfid_hardware 2>/dev/null || echo snapmaker)" != "ace"
         get_cmd:
           - bash
           - -c

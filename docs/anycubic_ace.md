@@ -357,8 +357,10 @@ the ACE metadata sync path. Current v1 metadata sync uses:
 - Color
 - Filament diameter
 
-For ACE Pro, color and type are read directly from the status response. Vendor
-and temperature-range metadata are not currently surfaced by this integration.
+For ACE Pro, color and type are read directly from the status response. ACE 2 Pro
+retrieves richer data via a separate `get_filament_info` request, including
+extruder and bed temperature ranges, diameter, and vendor when the ACE reports
+them.
 
 ## Limitations
 

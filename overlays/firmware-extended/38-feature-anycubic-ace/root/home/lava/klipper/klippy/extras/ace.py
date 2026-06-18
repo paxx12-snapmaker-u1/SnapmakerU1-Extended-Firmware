@@ -611,7 +611,14 @@ class AceManager:
                     slot.get("rfid") == 2
                     and self._info.get("slots", [{}] * 4)[i].get("rfid") != 2
                 ):
-                    self._sync_slot_to_print_task_config(i, slot)
+                    if self._is_v2:
+                        self.send_request(
+                            {"method": "get_filament_info", "params": {"index": i}},
+                            lambda resp, idx=i: self._handle_filament_info(idx, resp),
+                            mark_busy=False,
+                        )
+                    else:
+                        self._sync_slot_to_print_task_config(i, slot)
                 self.gate_status[i] = (
                     GATE_EMPTY if slot.get("status") == "empty" else GATE_AVAILABLE
                 )
@@ -645,6 +652,45 @@ class AceManager:
                 slot.get("type", "PLA"),
                 rgb,
                 vendor,
+            )
+        )
+
+    def _handle_filament_info(self, index, response):
+        if response.get("code", 0) != 0:
+            return
+        result = response.get("result", {})
+        if not result:
+            return
+        color = result.get("color") or [0, 0, 0]
+        try:
+            rgb = "%02X%02X%02X" % (int(color[0]), int(color[1]), int(color[2]))
+        except Exception:
+            rgb = "000000"
+        vendor = result.get("brand", "Generic")
+        if self.force_generic:
+            vendor = "Generic"
+        filament_type = result.get("type", "PLA")
+        extruder_temp = result.get("extruder_temp", {})
+        hotbed_temp = result.get("hotbed_temp", {})
+        diameter = result.get("diameter", 1.75)
+        extras = []
+        if extruder_temp.get("min") and extruder_temp.get("max"):
+            extras.append('FILAMENT_EXTRUDER_TEMP_RANGE="%d,%d"' % (
+                extruder_temp["min"], extruder_temp["max"]))
+        if hotbed_temp.get("min") and hotbed_temp.get("max"):
+            extras.append('FILAMENT_BED_TEMP_RANGE="%d,%d"' % (
+                hotbed_temp["min"], hotbed_temp["max"]))
+        if diameter:
+            extras.append("FILAMENT_DIAMETER=%.2f" % diameter)
+        self.gcode.run_script_from_command(
+            'SET_PRINT_FILAMENT_CONFIG CONFIG_EXTRUDER=%d FILAMENT_TYPE="%s" '
+            'FILAMENT_COLOR_RGBA=%s VENDOR="%s" FILAMENT_SUBTYPE=""%s'
+            % (
+                index,
+                filament_type,
+                rgb,
+                vendor,
+                " " + " ".join(extras) if extras else "",
             )
         )
 
