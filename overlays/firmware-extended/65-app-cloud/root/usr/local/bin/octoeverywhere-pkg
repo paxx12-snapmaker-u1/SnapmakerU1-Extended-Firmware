@@ -4,10 +4,11 @@
 # OctoEverywhere package manager
 # Downloads and installs a pinned version of OctoEverywhere from GitHub
 #
+# $version = "5.1.1"; $artifact = Join-Path $env:TEMP "OctoPrint-OctoEverywhere-${version}.zip"; Invoke-WebRequest -UseBasicParsing -Uri "https://github.com/QuinnDamerell/OctoPrint-OctoEverywhere/archive/refs/tags/${version}.zip" -OutFile $artifact; Get-FileHash -Algorithm SHA256 -LiteralPath $artifact | Select-Object -ExpandProperty Hash
 
-VERSION="5.1.0"
+VERSION="5.1.1"
 URL="https://github.com/QuinnDamerell/OctoPrint-OctoEverywhere/archive/refs/tags/${VERSION}.zip"
-SHA256="096b477882f00ad4e356716393a906b0c55c34284cf31c07693d5dea18eb4dc0"
+SHA256="264f3fd3b1b1f326cfc019e7716b6ffa8759658852ce076b94022ef7da40f8fe"
 
 # These paths are referenced in the init.d script
 APP_DIR="/oem/apps/octoeverywhere"

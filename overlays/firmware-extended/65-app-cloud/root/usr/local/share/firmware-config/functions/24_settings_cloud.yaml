@@ -29,11 +29,6 @@ settings:
               - bash
               - -ec
               - |
-                if test -f /oem/printer_data/config/extended/moonraker/authorization.cfg; then
-                  echo "ERROR: Authentication is incompatible with OctoEverywhere companion mode."
-                  echo "Disable authentication first to enable OctoEverywhere."
-                  exit 1
-                fi
                 echo "WARNING: OctoEverywhere support is experimental. Higher resource usage may affect print quality."
                 sleep 5
 
