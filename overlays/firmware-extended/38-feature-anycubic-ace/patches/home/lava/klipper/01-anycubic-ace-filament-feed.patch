@@ -60,14 +60,14 @@
                  self.module_exist[ch] = True
              else:
                  self.module_exist[ch] = False
-@@ -997,7 +1007,32 @@ class FilamentFeed:
-                         motor_err_max_cnt = FEED_LOAD_MOTOR_ERR_CNT_MAX
-                         wheel_err_max_cnt = FEED_LOAD_WHEEL_ERR_CNT_MAX
-                         one_step_cnt = self.wheel[ch].ppr * 2.0 * 10.0 / FEED_WHEEL_CIRCUMFERENCE
+@@ -997,7 +1007,31 @@ class FilamentFeed:
+                        motor_err_max_cnt = FEED_LOAD_MOTOR_ERR_CNT_MAX
+                        wheel_err_max_cnt = FEED_LOAD_WHEEL_ERR_CNT_MAX
+                        one_step_cnt = self.wheel[ch].ppr * 2.0 * 10.0 / FEED_WHEEL_CIRCUMFERENCE
 +                        if self.ace is not None:
 +                            self.ace._feed(self.filament_ch[ch], self.ace.load_lengths[self.filament_ch[ch]], self.ace.load_speed, 0)
-
-                         while 1:
+ 
+                        while 1:
 +                            if self.ace is not None:
 +                                self.reactor.pause(self.reactor.monotonic() + 0.105)
 +                                systime_2 = self.reactor.monotonic()
