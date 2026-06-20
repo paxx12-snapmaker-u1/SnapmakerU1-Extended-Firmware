@@ -695,7 +695,7 @@ class AceManager:
         )
 
     def _pre_load(self, gate):
-        self.log_always("ACE slot %d: filament inserted. Use touchscreen to load." % (gate + 1))
+        self._feed(gate, self.feed_lengths[gate], self.feed_speed)
 
     def wait_ace_ready(self):
         if not self._connected:
