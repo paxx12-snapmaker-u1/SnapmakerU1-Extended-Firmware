@@ -56,7 +56,7 @@ Settings in this group:
 
 - **Anycubic ACE** — Disabled / Enabled
 - **ACE Model** — Auto Detect / Anycubic ACE Pro / Anycubic ACE 2 Pro
-- **Filament Assist Source** — ACE Feed Assist / U1 Feeders / Off
+- **Print-Time Filament Assist** — ACE Feed Assist / U1 Feeders / Off
 
 ACE also appears in the shared RFID settings:
 
@@ -71,7 +71,20 @@ The ACE options in RFID Hardware and RFID Software only appear when Anycubic ACE
 - `Anycubic ACE Pro` - force ACE Pro JSON protocol
 - `Anycubic ACE 2 Pro` - force ACE 2 Pro protobuf protocol
 
-### Filament Assist Source
+### Loading Behavior
+
+When Anycubic ACE is enabled, ACE owns slot loading. There is no separate
+option to load from ACE slots with the stock U1 feeder path only.
+
+For ACE loads, the firmware starts ACE feeding for the selected slot, watches
+the U1 physical filament/runout sensor, then stops ACE feeding once filament
+reaches the printer. Stock heat, extrude, and flush behavior continues after
+filament arrival. U1 feeder insert/preload and wheel/motor validation are not
+used as the source of truth while ACE is actively loading.
+
+When Anycubic ACE is disabled, loading returns to the stock U1 path.
+
+### Print-Time Filament Assist
 
 Only one assist source can be active:
 
@@ -80,7 +93,8 @@ Only one assist source can be active:
 - `Off` - no feed assist
 
 This avoids unsafe combinations where both ACE and U1 feeder assist try to
-control the same filament path.
+control the same filament path. This setting does not control loading; ACE
+loading is automatic whenever Anycubic ACE is enabled.
 
 ### RFID Hardware / RFID Software
 
@@ -320,6 +334,11 @@ Tune all four slot lengths for your tube routing. Start with status and dryer
 tests before running movement workflows. For feed and retract validation,
 prefer the slot macros or realistic lengths; very short ACE 2 Pro movement
 commands may be rejected by the ACE firmware.
+
+`load_length_slot1` through `load_length_slot4` are used by the automatic ACE
+loading path. They should be long enough for ACE to deliver filament to the U1
+physical filament/runout sensor; the firmware stops ACE feeding when that
+sensor detects filament.
 
 ## Commands
 

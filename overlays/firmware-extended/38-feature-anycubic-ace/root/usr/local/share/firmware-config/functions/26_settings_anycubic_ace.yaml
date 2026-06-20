@@ -104,9 +104,9 @@ settings:
         default: auto
 
       anycubic_ace_assist_source:
-        label: Filament Assist Source
-        description: Choose the single system allowed to provide filament assist.
-        help_url: http://snapmakeru1-extended-firmware.pages.dev/anycubic_ace#filament-assist-source
+        label: Print-Time Filament Assist
+        description: Choose who provides filament assist while printing. ACE loading is always used when Anycubic ACE is enabled.
+        help_url: http://snapmakeru1-extended-firmware.pages.dev/anycubic_ace#print-time-filament-assist
         if_cmd: test -f /oem/printer_data/config/extended/klipper/ace.cfg
         get_cmd:
           - bash
@@ -125,7 +125,7 @@ settings:
                 cfg=/oem/printer_data/config/extended/klipper/ace.cfg
                 test -f "$cfg" || { echo "Error: Enable Anycubic ACE first"; exit 0; }
                 sed -i 's/^assist_source:.*/assist_source: ace/' "$cfg"
-                echo "Filament Assist Source: ACE Feed Assist. Restarting Klipper..."
+                echo "Print-Time Filament Assist: ACE Feed Assist. Restarting Klipper..."
                 /etc/init.d/S60klipper restart
           snapmaker:
             label: U1 Feeders
@@ -136,7 +136,7 @@ settings:
                 cfg=/oem/printer_data/config/extended/klipper/ace.cfg
                 test -f "$cfg" || { echo "Error: Enable Anycubic ACE first"; exit 0; }
                 sed -i 's/^assist_source:.*/assist_source: snapmaker/' "$cfg"
-                echo "Filament Assist Source: U1 Feeders. Restarting Klipper..."
+                echo "Print-Time Filament Assist: U1 Feeders. Restarting Klipper..."
                 /etc/init.d/S60klipper restart
           "off":
             label: "Off"
@@ -147,7 +147,7 @@ settings:
                 cfg=/oem/printer_data/config/extended/klipper/ace.cfg
                 test -f "$cfg" || { echo "Error: Enable Anycubic ACE first"; exit 0; }
                 sed -i 's/^assist_source:.*/assist_source: off/' "$cfg"
-                echo "Filament Assist Source: Off. Restarting Klipper..."
+                echo "Print-Time Filament Assist: Off. Restarting Klipper..."
                 /etc/init.d/S60klipper restart
         default: snapmaker
 
