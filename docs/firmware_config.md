@@ -281,6 +281,47 @@ If an invalid configuration breaks Moonraker (printer won't connect to WiFi):
 4. The extended configuration will be backed up to `extended.backup.N` and reset to defaults
 5. Remove the USB drive (the recovery file will be automatically deleted)
 
+On Windows with "Hide extensions for known file types" enabled, the file may be
+saved as `extended-recover.txt.txt`. Both names are recognised.
+
+### Full Recovery
+
+If the extended reset above is not enough — for example a persisted change or
+`/oem/.debug` flag keeps a broken state across reboots — use full recovery. In
+addition to resetting the extended configuration, it removes `/oem/.printer_data`
+and `/oem/.debug`, then reboots so the overlay (`S01aoverlayfs`) and printer data
+(`S48setup-lava-env`) are rebuilt from defaults on the next boot.
+
+1. Create an empty file named `full-recover.txt` on a USB drive
+   (`full-recover.txt.txt` is also recognised)
+2. Insert the USB drive into the printer
+3. Restart the printer
+4. The printer removes the recovery file, clears the persistence and debug flags,
+   flags the extended configuration for reset, and reboots
+5. Remove the USB drive
+
+**Important:** Full recovery resets ALL extended configuration and clears
+persisted changes and printer data. Use it only when a normal
+`extended-recover.txt` reset does not resolve the issue.
+
+### Custom Extensions Installed via SSH
+
+The recovery methods above only reset changes made through the supported extended
+configuration. Installing third-party extensions or modifications over SSH (for
+example [helixscreen](https://github.com/prestonbrown/helixscreen)) writes files
+outside that mechanism, so neither `extended-recover.txt` nor `full-recover.txt`
+is guaranteed to undo them. Such changes can break the system, and in some cases
+make it very hard to recover.
+
+Only install custom extensions over SSH if you understand the risks and know how
+to restore the printer. If something breaks, try recovery in this order:
+
+1. `extended-recover.txt` — resets the extended configuration only
+2. `full-recover.txt` — also clears persisted changes, printer data and the debug
+   flag, then reboots
+3. Reflash stock or extended firmware (see [Installation Guide](install.md)) if
+   neither recovery method fixes the problem
+
 ## Related Documentation
 
 - [Camera Support](camera_support.md) - Camera features and WebRTC streaming
