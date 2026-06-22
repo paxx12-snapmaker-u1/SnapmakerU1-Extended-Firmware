@@ -15,7 +15,6 @@ GATE_UNKNOWN = -1
 GATE_EMPTY = 0
 GATE_AVAILABLE = 1
 
-MODEL_AUTO = "auto"
 MODEL_ACE_PRO = "ace_pro"
 MODEL_ACE_2_PRO = "ace_2_pro"
 
@@ -25,27 +24,18 @@ ACE_2_PRO_GLOBS = (
     "/dev/serial/by-id/usb-1a86_USB_Serial*",
 )
 ACE_PRO_DEFAULT_SERIAL = "/dev/serial/by-id/usb-ANYCUBIC_ACE_1-if00"
-ACE_2_PRO_DEFAULT_SERIAL = "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5B5F070433-if00"
 
 MODEL_INFO = {
     MODEL_ACE_PRO: {
         "display_name": "Anycubic ACE Pro",
         "protocol": "json",
         "baud": 115200,
-        "default_serial": ACE_PRO_DEFAULT_SERIAL,
     },
     MODEL_ACE_2_PRO: {
         "display_name": "Anycubic ACE 2 Pro",
         "protocol": "protobuf",
         "baud": 230400,
-        "default_serial": ACE_2_PRO_DEFAULT_SERIAL,
     },
-}
-
-ASSIST_SOURCE_LABELS = {
-    "ace": "ACE Feed Assist",
-    "snapmaker": "U1 Feeders",
-    "off": "Off",
 }
 
 RFID_SOURCE_LABELS = {
@@ -67,43 +57,19 @@ class AceManager:
         self.reactor = self.printer.get_reactor()
         self.gcode = self.printer.lookup_object("gcode")
 
-        self.device_model = config.get("device_model", MODEL_AUTO).lower()
-        if self.device_model not in (MODEL_AUTO, MODEL_ACE_PRO, MODEL_ACE_2_PRO):
-            logging.warning("ACE: invalid device_model '%s', using auto",
-                            self.device_model)
-            self.device_model = MODEL_AUTO
-        self.configured_serial = config.get("serial", ACE_PRO_DEFAULT_SERIAL)
-        self.configured_baud = config.getint("baud", 115200)
         self.detected_model, self.serial_id = self._detect_model_and_serial()
         self.model_info = MODEL_INFO[self.detected_model]
         self._is_v2 = self.detected_model == MODEL_ACE_2_PRO
-        self.baud = self.model_info["baud"] if self._is_v2 else self.configured_baud
-        self.feed_speed = config.getint("feed_speed", 50, minval=1)
+        self.baud = self.model_info["baud"]
         self.load_speed = config.getint("load_speed", 100, minval=1)
-        self.retract_speed = config.getint("retract_speed", 50, minval=1)
-        self.assist_source = config.get("assist_source", "snapmaker").lower()
-        if self.assist_source not in ("ace", "snapmaker", "off"):
-            self.assist_source = "snapmaker"
         self.rfid_source = config.get("rfid_source", "existing").lower()
         if self.rfid_source not in ("existing", "ace", "none"):
             self.rfid_source = "existing"
         self.force_generic = config.getboolean("force_generic", False)
-        old_retract_length = config.getint("retract_length", 100, minval=1)
-        old_feed_length = config.getint("feed_length", 100, minval=1)
-        self.feed_lengths = [
-            config.getint("feed_length_slot%d" % (i + 1), old_feed_length, minval=1)
-            for i in range(4)
-        ]
         self.load_lengths = [
             config.getint("load_length_slot%d" % (i + 1), 850, minval=1)
             for i in range(4)
         ]
-        self.retract_lengths = [
-            config.getint("retract_length_slot%d" % (i + 1), old_retract_length, minval=1)
-            for i in range(4)
-        ]
-        self.retract_length = self.retract_lengths[0]
-        self.feed_length = self.feed_lengths[0]
         self.feed_check_len = config.getint("feed_check_len", 254, minval=1, maxval=255)
         self.feed_check_error_len = config.getint(
             "feed_check_error_len", 254, minval=1, maxval=255
@@ -118,7 +84,6 @@ class AceManager:
         self._request_id = 0
         self._callback_map = {}
         self._callback_deadlines = {}
-        self._feed_assist_index = -1
         self._connect_timer = None
         self._heartbeat_timer = None
         self._ace_dev_fd = None
@@ -177,26 +142,6 @@ class AceManager:
             desc="Stops ACE Pro dryer",
         )
         self.gcode.register_command(
-            "ACE_ENABLE_FEED_ASSIST",
-            self.cmd_ACE_ENABLE_FEED_ASSIST,
-            desc="Enables ACE feed assist",
-        )
-        self.gcode.register_command(
-            "ACE_DISABLE_FEED_ASSIST",
-            self.cmd_ACE_DISABLE_FEED_ASSIST,
-            desc="Disables ACE feed assist",
-        )
-        self.gcode.register_command(
-            "ACE_FEED",
-            self.cmd_ACE_FEED,
-            desc="Feeds filament from ACE",
-        )
-        self.gcode.register_command(
-            "ACE_RETRACT",
-            self.cmd_ACE_RETRACT,
-            desc="Retracts filament back to ACE",
-        )
-        self.gcode.register_command(
             "ACE_GET_STATUS",
             self.cmd_ACE_GET_STATUS,
             desc="Reports ACE connection and slot status",
@@ -206,9 +151,11 @@ class AceManager:
             self.cmd_ACE_GET_TEMP,
             desc="Reports ACE temperature status",
         )
-
-    def uses_ace_assist(self):
-        return self.assist_source == "ace"
+        self.gcode.register_command(
+            "ACE_REFRESH",
+            self.cmd_ACE_REFRESH,
+            desc="Reconnects and redetects Anycubic ACE",
+        )
 
     def _detect_model_and_serial(self):
         ace_pro_devices = glob.glob(ACE_PRO_GLOB)
@@ -217,23 +164,11 @@ class AceManager:
             for pattern in ACE_2_PRO_GLOBS
             for device in glob.glob(pattern)
         ]
-        if self.device_model == MODEL_ACE_PRO:
-            serial_id = ace_pro_devices[0] if ace_pro_devices else self.configured_serial
-            return MODEL_ACE_PRO, serial_id
-        if self.device_model == MODEL_ACE_2_PRO:
-            serial_id = ace_2_pro_devices[0] if ace_2_pro_devices else (
-                self.configured_serial
-                if "1a86" in self.configured_serial
-                else ACE_2_PRO_DEFAULT_SERIAL
-            )
-            return MODEL_ACE_2_PRO, serial_id
         if ace_pro_devices:
             return MODEL_ACE_PRO, ace_pro_devices[0]
         if ace_2_pro_devices:
             return MODEL_ACE_2_PRO, ace_2_pro_devices[0]
-        if "1a86" in self.configured_serial:
-            return MODEL_ACE_2_PRO, self.configured_serial
-        return MODEL_ACE_PRO, self.configured_serial
+        return MODEL_ACE_PRO, ACE_PRO_DEFAULT_SERIAL
 
     def _handle_ready(self):
         self.toolhead = self.printer.lookup_object("toolhead")
@@ -249,6 +184,21 @@ class AceManager:
         logging.info("ACE: closing connection to %s", self.serial_id)
         self._serial_disconnect()
         self._queue = None
+
+    def _refresh_connection(self):
+        self._serial_disconnect()
+        self.detected_model, self.serial_id = self._detect_model_and_serial()
+        self.model_info = MODEL_INFO[self.detected_model]
+        self._is_v2 = self.detected_model == MODEL_ACE_2_PRO
+        self.baud = self.model_info["baud"]
+        self.read_buffer = bytearray()
+        self._v2_seq = 0
+        if self._connect_timer is None:
+            self._connect_timer = self.reactor.register_timer(
+                self._connect, self.reactor.monotonic()
+            )
+        else:
+            self.reactor.update_timer(self._connect_timer, self.reactor.monotonic())
 
     def log_always(self, msg, color=False):
         self.gcode.respond_raw(msg)
@@ -305,8 +255,6 @@ class AceManager:
                     },
                     self._command_callback(None),
                 )
-            if self._feed_assist_index != -1:
-                self._enable_feed_assist(self._feed_assist_index)
             logging.info("ACE: connected to %s", self.serial_id)
             return self.reactor.NEVER
         except serial.serialutil.SerialException as e:
@@ -602,10 +550,6 @@ class AceManager:
             slots = result.get("slots", [])
             for i in range(min(4, len(slots))):
                 slot = slots[i]
-                if self.gate_status[i] == GATE_EMPTY and slot.get("status") != "empty":
-                    self.reactor.register_async_callback(
-                        lambda et, gate=i: self._pre_load(gate)
-                    )
                 if (
                     self.rfid_source == "ace" and
                     slot.get("rfid") == 2
@@ -632,6 +576,63 @@ class AceManager:
         except AceException:
             pass
         return eventtime + 1.0
+
+    def get_filament_detect(self, index):
+        if index < 0 or index >= 4:
+            return False
+        slots = self._info.get("slots") or []
+        if index < len(slots):
+            return slots[index].get("status") != "empty"
+        return self.gate_status[index] == GATE_AVAILABLE
+
+    def _async_motion_callback(self, label, index):
+        def callback(response):
+            if response is None:
+                return
+            code = response.get("code", 0)
+            if code:
+                logging.warning("ACE: %s slot=%d failed: %s",
+                                label, index, response.get("msg") or code)
+            else:
+                logging.info("ACE: %s slot=%d ack", label, index)
+        return callback
+
+    def _send_motion_async(self, method, index, params, label):
+        if not self._connected:
+            logging.info("ACE: skipping %s slot=%d; not connected", label, index)
+            return False
+        request = {"method": method, "params": params}
+        try:
+            self.send_request(
+                request,
+                self._async_motion_callback(label, index),
+                mark_busy=False,
+            )
+            return True
+        except AceException as e:
+            logging.warning("ACE: %s slot=%d failed before send: %s",
+                            label, index, e)
+            return False
+
+    def start_load_feed(self, index):
+        length = self.load_lengths[index]
+        logging.info("ACE: load_feeding slot=%d -> feed %dmm @ %dmm/s",
+                     index, length, self.load_speed)
+        return self._send_motion_async(
+            "feed_filament",
+            index,
+            {"index": index, "length": length, "speed": self.load_speed},
+            "load_feed",
+        )
+
+    def stop_load_feed(self, index, why=""):
+        logging.info("ACE: stop load feed slot=%d (%s)", index, why)
+        return self._send_motion_async(
+            "stop_feed_filament",
+            index,
+            {"index": index},
+            "stop_load_feed",
+        )
 
     def _sync_slot_to_print_task_config(self, index, slot):
         if self.rfid_source != "ace":
@@ -694,9 +695,6 @@ class AceManager:
             )
         )
 
-    def _pre_load(self, gate):
-        self._feed(gate, self.feed_lengths[gate], self.feed_speed)
-
     def wait_ace_ready(self):
         if not self._connected:
             raise AceException("%s is not connected" % (self.model_info["display_name"],))
@@ -708,9 +706,6 @@ class AceManager:
                     self.model_info["display_name"],
                 ))
             self.reactor.pause(self.reactor.monotonic() + 0.5)
-
-    def is_ace_ready(self):
-        return self._info.get("status") == "ready"
 
     def dwell(self, delay=1.0):
         self.reactor.pause(self.reactor.monotonic() + delay)
@@ -757,135 +752,6 @@ class AceManager:
         except AceException as e:
             raise gcmd.error(str(e))
 
-    def _enable_feed_assist(self, index):
-        if not self.uses_ace_assist():
-            return
-        self.wait_ace_ready()
-        self._retract(index, 5, 10)
-        self.wait_ace_ready()
-        self.send_request(
-            {"method": "start_feed_assist", "params": {"index": index}},
-            self._command_callback(None),
-        )
-        self._feed_assist_index = index
-        self.dwell(0.7)
-
-    def cmd_ACE_ENABLE_FEED_ASSIST(self, gcmd):
-        try:
-            if not self.uses_ace_assist():
-                raise gcmd.error("Feed assist source is not set to ACE")
-            index = gcmd.get_int("INDEX", minval=0, maxval=3)
-            self._enable_feed_assist(index)
-            self.gcode.respond_info("Enabled ACE feed assist")
-        except AceException as e:
-            raise gcmd.error(str(e))
-
-    def _disable_feed_assist(self, index=-1):
-        if index < 0:
-            index = self._feed_assist_index
-        if index < 0:
-            return
-        self.wait_ace_ready()
-        self.send_request(
-            {"method": "stop_feed_assist", "params": {"index": index}},
-            self._command_callback(None),
-        )
-        self._feed_assist_index = -1
-        self.wait_ace_ready()
-        self._retract(index, 5, 10)
-        self.dwell(0.3)
-
-    def cmd_ACE_DISABLE_FEED_ASSIST(self, gcmd):
-        try:
-            index = gcmd.get_int("INDEX", self._feed_assist_index, minval=0, maxval=3)
-            self._disable_feed_assist(index)
-            self.gcode.respond_info("Disabled ACE feed assist")
-        except AceException as e:
-            raise gcmd.error(str(e))
-
-    def _motion_callback(self, result):
-        def callback(response):
-            code = response.get("code", 0)
-            result["done"] = True
-            result["ok"] = code == 0
-            if code != 0:
-                msg = response.get("msg") or "code %s" % (code,)
-                result["msg"] = msg
-                self.log_error("ACE Error: %s" % (msg,))
-        return callback
-
-    def _feed(self, index, length, speed, how_wait=None, completion_message=None):
-        self.wait_ace_ready()
-        result = {"done": False, "ok": None, "msg": ""}
-        self.send_request(
-            {
-                "method": "feed_filament",
-                "params": {"index": index, "length": length, "speed": speed},
-            },
-            self._motion_callback(result),
-        )
-        wait_len = how_wait if how_wait is not None else length
-        self.dwell((wait_len / float(speed)) + 0.1)
-        if completion_message and not result.get("done"):
-            self.wait_ace_ready()
-        if completion_message and result.get("ok") is not False:
-            self.gcode.respond_info(completion_message)
-
-    def cmd_ACE_FEED(self, gcmd):
-        try:
-            index = gcmd.get_int("INDEX", minval=0, maxval=3)
-            length = gcmd.get_int("LENGTH", minval=1)
-            speed = gcmd.get_int("SPEED", self.feed_speed, minval=1)
-            self.gcode.respond_info("ACE feed slot %d: starting %d mm at %d mm/s" % (index, length, speed))
-            self._feed(
-                index,
-                length,
-                speed,
-                completion_message="ACE feed slot %d: complete" % (index,),
-            )
-        except AceException as e:
-            raise gcmd.error(str(e))
-
-    def _retract(self, index, length, speed, completion_message=None):
-        self.wait_ace_ready()
-        result = {"done": False, "ok": None, "msg": ""}
-        self.send_request(
-            {
-                "method": "unwind_filament",
-                "params": {"index": index, "length": length, "speed": speed},
-            },
-            self._motion_callback(result),
-        )
-        self.dwell((length / float(speed)) + 0.1)
-        if completion_message and not result.get("done"):
-            self.wait_ace_ready()
-        if completion_message and result.get("ok") is not False:
-            self.gcode.respond_info(completion_message)
-
-    def retract_fil(self, index):
-        self._retract(index, self.retract_lengths[index], self.retract_speed)
-
-    def cmd_ACE_RETRACT(self, gcmd):
-        try:
-            index = gcmd.get_int("INDEX", minval=0, maxval=3)
-            length = gcmd.get_int("LENGTH", minval=1)
-            speed = gcmd.get_int("SPEED", self.retract_speed, minval=1)
-            self.gcode.respond_info("ACE retract slot %d: starting %d mm at %d mm/s" % (index, length, speed))
-            self._retract(
-                index,
-                length,
-                speed,
-                completion_message="ACE retract slot %d: complete" % (index,),
-            )
-        except AceException as e:
-            raise gcmd.error(str(e))
-
-    def _stop_feeding(self, index):
-        self.send_request(
-            {"method": "stop_feed_filament", "params": {"index": index}},
-            self._command_callback(None),
-        )
-
     def cmd_ACE_GET_STATUS(self, gcmd):
         status = self.get_status()
         gcmd.respond_info(
@@ -896,7 +762,6 @@ class AceManager:
             "  Baud: %s\n"
             "  Connected: %s\n"
             "  Device Status: %s\n"
-            "  Filament Assist: %s\n"
             "  RFID Metadata: %s\n"
             "  Gates: %s"
             % (
@@ -906,7 +771,6 @@ class AceManager:
                 status["baud"],
                 "yes" if status["connected"] else "no",
                 status["status"],
-                ASSIST_SOURCE_LABELS.get(status["assist_source"], status["assist_source"]),
                 RFID_SOURCE_LABELS.get(status["rfid_source"], status["rfid_source"]),
                 status["gate_status"],
             )
@@ -943,6 +807,16 @@ class AceManager:
         except AceException as e:
             raise gcmd.error(str(e))
 
+    def cmd_ACE_REFRESH(self, gcmd):
+        self._refresh_connection()
+        gcmd.respond_info(
+            "ACE reconnecting as %s on %s @ %d baud" % (
+                self.model_info["display_name"],
+                self.serial_id,
+                self.baud,
+            )
+        )
+
     def get_status(self, eventtime=None):
         return {
             "connected": self._connected,
@@ -952,7 +826,6 @@ class AceManager:
             "protocol": self.model_info["protocol"],
             "serial": self.serial_id,
             "baud": self.baud,
-            "assist_source": self.assist_source,
             "rfid_source": self.rfid_source,
             "temp": self._info.get("temp", 0),
             "dryer_status": self._info.get("dryer_status", {}),

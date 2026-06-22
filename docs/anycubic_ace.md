@@ -5,8 +5,7 @@ title: Anycubic ACE Pro / ACE 2 Pro
 # Anycubic ACE Pro / ACE 2 Pro
 
 Anycubic ACE support integrates ACE Pro and ACE 2 Pro units with the Snapmaker
-U1 as optional filament storage, feed assist, retract, dryer, RFID/status, and
-gate-status devices.
+U1 as optional filament loading, dryer, RFID/status, and gate-status devices.
 
 This feature is disabled by default and is experimental.
 
@@ -21,15 +20,17 @@ This integration is a clean Extended Firmware port informed by these projects:
 - Extended Firmware U1 + ACE 2 Pro validation with a CH340 `1a86:7523`
   USB-to-RS485 adapter
 
-## Supported Models
+## Supported Hardware
 
-The user-facing models are:
+Supported ACE units are:
 
 - Anycubic ACE Pro
 - Anycubic ACE 2 Pro
 
-Internally, ACE Pro uses a JSON serial protocol at `115200` baud. ACE 2 Pro
-uses a protobuf serial protocol at `230400` baud.
+The firmware auto-detects the connected model from `/dev/serial/by-id` and then
+selects the matching protocol and baud rate internally. ACE Pro uses a JSON
+serial protocol at `115200` baud. ACE 2 Pro uses a protobuf serial protocol at
+`230400` baud.
 
 ## Config Lifecycle
 
@@ -55,8 +56,6 @@ Open Firmware Config at `http://<printer-ip>/firmware-config/`, then use:
 Settings in this group:
 
 - **Anycubic ACE** — Disabled / Enabled
-- **ACE Model** — Auto Detect / Anycubic ACE Pro / Anycubic ACE 2 Pro
-- **Print-Time Filament Assist** — ACE Feed Assist / U1 Feeders / Off
 
 ACE also appears in the shared RFID settings:
 
@@ -64,12 +63,6 @@ ACE also appears in the shared RFID settings:
 - **RFID Software** — Snapmaker / OpenRFID / OpenRFID (generic) / ACE
 
 The ACE options in RFID Hardware and RFID Software only appear when Anycubic ACE is enabled.
-
-### ACE Model
-
-- `Auto Detect` - detect a supported ACE model from `/dev/serial/by-id`
-- `Anycubic ACE Pro` - force ACE Pro JSON protocol
-- `Anycubic ACE 2 Pro` - force ACE 2 Pro protobuf protocol
 
 ### Loading Behavior
 
@@ -83,18 +76,6 @@ filament arrival. U1 feeder insert/preload and wheel/motor validation are not
 used as the source of truth while ACE is actively loading.
 
 When Anycubic ACE is disabled, loading returns to the stock U1 path.
-
-### Print-Time Filament Assist
-
-Only one assist source can be active:
-
-- `ACE Feed Assist` - ACE handles feed assist while printing
-- `U1 Feeders` - U1 feeders handle the assist path
-- `Off` - no feed assist
-
-This avoids unsafe combinations where both ACE and U1 feeder assist try to
-control the same filament path. This setting does not control loading; ACE
-loading is automatic whenever Anycubic ACE is enabled.
 
 ### RFID Hardware / RFID Software
 
@@ -114,8 +95,8 @@ Valid combinations:
 
 ## USB Detection
 
-With `device_model: auto`, the model and serial path are detected automatically
-— no manual configuration needed. If you need to verify or troubleshoot:
+The model and serial path are detected automatically. If you need to verify or
+troubleshoot:
 
 ```bash
 lsusb
@@ -148,14 +129,9 @@ The CH340 path `usb-1a86_USB_Serial-if00-port0` has been validated with ACE
 sending successfully but not receiving an RS485 reply. In that case, keep
 `GND` connected and swap only the RS485 `A`/`B` pair.
 
-A manual `serial:` override is only needed if your ACE enumerates with a
-non-standard USB id. In that case update the path in:
-
-```bash
-/oem/printer_data/config/extended/klipper/ace.cfg
-```
-
-and restart Klipper.
+If the ACE is unplugged/replugged after Klipper starts, use `ACE_REFRESH` or the
+Firmware Config **Refresh Anycubic ACE** action to rescan and reconnect without
+changing config.
 
 ## Cable Requirements
 
@@ -284,8 +260,7 @@ the printer.
 
 ### ACE 2 Pro Validation
 
-After enabling Anycubic ACE and selecting Auto Detect or Anycubic ACE 2 Pro,
-restart Klipper and run:
+After enabling Anycubic ACE, restart Klipper and run:
 
 ```gcode
 ACE_GET_STATUS
@@ -320,20 +295,14 @@ The most common fix is swapping `A` and `B` while leaving `GND` unchanged.
 Important values in `extended/klipper/ace.cfg`:
 
 ```ini
-device_model: auto
-assist_source: snapmaker
 rfid_source: existing
 
-feed_length_slot1: 1000
 load_length_slot1: 850
-retract_length_slot1: 3000
 max_dryer_temperature: 55
 ```
 
-Tune all four slot lengths for your tube routing. Start with status and dryer
-tests before running movement workflows. For feed and retract validation,
-prefer the slot macros or realistic lengths; very short ACE 2 Pro movement
-commands may be rejected by the ACE firmware.
+Tune all four load lengths for your tube routing. Start with status and dryer
+tests before running filament loading.
 
 `load_length_slot1` through `load_length_slot4` are used by the automatic ACE
 loading path. They should be long enough for ACE to deliver filament to the U1
@@ -342,21 +311,16 @@ sensor detects filament.
 
 ## Commands
 
-- `ACE_FEED INDEX=<0-3> LENGTH=<mm> [SPEED=<mm/s>]`
-- `ACE_RETRACT INDEX=<0-3> LENGTH=<mm> [SPEED=<mm/s>]`
-- `ACE_ENABLE_FEED_ASSIST INDEX=<0-3>`
-- `ACE_DISABLE_FEED_ASSIST INDEX=<0-3>`
 - `ACE_START_DRYING TEMP=<C> DURATION=<minutes>`
 - `ACE_STOP_DRYING`
 - `ACE_GET_STATUS`
 - `ACE_GET_TEMP`
+- `ACE_REFRESH`
 
 Convenience macros:
 
-- `ACE_FEED_SLOT1`–`ACE_FEED_SLOT4`
-- `ACE_RETRACT_SLOT1`–`ACE_RETRACT_SLOT4`
-- `ACE_ASSIST_ON` / `ACE_ASSIST_OFF`
 - `ACE_STATUS` / `ACE_TEMP`
+- `ACE_REFRESH_CONNECTION`
 - `ACE_DRYING_ON` / `ACE_DRYING_OFF`
 
 ## Disabling
@@ -384,7 +348,7 @@ them.
 ## Limitations
 
 - ACE hardware must enumerate as a serial device before firmware can connect.
-- ACE 2 Pro `update_speed` and `unwind_assist` protocol paths were explored but
-  are intentionally not exposed in v1 because they did not validate cleanly.
 - RFID ownership is intentionally limited to one active source to avoid
   conflicts with existing Extended Firmware RFID/OpenRFID settings.
+- Print-time ACE feed assist is intentionally not exposed while load/unload
+  behavior is being stabilized.

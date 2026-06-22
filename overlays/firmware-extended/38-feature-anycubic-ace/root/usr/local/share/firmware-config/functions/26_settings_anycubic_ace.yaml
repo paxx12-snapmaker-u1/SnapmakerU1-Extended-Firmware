@@ -3,7 +3,7 @@ settings:
     items:
       anycubic_ace:
         label: Anycubic ACE
-        description: Optional Anycubic ACE Pro / ACE 2 Pro storage, feed assist, dryer, and status integration.
+        description: Optional Anycubic ACE Pro / ACE 2 Pro loading, dryer, RFID, and status integration.
         help_url: http://snapmakeru1-extended-firmware.pages.dev/anycubic_ace
         get_cmd:
           - bash
@@ -15,7 +15,7 @@ settings:
             confirm: |
               Enable Anycubic ACE Pro / ACE 2 Pro support?
 
-              This creates ace.cfg and restarts Klipper. The ACE model is auto-detected via USB — no manual serial path needed. Tune the slot feed/load/retract lengths for your tube routing before using movement commands.
+              This creates ace.cfg and restarts Klipper. The ACE model is auto-detected via USB — no manual serial path needed. Tune the slot load lengths for your tube routing before loading filament.
             cmd:
               - bash
               - -ec
@@ -55,102 +55,6 @@ settings:
                 /etc/init.d/S60klipper restart
         default: disabled
 
-      anycubic_ace_model:
-        label: ACE Model
-        description: Select which Anycubic ACE model/protocol to use.
-        help_url: http://snapmakeru1-extended-firmware.pages.dev/anycubic_ace#ace-model
-        if_cmd: test -f /oem/printer_data/config/extended/klipper/ace.cfg
-        get_cmd:
-          - bash
-          - -c
-          - |
-            cfg=/oem/printer_data/config/extended/klipper/ace.cfg
-            test -f "$cfg" || { echo "auto"; exit 0; }
-            awk -F': *' '/^device_model:/ {print $2; found=1} END {if (!found) print "auto"}' "$cfg"
-        options:
-          auto:
-            label: Auto Detect
-            cmd:
-              - bash
-              - -ec
-              - |
-                cfg=/oem/printer_data/config/extended/klipper/ace.cfg
-                test -f "$cfg" || { echo "Error: Enable Anycubic ACE first"; exit 0; }
-                sed -i 's/^device_model:.*/device_model: auto/' "$cfg"
-                echo "ACE Model: Auto Detect. Restarting Klipper..."
-                /etc/init.d/S60klipper restart
-          ace_pro:
-            label: Anycubic ACE Pro
-            cmd:
-              - bash
-              - -ec
-              - |
-                cfg=/oem/printer_data/config/extended/klipper/ace.cfg
-                test -f "$cfg" || { echo "Error: Enable Anycubic ACE first"; exit 0; }
-                sed -i 's/^device_model:.*/device_model: ace_pro/' "$cfg"
-                echo "ACE Model: Anycubic ACE Pro. Restarting Klipper..."
-                /etc/init.d/S60klipper restart
-          ace_2_pro:
-            label: Anycubic ACE 2 Pro
-            cmd:
-              - bash
-              - -ec
-              - |
-                cfg=/oem/printer_data/config/extended/klipper/ace.cfg
-                test -f "$cfg" || { echo "Error: Enable Anycubic ACE first"; exit 0; }
-                sed -i 's/^device_model:.*/device_model: ace_2_pro/' "$cfg"
-                echo "ACE Model: Anycubic ACE 2 Pro. Restarting Klipper..."
-                /etc/init.d/S60klipper restart
-        default: auto
-
-      anycubic_ace_assist_source:
-        label: Print-Time Filament Assist
-        description: Choose who provides filament assist while printing. ACE loading is always used when Anycubic ACE is enabled.
-        help_url: http://snapmakeru1-extended-firmware.pages.dev/anycubic_ace#print-time-filament-assist
-        if_cmd: test -f /oem/printer_data/config/extended/klipper/ace.cfg
-        get_cmd:
-          - bash
-          - -c
-          - |
-            cfg=/oem/printer_data/config/extended/klipper/ace.cfg
-            test -f "$cfg" || { echo "snapmaker"; exit 0; }
-            awk -F': *' '/^assist_source:/ {print $2; found=1} END {if (!found) print "snapmaker"}' "$cfg"
-        options:
-          ace:
-            label: ACE Feed Assist
-            cmd:
-              - bash
-              - -ec
-              - |
-                cfg=/oem/printer_data/config/extended/klipper/ace.cfg
-                test -f "$cfg" || { echo "Error: Enable Anycubic ACE first"; exit 0; }
-                sed -i 's/^assist_source:.*/assist_source: ace/' "$cfg"
-                echo "Print-Time Filament Assist: ACE Feed Assist. Restarting Klipper..."
-                /etc/init.d/S60klipper restart
-          snapmaker:
-            label: U1 Feeders
-            cmd:
-              - bash
-              - -ec
-              - |
-                cfg=/oem/printer_data/config/extended/klipper/ace.cfg
-                test -f "$cfg" || { echo "Error: Enable Anycubic ACE first"; exit 0; }
-                sed -i 's/^assist_source:.*/assist_source: snapmaker/' "$cfg"
-                echo "Print-Time Filament Assist: U1 Feeders. Restarting Klipper..."
-                /etc/init.d/S60klipper restart
-          "off":
-            label: "Off"
-            cmd:
-              - bash
-              - -ec
-              - |
-                cfg=/oem/printer_data/config/extended/klipper/ace.cfg
-                test -f "$cfg" || { echo "Error: Enable Anycubic ACE first"; exit 0; }
-                sed -i 's/^assist_source:.*/assist_source: off/' "$cfg"
-                echo "Print-Time Filament Assist: Off. Restarting Klipper..."
-                /etc/init.d/S60klipper restart
-        default: snapmaker
-
       rfid_hardware:
         options:
           ace:
@@ -182,3 +86,20 @@ settings:
                 test -f "$cfg" && sed -i 's/^rfid_source:.*/rfid_source: ace/' "$cfg" || true
                 /etc/init.d/S99openrfid stop
                 /etc/init.d/S60klipper restart
+
+actions:
+  troubleshooting:
+    items:
+      anycubic-ace-refresh:
+        label: Refresh Anycubic ACE
+        description: Redetect and reconnect the Anycubic ACE without changing config.
+        if_cmd: test -f /oem/printer_data/config/extended/klipper/ace.cfg
+        cmd:
+          - bash
+          - -ec
+          - |
+            /usr/local/bin/curl -sS -X POST \
+              -H 'Content-Type: application/json' \
+              -d '{"script":"ACE_REFRESH"}' \
+              http://127.0.0.1:7125/printer/gcode/script
+        message: "Refreshing Anycubic ACE connection..."

@@ -12,7 +12,6 @@ CMD_GET_STATUS = 6
 CMD_GET_INFO = 7
 CMD_FEED_OR_ROLLBACK = 8
 CMD_STOP_FEED_OR_ROLLBACK = 9
-CMD_UPDATE_SPEED = 10
 CMD_DRYING = 11
 CMD_GET_FILAMENT_INFO = 13
 CMD_SET_FEED_CHECK = 19
@@ -20,9 +19,6 @@ CMD_GET_TEMP = 64
 
 FEED_MODE_FEED = 0
 FEED_MODE_ROLLBACK = 1
-FEED_MODE_FEED_ASSIST = 2
-FEED_MODE_UNWIND_ASSIST = 3
-
 SLOT_READY = 0
 SLOT_FEEDING = 1
 SLOT_ROLLBACK = 2
@@ -349,27 +345,8 @@ def encode_v1_request(request):
             + pb_uint32(4, FEED_MODE_ROLLBACK)
         )
         return CMD_FEED_OR_ROLLBACK, payload, _decode_generic
-    if method == "start_feed_assist":
-        payload = (
-            pb_uint32(1, params.get("index", 0))
-            + pb_uint32(2, 10)
-            + pb_uint32(3, 0)
-            + pb_uint32(4, FEED_MODE_FEED_ASSIST)
-        )
-        return CMD_FEED_OR_ROLLBACK, payload, _decode_generic
-    if method == "unwind_assist":
-        payload = (
-            pb_uint32(1, params.get("index", 0))
-            + pb_uint32(2, 0)
-            + pb_uint32(3, 0)
-            + pb_uint32(4, FEED_MODE_UNWIND_ASSIST)
-        )
-        return CMD_FEED_OR_ROLLBACK, payload, _decode_generic
-    if method in ("stop_feed_assist", "stop_feed_filament"):
+    if method == "stop_feed_filament":
         return CMD_STOP_FEED_OR_ROLLBACK, pb_uint32(1, params.get("index", 0)), _decode_generic
-    if method == "update_speed":
-        payload = pb_uint32(1, params.get("index", 0)) + pb_uint32(2, params.get("speed", 50))
-        return CMD_UPDATE_SPEED, payload, _decode_generic
     if method == "drying":
         payload = (
             pb_uint32(1, params.get("temp", 0))
@@ -386,5 +363,4 @@ def encode_v1_request(request):
         )
         return CMD_SET_FEED_CHECK, payload, _decode_generic
     return None
-
 
