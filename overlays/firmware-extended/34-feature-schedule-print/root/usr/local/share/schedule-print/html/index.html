@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Schedule Print</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    body {
+      font-family: Roboto, 'Segoe UI', Arial, sans-serif;
+      background: #121212;
+      color: #e0e0e0;
+      margin: 0;
+      padding: 1.5rem 1rem;
+    }
+    .card {
+      background: #1e1e1e;
+      border-radius: 8px;
+      padding: 1.5rem;
+      max-width: 480px;
+      margin: 0 auto;
+    }
+    h1 { font-size: 1.25rem; margin: 0 0 1.5rem; color: #fff; }
+    label {
+      display: block;
+      font-size: 0.78rem;
+      color: #9e9e9e;
+      margin-bottom: 0.3rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .field { margin-bottom: 1rem; }
+    select, input[type="date"], input[type="time"] {
+      width: 100%;
+      padding: 0.55rem 0.75rem;
+      background: #2c2c2c;
+      color: #e0e0e0;
+      border: 1px solid #3a3a3a;
+      border-radius: 4px;
+      font-size: 0.95rem;
+      outline: none;
+    }
+    select:focus, input:focus { border-color: #1976d2; }
+    .row { display: flex; gap: 0.75rem; }
+    .row .field { flex: 1; margin-bottom: 0; }
+    button {
+      width: 100%;
+      padding: 0.65rem;
+      border: none;
+      border-radius: 4px;
+      font-size: 0.95rem;
+      cursor: pointer;
+    }
+    #btn-schedule { background: #1976d2; color: #fff; margin-top: 1rem; }
+    #btn-schedule:hover { background: #1565c0; }
+    #btn-schedule:disabled { background: #37474f; color: #78909c; cursor: default; }
+    .error { color: #ef9a9a; font-size: 0.85rem; margin-top: 0.5rem; display: none; }
+    .status-card {
+      background: #1a2733;
+      border: 1px solid #1976d2;
+      border-radius: 6px;
+      padding: 1rem;
+      margin-top: 1.25rem;
+      display: none;
+    }
+    .status-card h2 {
+      font-size: 0.78rem;
+      color: #64b5f6;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin: 0 0 0.75rem;
+    }
+    .status-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      font-size: 0.9rem;
+      margin: 0.3rem 0;
+      gap: 0.5rem;
+    }
+    .status-row .lbl { color: #9e9e9e; white-space: nowrap; }
+    .status-row .val { color: #fff; font-weight: 500; text-align: right; word-break: break-all; }
+    #btn-cancel { background: #b71c1c; color: #fff; margin-top: 0.75rem; }
+    #btn-cancel:hover { background: #c62828; }
+  </style>
+</head>
+<body>
+<div class="card">
+  <h1>Schedule Print</h1>
+
+  <div class="field">
+    <label for="sel-tz">Timezone</label>
+    <select id="sel-tz"></select>
+  </div>
+
+  <div class="field">
+    <label for="sel-file">File</label>
+    <select id="sel-file"><option value="">Loading files…</option></select>
+  </div>
+
+  <div class="row" style="margin-bottom:1rem">
+    <div class="field">
+      <label for="inp-date">Date</label>
+      <input type="date" id="inp-date">
+    </div>
+    <div class="field">
+      <label for="inp-time">Time</label>
+      <input type="time" id="inp-time">
+    </div>
+  </div>
+
+  <div class="error" id="err"></div>
+  <button id="btn-schedule">Schedule Print</button>
+
+  <div class="status-card" id="status-box">
+    <h2>Scheduled</h2>
+    <div class="status-row"><span class="lbl">File</span><span class="val" id="st-file">—</span></div>
+    <div class="status-row"><span class="lbl">Starts at</span><span class="val" id="st-time">—</span></div>
+    <div class="status-row"><span class="lbl">In</span><span class="val" id="st-cd">—</span></div>
+    <button id="btn-cancel">Cancel scheduled print</button>
+  </div>
+</div>
+
+<script>
+const API = '/server/schedule_print';
+const FILES_API = '/server/files/list?root=gcodes';
+
+const TIMEZONES = [
+  { g: 'UTC', z: ['UTC'] },
+  { g: 'Americas', z: [
+    'America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles',
+    'America/Anchorage', 'America/Halifax', 'America/Toronto', 'America/Vancouver',
+    'America/Sao_Paulo', 'America/Argentina/Buenos_Aires', 'America/Mexico_City',
+    'America/Bogota', 'America/Lima', 'America/Santiago',
+  ]},
+  { g: 'Europe', z: [
+    'Europe/London', 'Europe/Lisbon', 'Europe/Paris', 'Europe/Berlin', 'Europe/Madrid',
+    'Europe/Rome', 'Europe/Amsterdam', 'Europe/Brussels', 'Europe/Vienna', 'Europe/Zurich',
+    'Europe/Stockholm', 'Europe/Oslo', 'Europe/Copenhagen', 'Europe/Warsaw', 'Europe/Prague',
+    'Europe/Budapest', 'Europe/Bucharest', 'Europe/Helsinki', 'Europe/Kyiv',
+    'Europe/Moscow', 'Europe/Istanbul', 'Europe/Athens',
+  ]},
+  { g: 'Africa', z: [
+    'Africa/Cairo', 'Africa/Johannesburg', 'Africa/Lagos', 'Africa/Nairobi', 'Africa/Casablanca',
+  ]},
+  { g: 'Asia', z: [
+    'Asia/Dubai', 'Asia/Riyadh', 'Asia/Tehran', 'Asia/Karachi', 'Asia/Kolkata',
+    'Asia/Dhaka', 'Asia/Colombo', 'Asia/Kathmandu', 'Asia/Bangkok', 'Asia/Jakarta',
+    'Asia/Singapore', 'Asia/Hong_Kong', 'Asia/Shanghai', 'Asia/Tokyo', 'Asia/Seoul',
+    'Asia/Taipei', 'Asia/Manila', 'Asia/Kuala_Lumpur',
+  ]},
+  { g: 'Pacific', z: [
+    'Australia/Perth', 'Australia/Adelaide', 'Australia/Brisbane',
+    'Australia/Sydney', 'Australia/Melbourne', 'Pacific/Auckland',
+    'Pacific/Fiji', 'Pacific/Honolulu', 'Pacific/Guam',
+  ]},
+];
+
+// Returns ISO 8601 offset string (e.g. "+02:00") for tz on the given date
+function tzOffset(tz, dateStr) {
+  const probe = new Date(dateStr + 'T12:00:00Z');
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz, timeZoneName: 'longOffset',
+  }).formatToParts(probe);
+  const name = parts.find(p => p.type === 'timeZoneName')?.value ?? 'GMT';
+  return name === 'GMT' ? '+00:00' : name.slice(3); // "GMT+02:00" → "+02:00"
+}
+
+function toIso(dateStr, timeStr, tz) {
+  return `${dateStr}T${timeStr}:00${tzOffset(tz, dateStr)}`;
+}
+
+function formatTs(ts, tz) {
+  return new Intl.DateTimeFormat('en-GB', {
+    timeZone: tz, dateStyle: 'medium', timeStyle: 'short',
+  }).format(new Date(ts * 1000));
+}
+
+function formatCountdown(secs) {
+  if (secs <= 0) return 'imminent';
+  const h = Math.floor(secs / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  const s = secs % 60;
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m ${s}s`;
+  return `${s}s`;
+}
+
+function todayInTz(tz) {
+  return new Intl.DateTimeFormat('sv-SE', { timeZone: tz }).format(new Date());
+}
+
+function showError(msg) {
+  const el = document.getElementById('err');
+  el.textContent = msg;
+  el.style.display = msg ? 'block' : 'none';
+}
+
+async function loadFiles() {
+  try {
+    const r = await fetch(FILES_API);
+    const data = await r.json();
+    const files = (data.result ?? [])
+      .sort((a, b) => (b.modified ?? 0) - (a.modified ?? 0));
+    const sel = document.getElementById('sel-file');
+    sel.innerHTML = files.length
+      ? files.map(f => `<option value="${f.path}">${f.path}</option>`).join('')
+      : '<option value="">No files found</option>';
+  } catch {
+    document.getElementById('sel-file').innerHTML = '<option value="">Failed to load files</option>';
+  }
+}
+
+async function loadStatus() {
+  try {
+    const r = await fetch(API);
+    const data = await r.json();
+    const sc = data.result?.scheduled;
+    const box = document.getElementById('status-box');
+    if (!sc || sc.seconds_remaining <= 0) {
+      box.style.display = 'none';
+      return;
+    }
+    const tz = document.getElementById('sel-tz').value;
+    document.getElementById('st-file').textContent = sc.filename;
+    document.getElementById('st-time').textContent = formatTs(sc.target_ts, tz);
+    document.getElementById('st-cd').textContent = formatCountdown(sc.seconds_remaining);
+    box.style.display = 'block';
+  } catch {
+    // silently ignore — printer may be temporarily unreachable
+  }
+}
+
+async function schedule() {
+  showError('');
+  const tz = document.getElementById('sel-tz').value;
+  const filename = document.getElementById('sel-file').value;
+  const dateStr = document.getElementById('inp-date').value;
+  const timeStr = document.getElementById('inp-time').value;
+
+  if (!filename) { showError('Please select a file.'); return; }
+  if (!dateStr || !timeStr) { showError('Please enter a date and time.'); return; }
+
+  const iso = toIso(dateStr, timeStr, tz);
+  const btn = document.getElementById('btn-schedule');
+  btn.disabled = true;
+  try {
+    const r = await fetch(API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filename, time: iso, timezone: tz }),
+    });
+    const data = await r.json();
+    if (!r.ok) {
+      showError(data.error?.message ?? `Error ${r.status}`);
+      return;
+    }
+    await loadStatus();
+  } catch (e) {
+    showError('Network error: ' + e.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function cancel() {
+  await fetch(API, { method: 'DELETE' });
+  document.getElementById('status-box').style.display = 'none';
+}
+
+function initTzSelect() {
+  const sel = document.getElementById('sel-tz');
+  TIMEZONES.forEach(({ g, z }) => {
+    const grp = document.createElement('optgroup');
+    grp.label = g;
+    z.forEach(tz => {
+      const opt = document.createElement('option');
+      opt.value = tz;
+      opt.textContent = tz.replace(/_/g, ' ');
+      grp.appendChild(opt);
+    });
+    sel.appendChild(grp);
+  });
+  const saved = localStorage.getItem('sp_tz')
+    ?? Intl.DateTimeFormat().resolvedOptions().timeZone
+    ?? 'UTC';
+  sel.value = Array.from(sel.options).some(o => o.value === saved) ? saved : 'UTC';
+  sel.addEventListener('change', () => {
+    localStorage.setItem('sp_tz', sel.value);
+    updateDateDefault();
+  });
+}
+
+function updateDateDefault() {
+  const tz = document.getElementById('sel-tz').value;
+  const today = todayInTz(tz);
+  const inp = document.getElementById('inp-date');
+  inp.min = today;
+  if (!inp.value || inp.value < today) inp.value = today;
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  initTzSelect();
+  updateDateDefault();
+  loadFiles();
+  loadStatus();
+  document.getElementById('btn-schedule').addEventListener('click', schedule);
+  document.getElementById('btn-cancel').addEventListener('click', cancel);
+  setInterval(loadStatus, 10000);
+});
+</script>
+</body>
+</html>
