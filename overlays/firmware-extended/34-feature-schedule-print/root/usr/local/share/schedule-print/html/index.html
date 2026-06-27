@@ -64,7 +64,7 @@
       display: grid;
       grid-template-columns: repeat(3, 1fr);
       gap: 0.5rem;
-      height: 280px;
+      height: 420px;
       overflow-y: auto;
       background: #181818;
       border: 1px solid #2a2a2a;
@@ -86,6 +86,7 @@
       cursor: pointer;
       overflow: hidden;
       transition: border-color 0.1s, background 0.1s;
+      height: 150px;
     }
     .file-card:hover { background: #333; border-color: #444; }
     .file-card.selected { border-color: #1976d2; background: #1a2733; }
@@ -142,6 +143,23 @@
     }
     .slot-label { font-size: 0.72rem; color: #aaa; line-height: 1.2; }
     .slot-label strong { display: block; color: #ddd; font-size: 0.78rem; }
+
+    /* GCode color info */
+    .gcode-colors {
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+      min-height: 1rem;
+      margin-top: 0.35rem;
+    }
+    .gcode-color-label { font-size: 0.72rem; color: #666; flex-shrink: 0; }
+    .gcode-color-swatch {
+      width: 13px;
+      height: 13px;
+      border-radius: 50%;
+      border: 1px solid rgba(255,255,255,0.15);
+      flex-shrink: 0;
+    }
 
     /* Buttons */
     button {
@@ -210,10 +228,11 @@
     <label>File <span id="file-count"
       style="font-size:0.75rem;font-weight:normal;text-transform:none;letter-spacing:0;color:#666"></span></label>
     <div id="file-grid" class="empty">Loading files…</div>
+    <div id="gcode-colors" class="gcode-colors"></div>
   </div>
 
   <div class="field">
-    <label>Filament slot <span style="font-size:0.72rem;font-weight:normal;text-transform:none;letter-spacing:0;color:#666">— optional</span></label>
+    <label>Filament slot <span style="font-size:0.72rem;font-weight:normal;text-transform:none;letter-spacing:0;color:#666" id="slot-label">— optional</span></label>
     <div class="slot-grid" id="slot-grid">
       <!-- populated by JS -->
     </div>
@@ -321,34 +340,88 @@ function showError(msg) {
 }
 
 // ── Filament slots ────────────────────────────────────────────────────
-let selectedLane = null; // null = let GCode handle it
+let selectedLane = null;
+let loadedPtc = null;
 
 function rgbaToCSS(hex) {
-  // "RRGGBBAA" or "RRGGBB" → css color, or null if empty/white
   if (!hex || hex.length < 6) return null;
   return `#${hex.slice(0, 6)}`;
+}
+
+function hexToRgb(hex) {
+  const n = parseInt(hex.replace('#', ''), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+function colorDist(h1, h2) {
+  const [r1, g1, b1] = hexToRgb(h1), [r2, g2, b2] = hexToRgb(h2);
+  return Math.sqrt((r1-r2)**2 + (g1-g2)**2 + (b1-b2)**2);
+}
+
+function autoMatchSlot(gcodeHex) {
+  if (!loadedPtc) return;
+  let bestLane = null, bestDist = Infinity;
+  LANES.forEach((lane, i) => {
+    if (!loadedPtc.filament_exist?.[i]) return;
+    const slotHex = rgbaToCSS(loadedPtc.filament_color_rgba?.[i] ?? '');
+    if (!slotHex) return;
+    const d = colorDist(gcodeHex, slotHex);
+    if (d < bestDist) { bestDist = d; bestLane = lane; }
+  });
+  if (bestLane) {
+    const card = document.querySelector(`.slot-card[data-lane="${bestLane}"]`);
+    if (card) selectLane(bestLane, card);
+  }
+}
+
+async function onFileSelected(filename) {
+  const infoEl = document.getElementById('gcode-colors');
+  const slotLabel = document.getElementById('slot-label');
+  infoEl.innerHTML = '';
+  slotLabel.textContent = '— optional';
+  try {
+    const data = await fetch(`/server/files/metadata?filename=${encodeURIComponent(filename)}`).then(r => r.json());
+    const colorStr = data.result?.filament_colour;
+    if (!colorStr) return;
+    const colors = colorStr.split(';').filter(Boolean);
+
+    const label = document.createElement('span');
+    label.className = 'gcode-color-label';
+    label.textContent = 'GCode:';
+    infoEl.appendChild(label);
+    colors.forEach(c => {
+      const sw = document.createElement('span');
+      sw.className = 'gcode-color-swatch';
+      sw.style.background = c;
+      sw.title = c;
+      infoEl.appendChild(sw);
+    });
+
+    if (colors.length === 1) {
+      autoMatchSlot(colors[0]);
+      slotLabel.textContent = '— auto-matched from GCode';
+    }
+  } catch {}
 }
 
 async function loadFilamentSlots() {
   const grid = document.getElementById('slot-grid');
   grid.innerHTML = '';
 
-  // "None" card — always first
   const noneCard = makeSlotCard(null, true, '#555', 'None', '(GCode)');
   grid.appendChild(noneCard);
 
-  let ptc = null;
   try {
     const data = await fetch(FILAMENT_API).then(r => r.json());
-    ptc = data.result?.status?.print_task_config;
+    loadedPtc = data.result?.status?.print_task_config;
   } catch {}
 
   LANES.forEach((lane, i) => {
-    const exist   = ptc?.filament_exist?.[i] ?? false;
-    const type    = ptc?.filament_type?.[i] ?? '';
-    const subtype = ptc?.filament_sub_type?.[i] ?? '';
-    const color   = rgbaToCSS(ptc?.filament_color_rgba?.[i] ?? '');
-    const swatch  = color ?? '#444';
+    const exist    = loadedPtc?.filament_exist?.[i] ?? false;
+    const type     = loadedPtc?.filament_type?.[i] ?? '';
+    const subtype  = loadedPtc?.filament_sub_type?.[i] ?? '';
+    const color    = rgbaToCSS(loadedPtc?.filament_color_rgba?.[i] ?? '');
+    const swatch   = color ?? '#444';
     const material = type || '—';
     const sub      = subtype && subtype !== type ? subtype : '';
     grid.appendChild(makeSlotCard(lane, exist, swatch, lane, material + (sub ? ` ${sub}` : '')));
@@ -415,6 +488,7 @@ function selectFile(filename, card) {
   document.querySelectorAll('.file-card.selected').forEach(c => c.classList.remove('selected'));
   card.classList.add('selected');
   showError('');
+  onFileSelected(filename);
 }
 
 async function loadFiles(autoSelect) {
