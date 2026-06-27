@@ -62,9 +62,9 @@
     /* File grid */
     #file-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
-      gap: 0.4rem;
-      max-height: 320px;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 0.5rem;
+      height: 280px;
       overflow-y: auto;
       background: #181818;
       border: 1px solid #2a2a2a;
@@ -75,7 +75,7 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      min-height: 80px;
+      height: 80px;
       color: #666;
       font-size: 0.85rem;
     }
@@ -91,14 +91,14 @@
     .file-card.selected { border-color: #1976d2; background: #1a2733; }
     .file-thumb {
       width: 100%;
-      aspect-ratio: 1;
+      height: 120px;
       object-fit: cover;
       display: block;
       background: #1a1a1a;
     }
     .thumb-placeholder {
       width: 100%;
-      aspect-ratio: 1;
+      height: 120px;
       display: flex;
       align-items: center;
       justify-content: center;
