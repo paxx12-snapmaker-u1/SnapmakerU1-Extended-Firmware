@@ -17,7 +17,7 @@
       background: #1e1e1e;
       border-radius: 8px;
       padding: 1.5rem;
-      max-width: 480px;
+      max-width: 560px;
       margin: 0 auto;
     }
     h1 { font-size: 1.25rem; margin: 0 0 1.5rem; color: #fff; }
@@ -43,6 +43,107 @@
     select:focus, input:focus { border-color: #1976d2; }
     .row { display: flex; gap: 0.75rem; }
     .row .field { flex: 1; margin-bottom: 0; }
+
+    /* Upload */
+    .upload-row { display: flex; align-items: center; gap: 0.6rem; }
+    #btn-upload-trigger {
+      padding: 0.45rem 0.9rem;
+      background: #2c2c2c;
+      color: #ccc;
+      border: 1px solid #3a3a3a;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      white-space: nowrap;
+    }
+    #btn-upload-trigger:hover { background: #383838; }
+    #upload-status { font-size: 0.82rem; }
+
+    /* File grid */
+    #file-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+      gap: 0.4rem;
+      max-height: 320px;
+      overflow-y: auto;
+      background: #181818;
+      border: 1px solid #2a2a2a;
+      border-radius: 4px;
+      padding: 0.4rem;
+    }
+    #file-grid.empty {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 80px;
+      color: #666;
+      font-size: 0.85rem;
+    }
+    .file-card {
+      background: #2a2a2a;
+      border: 2px solid transparent;
+      border-radius: 5px;
+      cursor: pointer;
+      overflow: hidden;
+      transition: border-color 0.1s, background 0.1s;
+    }
+    .file-card:hover { background: #333; border-color: #444; }
+    .file-card.selected { border-color: #1976d2; background: #1a2733; }
+    .file-thumb {
+      width: 100%;
+      aspect-ratio: 1;
+      object-fit: cover;
+      display: block;
+      background: #1a1a1a;
+    }
+    .thumb-placeholder {
+      width: 100%;
+      aspect-ratio: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #1a1a1a;
+      color: #3a3a3a;
+    }
+    .file-name {
+      font-size: 0.68rem;
+      padding: 0.25rem 0.35rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      color: #bbb;
+    }
+
+    /* Filament slots */
+    .slot-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 0.4rem;
+    }
+    .slot-card {
+      background: #2a2a2a;
+      border: 2px solid transparent;
+      border-radius: 5px;
+      padding: 0.5rem 0.25rem;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.1s, background 0.1s;
+      position: relative;
+    }
+    .slot-card:hover:not(.disabled) { background: #333; border-color: #444; }
+    .slot-card.selected { border-color: #1976d2; background: #1a2733; }
+    .slot-card.disabled { opacity: 0.35; cursor: default; }
+    .slot-swatch {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      margin: 0 auto 0.3rem;
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+    .slot-label { font-size: 0.72rem; color: #aaa; line-height: 1.2; }
+    .slot-label strong { display: block; color: #ddd; font-size: 0.78rem; }
+
+    /* Buttons */
     button {
       width: 100%;
       padding: 0.65rem;
@@ -55,6 +156,8 @@
     #btn-schedule:hover { background: #1565c0; }
     #btn-schedule:disabled { background: #37474f; color: #78909c; cursor: default; }
     .error { color: #ef9a9a; font-size: 0.85rem; margin-top: 0.5rem; display: none; }
+
+    /* Status card */
     .status-card {
       background: #1a2733;
       border: 1px solid #1976d2;
@@ -94,8 +197,26 @@
   </div>
 
   <div class="field">
-    <label for="sel-file">File</label>
-    <select id="sel-file"><option value="">Loading files…</option></select>
+    <label>Upload GCode</label>
+    <div class="upload-row">
+      <input type="file" id="inp-upload" accept=".gcode,.gco,.g,.ufp" style="display:none">
+      <button type="button" id="btn-upload-trigger"
+              onclick="document.getElementById('inp-upload').click()">Choose file…</button>
+      <span id="upload-status"></span>
+    </div>
+  </div>
+
+  <div class="field">
+    <label>File <span id="file-count"
+      style="font-size:0.75rem;font-weight:normal;text-transform:none;letter-spacing:0;color:#666"></span></label>
+    <div id="file-grid" class="empty">Loading files…</div>
+  </div>
+
+  <div class="field">
+    <label>Filament slot <span style="font-size:0.72rem;font-weight:normal;text-transform:none;letter-spacing:0;color:#666">— optional</span></label>
+    <div class="slot-grid" id="slot-grid">
+      <!-- populated by JS -->
+    </div>
   </div>
 
   <div class="row" style="margin-bottom:1rem">
@@ -117,6 +238,9 @@
     <div class="status-row"><span class="lbl">File</span><span class="val" id="st-file">—</span></div>
     <div class="status-row"><span class="lbl">Starts at</span><span class="val" id="st-time">—</span></div>
     <div class="status-row"><span class="lbl">In</span><span class="val" id="st-cd">—</span></div>
+    <div class="status-row" id="st-lane-row" style="display:none">
+      <span class="lbl">Filament</span><span class="val" id="st-lane">—</span>
+    </div>
     <button id="btn-cancel">Cancel scheduled print</button>
   </div>
 </div>
@@ -124,137 +248,271 @@
 <script>
 const API = '/server/schedule_print';
 const FILES_API = '/server/files/list?root=gcodes';
+const FILAMENT_API = '/printer/objects/query?print_task_config';
+
+const LANES = ['E0', 'E1', 'E2', 'E3'];
 
 const TIMEZONES = [
   { g: 'UTC', z: ['UTC'] },
   { g: 'Americas', z: [
-    'America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles',
-    'America/Anchorage', 'America/Halifax', 'America/Toronto', 'America/Vancouver',
-    'America/Sao_Paulo', 'America/Argentina/Buenos_Aires', 'America/Mexico_City',
-    'America/Bogota', 'America/Lima', 'America/Santiago',
+    'America/New_York','America/Chicago','America/Denver','America/Los_Angeles',
+    'America/Anchorage','America/Halifax','America/Toronto','America/Vancouver',
+    'America/Sao_Paulo','America/Argentina/Buenos_Aires','America/Mexico_City',
+    'America/Bogota','America/Lima','America/Santiago',
   ]},
   { g: 'Europe', z: [
-    'Europe/London', 'Europe/Lisbon', 'Europe/Paris', 'Europe/Berlin', 'Europe/Madrid',
-    'Europe/Rome', 'Europe/Amsterdam', 'Europe/Brussels', 'Europe/Vienna', 'Europe/Zurich',
-    'Europe/Stockholm', 'Europe/Oslo', 'Europe/Copenhagen', 'Europe/Warsaw', 'Europe/Prague',
-    'Europe/Budapest', 'Europe/Bucharest', 'Europe/Helsinki', 'Europe/Kyiv',
-    'Europe/Moscow', 'Europe/Istanbul', 'Europe/Athens',
+    'Europe/London','Europe/Lisbon','Europe/Paris','Europe/Berlin','Europe/Madrid',
+    'Europe/Rome','Europe/Amsterdam','Europe/Brussels','Europe/Vienna','Europe/Zurich',
+    'Europe/Stockholm','Europe/Oslo','Europe/Copenhagen','Europe/Warsaw','Europe/Prague',
+    'Europe/Budapest','Europe/Bucharest','Europe/Helsinki','Europe/Kyiv',
+    'Europe/Moscow','Europe/Istanbul','Europe/Athens',
   ]},
   { g: 'Africa', z: [
-    'Africa/Cairo', 'Africa/Johannesburg', 'Africa/Lagos', 'Africa/Nairobi', 'Africa/Casablanca',
+    'Africa/Cairo','Africa/Johannesburg','Africa/Lagos','Africa/Nairobi','Africa/Casablanca',
   ]},
   { g: 'Asia', z: [
-    'Asia/Dubai', 'Asia/Riyadh', 'Asia/Tehran', 'Asia/Karachi', 'Asia/Kolkata',
-    'Asia/Dhaka', 'Asia/Colombo', 'Asia/Kathmandu', 'Asia/Bangkok', 'Asia/Jakarta',
-    'Asia/Singapore', 'Asia/Hong_Kong', 'Asia/Shanghai', 'Asia/Tokyo', 'Asia/Seoul',
-    'Asia/Taipei', 'Asia/Manila', 'Asia/Kuala_Lumpur',
+    'Asia/Dubai','Asia/Riyadh','Asia/Tehran','Asia/Karachi','Asia/Kolkata',
+    'Asia/Dhaka','Asia/Colombo','Asia/Kathmandu','Asia/Bangkok','Asia/Jakarta',
+    'Asia/Singapore','Asia/Hong_Kong','Asia/Shanghai','Asia/Tokyo','Asia/Seoul',
+    'Asia/Taipei','Asia/Manila','Asia/Kuala_Lumpur',
   ]},
   { g: 'Pacific', z: [
-    'Australia/Perth', 'Australia/Adelaide', 'Australia/Brisbane',
-    'Australia/Sydney', 'Australia/Melbourne', 'Pacific/Auckland',
-    'Pacific/Fiji', 'Pacific/Honolulu', 'Pacific/Guam',
+    'Australia/Perth','Australia/Adelaide','Australia/Brisbane',
+    'Australia/Sydney','Australia/Melbourne','Pacific/Auckland',
+    'Pacific/Fiji','Pacific/Honolulu','Pacific/Guam',
   ]},
 ];
 
-// Returns ISO 8601 offset string (e.g. "+02:00") for tz on the given date
+const GCODE_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24"
+  fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+  <polyline points="14 2 14 8 20 8"/>
+  <line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>
+  <polyline points="10 9 9 9 8 9"/></svg>`;
+
+// ── Timezone ──────────────────────────────────────────────────────────
 function tzOffset(tz, dateStr) {
-  const probe = new Date(dateStr + 'T12:00:00Z');
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: tz, timeZoneName: 'longOffset',
-  }).formatToParts(probe);
+  }).formatToParts(new Date(dateStr + 'T12:00:00Z'));
   const name = parts.find(p => p.type === 'timeZoneName')?.value ?? 'GMT';
-  return name === 'GMT' ? '+00:00' : name.slice(3); // "GMT+02:00" → "+02:00"
+  return name === 'GMT' ? '+00:00' : name.slice(3);
 }
-
 function toIso(dateStr, timeStr, tz) {
   return `${dateStr}T${timeStr}:00${tzOffset(tz, dateStr)}`;
 }
-
 function formatTs(ts, tz) {
   return new Intl.DateTimeFormat('en-GB', {
     timeZone: tz, dateStyle: 'medium', timeStyle: 'short',
   }).format(new Date(ts * 1000));
 }
-
 function formatCountdown(secs) {
   if (secs <= 0) return 'imminent';
-  const h = Math.floor(secs / 3600);
-  const m = Math.floor((secs % 3600) / 60);
-  const s = secs % 60;
-  if (h > 0) return `${h}h ${m}m`;
-  if (m > 0) return `${m}m ${s}s`;
-  return `${s}s`;
+  const h = Math.floor(secs / 3600), m = Math.floor((secs % 3600) / 60), s = secs % 60;
+  return h > 0 ? `${h}h ${m}m` : m > 0 ? `${m}m ${s}s` : `${s}s`;
 }
-
 function todayInTz(tz) {
   return new Intl.DateTimeFormat('sv-SE', { timeZone: tz }).format(new Date());
 }
-
 function showError(msg) {
   const el = document.getElementById('err');
   el.textContent = msg;
   el.style.display = msg ? 'block' : 'none';
 }
 
-async function loadFiles() {
+// ── Filament slots ────────────────────────────────────────────────────
+let selectedLane = null; // null = let GCode handle it
+
+function rgbaToCSS(hex) {
+  // "RRGGBBAA" or "RRGGBB" → css color, or null if empty/white
+  if (!hex || hex.length < 6) return null;
+  return `#${hex.slice(0, 6)}`;
+}
+
+async function loadFilamentSlots() {
+  const grid = document.getElementById('slot-grid');
+  grid.innerHTML = '';
+
+  // "None" card — always first
+  const noneCard = makeSlotCard(null, true, '#555', 'None', '(GCode)');
+  grid.appendChild(noneCard);
+
+  let ptc = null;
   try {
-    const r = await fetch(FILES_API);
-    const data = await r.json();
-    const files = (data.result ?? [])
-      .sort((a, b) => (b.modified ?? 0) - (a.modified ?? 0));
-    const sel = document.getElementById('sel-file');
-    sel.innerHTML = files.length
-      ? files.map(f => `<option value="${f.path}">${f.path}</option>`).join('')
-      : '<option value="">No files found</option>';
+    const data = await fetch(FILAMENT_API).then(r => r.json());
+    ptc = data.result?.status?.print_task_config;
+  } catch {}
+
+  LANES.forEach((lane, i) => {
+    const exist   = ptc?.filament_exist?.[i] ?? false;
+    const type    = ptc?.filament_type?.[i] ?? '';
+    const subtype = ptc?.filament_sub_type?.[i] ?? '';
+    const color   = rgbaToCSS(ptc?.filament_color_rgba?.[i] ?? '');
+    const swatch  = color ?? '#444';
+    const material = type || '—';
+    const sub      = subtype && subtype !== type ? subtype : '';
+    grid.appendChild(makeSlotCard(lane, exist, swatch, lane, material + (sub ? ` ${sub}` : '')));
+  });
+}
+
+function makeSlotCard(lane, enabled, swatchColor, title, subtitle) {
+  const card = document.createElement('div');
+  card.className = 'slot-card' + (enabled ? '' : ' disabled');
+  card.dataset.lane = lane ?? '';
+  card.innerHTML = `
+    <div class="slot-swatch" style="background:${swatchColor}"></div>
+    <div class="slot-label"><strong>${title}</strong>${subtitle}</div>`;
+  if (enabled) {
+    card.addEventListener('click', () => selectLane(lane, card));
+  }
+  if (lane === selectedLane) selectLane(lane, card);
+  return card;
+}
+
+function selectLane(lane, card) {
+  selectedLane = lane;
+  document.querySelectorAll('.slot-card.selected').forEach(c => c.classList.remove('selected'));
+  card.classList.add('selected');
+}
+
+// ── Thumbnail lazy-loader ─────────────────────────────────────────────
+const thumbObserver = new IntersectionObserver(entries => {
+  entries.forEach(e => {
+    if (!e.isIntersecting) return;
+    thumbObserver.unobserve(e.target);
+    const ph = e.target.querySelector('.thumb-placeholder');
+    if (!ph) return;
+    fetch(`/server/files/metadata?filename=${encodeURIComponent(e.target.dataset.filename)}`)
+      .then(r => r.json())
+      .then(data => {
+        const thumbs = data.result?.thumbnails;
+        if (!thumbs?.length) return;
+        const best = thumbs.sort((a, b) => b.width - a.width)[0];
+        const img = document.createElement('img');
+        img.className = 'file-thumb';
+        img.alt = '';
+        img.src = `/server/files/gcodes/${best.relative_path}`;
+        ph.replaceWith(img);
+      })
+      .catch(() => {});
+}, { rootMargin: '150px' });
+
+// ── File grid ─────────────────────────────────────────────────────────
+let selectedFile = '';
+
+function selectFile(filename, card) {
+  selectedFile = filename;
+  document.querySelectorAll('.file-card.selected').forEach(c => c.classList.remove('selected'));
+  card.classList.add('selected');
+  showError('');
+}
+
+async function loadFiles(autoSelect) {
+  const grid = document.getElementById('file-grid');
+  try {
+    const data = await fetch(FILES_API).then(r => r.json());
+    const files = (data.result ?? []).sort((a, b) => (b.modified ?? 0) - (a.modified ?? 0));
+    grid.innerHTML = '';
+    grid.classList.toggle('empty', !files.length);
+    if (!files.length) { grid.textContent = 'No GCode files found'; return; }
+    document.getElementById('file-count').textContent =
+      `— ${files.length} file${files.length !== 1 ? 's' : ''}`;
+    const target = autoSelect ?? selectedFile;
+    files.forEach(f => {
+      const card = document.createElement('div');
+      card.className = 'file-card';
+      card.dataset.filename = f.path;
+      const ph = document.createElement('div');
+      ph.className = 'thumb-placeholder';
+      ph.innerHTML = GCODE_ICON;
+      const nameEl = document.createElement('div');
+      nameEl.className = 'file-name';
+      nameEl.title = f.path;
+      nameEl.textContent = f.path.split('/').pop();
+      card.append(ph, nameEl);
+      card.addEventListener('click', () => selectFile(f.path, card));
+      grid.appendChild(card);
+      thumbObserver.observe(card);
+      if (f.path === target) selectFile(f.path, card);
+    });
   } catch {
-    document.getElementById('sel-file').innerHTML = '<option value="">Failed to load files</option>';
+    grid.classList.add('empty');
+    grid.textContent = 'Failed to load files';
   }
 }
 
-async function loadStatus() {
+// ── Upload ────────────────────────────────────────────────────────────
+async function handleUpload(file) {
+  const status = document.getElementById('upload-status');
+  status.style.color = '#9e9e9e';
+  status.textContent = `Uploading ${file.name}…`;
+  const form = new FormData();
+  form.append('root', 'gcodes');
+  form.append('file', file, file.name);
   try {
-    const r = await fetch(API);
+    const r = await fetch('/server/files/upload', { method: 'POST', body: form });
     const data = await r.json();
-    const sc = data.result?.scheduled;
-    const box = document.getElementById('status-box');
-    if (!sc || sc.seconds_remaining <= 0) {
-      box.style.display = 'none';
+    if (!r.ok) {
+      status.style.color = '#ef9a9a';
+      status.textContent = data.error?.message ?? 'Upload failed';
       return;
     }
+    const uploaded = data.result?.item?.path ?? file.name;
+    status.style.color = '#81c784';
+    status.textContent = `✓ ${file.name}`;
+    await loadFiles(uploaded);
+    setTimeout(() => { status.textContent = ''; }, 4000);
+  } catch (e) {
+    status.style.color = '#ef9a9a';
+    status.textContent = 'Error: ' + e.message;
+  }
+}
+
+// ── Status / Schedule / Cancel ────────────────────────────────────────
+async function loadStatus() {
+  try {
+    const data = await fetch(API).then(r => r.json());
+    const sc = data.result?.scheduled;
+    const box = document.getElementById('status-box');
+    if (!sc || sc.seconds_remaining <= 0) { box.style.display = 'none'; return; }
     const tz = document.getElementById('sel-tz').value;
     document.getElementById('st-file').textContent = sc.filename;
     document.getElementById('st-time').textContent = formatTs(sc.target_ts, tz);
     document.getElementById('st-cd').textContent = formatCountdown(sc.seconds_remaining);
+    const laneRow = document.getElementById('st-lane-row');
+    if (sc.lane) {
+      document.getElementById('st-lane').textContent = sc.lane;
+      laneRow.style.display = 'flex';
+    } else {
+      laneRow.style.display = 'none';
+    }
     box.style.display = 'block';
-  } catch {
-    // silently ignore — printer may be temporarily unreachable
-  }
+  } catch {}
 }
 
 async function schedule() {
   showError('');
   const tz = document.getElementById('sel-tz').value;
-  const filename = document.getElementById('sel-file').value;
   const dateStr = document.getElementById('inp-date').value;
   const timeStr = document.getElementById('inp-time').value;
-
-  if (!filename) { showError('Please select a file.'); return; }
+  if (!selectedFile) { showError('Please select a file.'); return; }
   if (!dateStr || !timeStr) { showError('Please enter a date and time.'); return; }
-
-  const iso = toIso(dateStr, timeStr, tz);
   const btn = document.getElementById('btn-schedule');
   btn.disabled = true;
   try {
+    const body = {
+      filename: selectedFile,
+      time: toIso(dateStr, timeStr, tz),
+      timezone: tz,
+    };
+    if (selectedLane) body.lane = selectedLane;
     const r = await fetch(API, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ filename, time: iso, timezone: tz }),
+      body: JSON.stringify(body),
     });
     const data = await r.json();
-    if (!r.ok) {
-      showError(data.error?.message ?? `Error ${r.status}`);
-      return;
-    }
+    if (!r.ok) { showError(data.error?.message ?? `Error ${r.status}`); return; }
     await loadStatus();
   } catch (e) {
     showError('Network error: ' + e.message);
@@ -268,6 +526,7 @@ async function cancel() {
   document.getElementById('status-box').style.display = 'none';
 }
 
+// ── Init ──────────────────────────────────────────────────────────────
 function initTzSelect() {
   const sel = document.getElementById('sel-tz');
   TIMEZONES.forEach(({ g, z }) => {
@@ -282,8 +541,7 @@ function initTzSelect() {
     sel.appendChild(grp);
   });
   const saved = localStorage.getItem('sp_tz')
-    ?? Intl.DateTimeFormat().resolvedOptions().timeZone
-    ?? 'UTC';
+    ?? Intl.DateTimeFormat().resolvedOptions().timeZone ?? 'UTC';
   sel.value = Array.from(sel.options).some(o => o.value === saved) ? saved : 'UTC';
   sel.addEventListener('change', () => {
     localStorage.setItem('sp_tz', sel.value);
@@ -303,7 +561,12 @@ document.addEventListener('DOMContentLoaded', () => {
   initTzSelect();
   updateDateDefault();
   loadFiles();
+  loadFilamentSlots();
   loadStatus();
+  document.getElementById('inp-upload').addEventListener('change', e => {
+    if (e.target.files[0]) handleUpload(e.target.files[0]);
+    e.target.value = '';
+  });
   document.getElementById('btn-schedule').addEventListener('click', schedule);
   document.getElementById('btn-cancel').addEventListener('click', cancel);
   setInterval(loadStatus, 10000);

@@ -81,8 +81,18 @@ class SchedulePrint:
         if not sched:
             return
         filename = sched["filename"]
+        lane = sched.get("lane")
         self._clear_state()
         kapis = self.server.lookup_component("klippy_apis")
+        if lane:
+            try:
+                await kapis.run_gcode(f"CHANGE_TOOL LANE={lane}")
+                logger.info("schedule_print: loaded filament lane '%s'", lane)
+            except Exception:
+                logger.exception(
+                    "schedule_print: CHANGE_TOOL LANE=%s failed, proceeding anyway",
+                    lane,
+                )
         try:
             await kapis.start_print(filename)
             logger.info("schedule_print: print started '%s'", filename)
@@ -106,11 +116,13 @@ class SchedulePrint:
         filename = web_request.get_str("filename")
         time_str = web_request.get_str("time")
         timezone = web_request.get_str("timezone", default="UTC")
+        lane = web_request.get_str("lane", default=None)
         target_ts = self._parse_time(time_str)
         self._scheduled = {
             "filename": filename,
             "target_ts": target_ts,
             "timezone": timezone,
+            "lane": lane,
         }
         self._save_state()
         self._arm()
@@ -124,6 +136,7 @@ class SchedulePrint:
                 "filename": self._scheduled["filename"],
                 "target_ts": self._scheduled["target_ts"],
                 "timezone": self._scheduled.get("timezone", "UTC"),
+                "lane": self._scheduled.get("lane"),
                 "seconds_remaining": int(
                     self._scheduled["target_ts"] - time.time()
                 ),
