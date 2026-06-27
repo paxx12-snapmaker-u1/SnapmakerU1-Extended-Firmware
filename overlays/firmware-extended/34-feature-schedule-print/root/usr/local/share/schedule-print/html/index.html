@@ -376,26 +376,36 @@ function selectLane(lane, card) {
 }
 
 // ── Thumbnail lazy-loader ─────────────────────────────────────────────
-const thumbObserver = new IntersectionObserver(entries => {
-  entries.forEach(e => {
-    if (!e.isIntersecting) return;
-    thumbObserver.unobserve(e.target);
-    const ph = e.target.querySelector('.thumb-placeholder');
-    if (!ph) return;
-    fetch(`/server/files/metadata?filename=${encodeURIComponent(e.target.dataset.filename)}`)
-      .then(r => r.json())
-      .then(data => {
-        const thumbs = data.result?.thumbnails;
-        if (!thumbs?.length) return;
-        const best = thumbs.sort((a, b) => b.width - a.width)[0];
-        const img = document.createElement('img');
-        img.className = 'file-thumb';
-        img.alt = '';
-        img.src = `/server/files/gcodes/${best.relative_path}`;
-        ph.replaceWith(img);
-      })
-      .catch(() => {});
-}, { rootMargin: '150px' });
+let thumbObserver = null;
+
+function loadThumb(card) {
+  const ph = card.querySelector('.thumb-placeholder');
+  if (!ph) return;
+  fetch(`/server/files/metadata?filename=${encodeURIComponent(card.dataset.filename)}`)
+    .then(r => r.json())
+    .then(data => {
+      const thumbs = data.result?.thumbnails;
+      if (!thumbs?.length) return;
+      const best = thumbs.sort((a, b) => b.width - a.width)[0];
+      const img = document.createElement('img');
+      img.className = 'file-thumb';
+      img.alt = '';
+      img.src = `/server/files/gcodes/${best.relative_path}`;
+      ph.replaceWith(img);
+    })
+    .catch(() => {});
+}
+
+function initThumbObserver() {
+  if (!('IntersectionObserver' in window)) return;
+  thumbObserver = new IntersectionObserver(entries => {
+    entries.forEach(e => {
+      if (!e.isIntersecting) return;
+      thumbObserver.unobserve(e.target);
+      loadThumb(e.target);
+    });
+  }, { rootMargin: '150px' });
+}
 
 // ── File grid ─────────────────────────────────────────────────────────
 let selectedFile = '';
@@ -432,7 +442,7 @@ async function loadFiles(autoSelect) {
       card.append(ph, nameEl);
       card.addEventListener('click', () => selectFile(f.path, card));
       grid.appendChild(card);
-      thumbObserver.observe(card);
+      if (thumbObserver) thumbObserver.observe(card); else loadThumb(card);
       if (f.path === target) selectFile(f.path, card);
     });
   } catch {
@@ -558,6 +568,7 @@ function updateDateDefault() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+  initThumbObserver();
   initTzSelect();
   updateDateDefault();
   loadFiles();
