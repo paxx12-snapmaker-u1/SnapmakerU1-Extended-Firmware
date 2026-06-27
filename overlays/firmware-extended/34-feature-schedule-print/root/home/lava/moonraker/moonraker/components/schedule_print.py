@@ -81,24 +81,25 @@ class SchedulePrint:
         if not sched:
             return
         filename = sched["filename"]
-        lane = sched.get("lane")
+        extruder_map = sched.get("extruder_map")
         self._clear_state()
         kapis = self.server.lookup_component("klippy_apis")
-        if lane:
-            try:
-                # Lane is "E0"–"E3"; remap logical T0 to the chosen physical extruder
-                map_extruder = int(lane.lstrip("E"))
-                await kapis.run_gcode(
-                    f"SET_PRINT_EXTRUDER_MAP CONFIG_EXTRUDER=0 MAP_EXTRUDER={map_extruder}"
-                )
-                logger.info(
-                    "schedule_print: remapped T0 → physical extruder %d", map_extruder
-                )
-            except Exception:
-                logger.exception(
-                    "schedule_print: SET_PRINT_EXTRUDER_MAP failed for lane %s, proceeding anyway",
-                    lane,
-                )
+        if extruder_map:
+            for logical_idx, physical_idx in enumerate(extruder_map):
+                if physical_idx is None:
+                    continue
+                try:
+                    await kapis.run_gcode(
+                        f"SET_PRINT_EXTRUDER_MAP CONFIG_EXTRUDER={logical_idx} MAP_EXTRUDER={physical_idx}"
+                    )
+                    logger.info(
+                        "schedule_print: remapped T%d → physical extruder %d", logical_idx, physical_idx
+                    )
+                except Exception:
+                    logger.exception(
+                        "schedule_print: SET_PRINT_EXTRUDER_MAP failed for T%d → %d, proceeding anyway",
+                        logical_idx, physical_idx,
+                    )
         try:
             await kapis.start_print(filename)
             logger.info("schedule_print: print started '%s'", filename)
@@ -122,13 +123,14 @@ class SchedulePrint:
         filename = web_request.get_str("filename")
         time_str = web_request.get_str("time")
         timezone = web_request.get_str("timezone", default="UTC")
-        lane = web_request.get_str("lane", default=None)
+        extruder_map_str = web_request.get_str("extruder_map", default=None)
+        extruder_map = json.loads(extruder_map_str) if extruder_map_str else None
         target_ts = self._parse_time(time_str)
         self._scheduled = {
             "filename": filename,
             "target_ts": target_ts,
             "timezone": timezone,
-            "lane": lane,
+            "extruder_map": extruder_map,
         }
         self._save_state()
         self._arm()
@@ -142,7 +144,7 @@ class SchedulePrint:
                 "filename": self._scheduled["filename"],
                 "target_ts": self._scheduled["target_ts"],
                 "timezone": self._scheduled.get("timezone", "UTC"),
-                "lane": self._scheduled.get("lane"),
+                "extruder_map": self._scheduled.get("extruder_map"),
                 "seconds_remaining": int(
                     self._scheduled["target_ts"] - time.time()
                 ),

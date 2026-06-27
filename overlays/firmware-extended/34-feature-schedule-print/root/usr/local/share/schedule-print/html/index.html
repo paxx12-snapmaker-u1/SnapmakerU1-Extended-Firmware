@@ -115,51 +115,15 @@
       color: #bbb;
     }
 
-    /* Filament slots */
-    .slot-grid {
-      display: grid;
-      grid-template-columns: repeat(5, 1fr);
-      gap: 0.4rem;
+    /* Filament mapping */
+    .mapping-table { display: flex; flex-direction: column; gap: 0.4rem; }
+    .mapping-row { display: flex; align-items: center; gap: 0.5rem; }
+    .mapping-swatch {
+      width: 14px; height: 14px; border-radius: 50%;
+      border: 1px solid rgba(255,255,255,0.2); flex-shrink: 0;
     }
-    .slot-card {
-      background: #2a2a2a;
-      border: 2px solid transparent;
-      border-radius: 5px;
-      padding: 0.5rem 0.25rem;
-      text-align: center;
-      cursor: pointer;
-      transition: border-color 0.1s, background 0.1s;
-      position: relative;
-    }
-    .slot-card:hover:not(.disabled) { background: #333; border-color: #444; }
-    .slot-card.selected { border-color: #1976d2; background: #1a2733; }
-    .slot-card.disabled { opacity: 0.35; cursor: default; }
-    .slot-swatch {
-      width: 28px;
-      height: 28px;
-      border-radius: 50%;
-      margin: 0 auto 0.3rem;
-      border: 1px solid rgba(255,255,255,0.1);
-    }
-    .slot-label { font-size: 0.72rem; color: #aaa; line-height: 1.2; }
-    .slot-label strong { display: block; color: #ddd; font-size: 0.78rem; }
-
-    /* GCode color info */
-    .gcode-colors {
-      display: flex;
-      align-items: center;
-      gap: 0.35rem;
-      min-height: 1rem;
-      margin-top: 0.35rem;
-    }
-    .gcode-color-label { font-size: 0.72rem; color: #666; flex-shrink: 0; }
-    .gcode-color-swatch {
-      width: 13px;
-      height: 13px;
-      border-radius: 50%;
-      border: 1px solid rgba(255,255,255,0.15);
-      flex-shrink: 0;
-    }
+    .mapping-label { font-size: 0.85rem; color: #aaa; width: 2.2rem; flex-shrink: 0; }
+    .mapping-select { flex: 1; padding: 0.35rem 0.5rem; font-size: 0.85rem; }
 
     /* Buttons */
     button {
@@ -228,14 +192,11 @@
     <label>File <span id="file-count"
       style="font-size:0.75rem;font-weight:normal;text-transform:none;letter-spacing:0;color:#666"></span></label>
     <div id="file-grid" class="empty">Loading files…</div>
-    <div id="gcode-colors" class="gcode-colors"></div>
   </div>
 
-  <div class="field">
-    <label>Filament slot <span style="font-size:0.72rem;font-weight:normal;text-transform:none;letter-spacing:0;color:#666" id="slot-label">— optional</span></label>
-    <div class="slot-grid" id="slot-grid">
-      <!-- populated by JS -->
-    </div>
+  <div class="field" id="mapping-field" style="display:none">
+    <label>Filament mapping</label>
+    <div class="mapping-table" id="mapping-table"></div>
   </div>
 
   <div class="row" style="margin-bottom:1rem">
@@ -257,8 +218,8 @@
     <div class="status-row"><span class="lbl">File</span><span class="val" id="st-file">—</span></div>
     <div class="status-row"><span class="lbl">Starts at</span><span class="val" id="st-time">—</span></div>
     <div class="status-row"><span class="lbl">In</span><span class="val" id="st-cd">—</span></div>
-    <div class="status-row" id="st-lane-row" style="display:none">
-      <span class="lbl">Filament</span><span class="val" id="st-lane">—</span>
+    <div class="status-row" id="st-map-row" style="display:none">
+      <span class="lbl">Mapping</span><span class="val" id="st-map">—</span>
     </div>
     <button id="btn-cancel">Cancel scheduled print</button>
   </div>
@@ -339,9 +300,9 @@ function showError(msg) {
   el.style.display = msg ? 'block' : 'none';
 }
 
-// ── Filament slots ────────────────────────────────────────────────────
-let selectedLane = null;
+// ── Filament mapping ──────────────────────────────────────────────────
 let loadedPtc = null;
+let selectedExtruderMap = [];
 
 function rgbaToCSS(hex) {
   if (!hex || hex.length < 6) return null;
@@ -358,94 +319,80 @@ function colorDist(h1, h2) {
   return Math.sqrt((r1-r2)**2 + (g1-g2)**2 + (b1-b2)**2);
 }
 
-function autoMatchSlot(gcodeHex) {
-  if (!loadedPtc) return;
-  let bestLane = null, bestDist = Infinity;
-  LANES.forEach((lane, i) => {
+function findBestSlot(hexColor) {
+  if (!loadedPtc) return null;
+  let best = null, bestDist = Infinity;
+  LANES.forEach((_, i) => {
     if (!loadedPtc.filament_exist?.[i]) return;
     const slotHex = rgbaToCSS(loadedPtc.filament_color_rgba?.[i] ?? '');
     if (!slotHex) return;
-    const d = colorDist(gcodeHex, slotHex);
-    if (d < bestDist) { bestDist = d; bestLane = lane; }
+    const d = colorDist(hexColor, slotHex);
+    if (d < bestDist) { bestDist = d; best = i; }
   });
-  if (bestLane) {
-    const card = document.querySelector(`.slot-card[data-lane="${bestLane}"]`);
-    if (card) selectLane(bestLane, card);
-  }
+  return best;
+}
+
+function buildExtruderMapping(gcodeColors) {
+  const field = document.getElementById('mapping-field');
+  const table = document.getElementById('mapping-table');
+  table.innerHTML = '';
+  selectedExtruderMap = [];
+  if (!gcodeColors.length) { field.style.display = 'none'; return; }
+  gcodeColors.forEach((color, ti) => {
+    const bestSlot = findBestSlot(color);
+    selectedExtruderMap[ti] = bestSlot;
+    const row = document.createElement('div');
+    row.className = 'mapping-row';
+    const swatch = document.createElement('span');
+    swatch.className = 'mapping-swatch';
+    swatch.style.background = color;
+    swatch.title = color;
+    const lbl = document.createElement('span');
+    lbl.className = 'mapping-label';
+    lbl.textContent = `T${ti}`;
+    const sel = document.createElement('select');
+    sel.className = 'mapping-select';
+    const noneOpt = document.createElement('option');
+    noneOpt.value = '';
+    noneOpt.textContent = '— (no remap)';
+    sel.appendChild(noneOpt);
+    LANES.forEach((lane, i) => {
+      const opt = document.createElement('option');
+      opt.value = i;
+      const slotColor = rgbaToCSS(loadedPtc?.filament_color_rgba?.[i] ?? '');
+      const slotType = loadedPtc?.filament_type?.[i] ?? '';
+      const exist = loadedPtc?.filament_exist?.[i];
+      opt.textContent = `${lane}${slotType ? ` — ${slotType}` : ''}${!exist ? ' (empty)' : ''}`;
+      opt.disabled = !exist;
+      sel.appendChild(opt);
+    });
+    sel.value = bestSlot !== null ? bestSlot : '';
+    sel.addEventListener('change', () => {
+      selectedExtruderMap[ti] = sel.value !== '' ? parseInt(sel.value) : null;
+    });
+    row.append(swatch, lbl, sel);
+    table.appendChild(row);
+  });
+  field.style.display = 'block';
 }
 
 async function onFileSelected(filename) {
-  const infoEl = document.getElementById('gcode-colors');
-  const slotLabel = document.getElementById('slot-label');
-  infoEl.innerHTML = '';
-  slotLabel.textContent = '— optional';
+  document.getElementById('mapping-field').style.display = 'none';
+  document.getElementById('mapping-table').innerHTML = '';
+  selectedExtruderMap = [];
   try {
     const data = await fetch(`/server/files/metadata?filename=${encodeURIComponent(filename)}`).then(r => r.json());
     const colorStr = data.result?.filament_colour;
     if (!colorStr) return;
-    const colors = colorStr.split(';').filter(Boolean);
-
-    const label = document.createElement('span');
-    label.className = 'gcode-color-label';
-    label.textContent = 'GCode:';
-    infoEl.appendChild(label);
-    colors.forEach(c => {
-      const sw = document.createElement('span');
-      sw.className = 'gcode-color-swatch';
-      sw.style.background = c;
-      sw.title = c;
-      infoEl.appendChild(sw);
-    });
-
-    if (colors.length === 1) {
-      autoMatchSlot(colors[0]);
-      slotLabel.textContent = '— auto-matched from GCode';
-    }
+    buildExtruderMapping(colorStr.split(';').filter(Boolean));
   } catch {}
 }
 
 async function loadFilamentSlots() {
-  const grid = document.getElementById('slot-grid');
-  grid.innerHTML = '';
-
-  const noneCard = makeSlotCard(null, true, '#555', 'None', '(GCode)');
-  grid.appendChild(noneCard);
-
   try {
     const data = await fetch(FILAMENT_API).then(r => r.json());
     loadedPtc = data.result?.status?.print_task_config;
   } catch {}
-
-  LANES.forEach((lane, i) => {
-    const exist    = loadedPtc?.filament_exist?.[i] ?? false;
-    const type     = loadedPtc?.filament_type?.[i] ?? '';
-    const subtype  = loadedPtc?.filament_sub_type?.[i] ?? '';
-    const color    = rgbaToCSS(loadedPtc?.filament_color_rgba?.[i] ?? '');
-    const swatch   = color ?? '#444';
-    const material = type || '—';
-    const sub      = subtype && subtype !== type ? subtype : '';
-    grid.appendChild(makeSlotCard(lane, exist, swatch, lane, material + (sub ? ` ${sub}` : '')));
-  });
-}
-
-function makeSlotCard(lane, enabled, swatchColor, title, subtitle) {
-  const card = document.createElement('div');
-  card.className = 'slot-card' + (enabled ? '' : ' disabled');
-  card.dataset.lane = lane ?? '';
-  card.innerHTML = `
-    <div class="slot-swatch" style="background:${swatchColor}"></div>
-    <div class="slot-label"><strong>${title}</strong>${subtitle}</div>`;
-  if (enabled) {
-    card.addEventListener('click', () => selectLane(lane, card));
-  }
-  if (lane === selectedLane) selectLane(lane, card);
-  return card;
-}
-
-function selectLane(lane, card) {
-  selectedLane = lane;
-  document.querySelectorAll('.slot-card.selected').forEach(c => c.classList.remove('selected'));
-  card.classList.add('selected');
 }
 
 // ── Thumbnail lazy-loader ─────────────────────────────────────────────
@@ -563,12 +510,14 @@ async function loadStatus() {
     document.getElementById('st-file').textContent = sc.filename;
     document.getElementById('st-time').textContent = formatTs(sc.target_ts, tz);
     document.getElementById('st-cd').textContent = formatCountdown(sc.seconds_remaining);
-    const laneRow = document.getElementById('st-lane-row');
-    if (sc.lane) {
-      document.getElementById('st-lane').textContent = sc.lane;
-      laneRow.style.display = 'flex';
+    const mapRow = document.getElementById('st-map-row');
+    const map = sc.extruder_map;
+    if (map && map.some(v => v !== null)) {
+      document.getElementById('st-map').textContent =
+        map.map((v, i) => v !== null ? `T${i}→E${v}` : null).filter(Boolean).join(', ');
+      mapRow.style.display = 'flex';
     } else {
-      laneRow.style.display = 'none';
+      mapRow.style.display = 'none';
     }
     box.style.display = 'block';
   } catch {}
@@ -589,7 +538,8 @@ async function schedule() {
       time: toIso(dateStr, timeStr, tz),
       timezone: tz,
     };
-    if (selectedLane) body.lane = selectedLane;
+    if (selectedExtruderMap.some(v => v !== null))
+      body.extruder_map = selectedExtruderMap.map(v => v ?? null);
     const r = await fetch(API, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
