@@ -86,11 +86,17 @@ class SchedulePrint:
         kapis = self.server.lookup_component("klippy_apis")
         if lane:
             try:
-                await kapis.run_gcode(f"CHANGE_TOOL LANE={lane}")
-                logger.info("schedule_print: loaded filament lane '%s'", lane)
+                # Lane is "E0"–"E3"; remap logical T0 to the chosen physical extruder
+                map_extruder = int(lane.lstrip("E"))
+                await kapis.run_gcode(
+                    f"SET_PRINT_EXTRUDER_MAP CONFIG_EXTRUDER=0 MAP_EXTRUDER={map_extruder}"
+                )
+                logger.info(
+                    "schedule_print: remapped T0 → physical extruder %d", map_extruder
+                )
             except Exception:
                 logger.exception(
-                    "schedule_print: CHANGE_TOOL LANE=%s failed, proceeding anyway",
+                    "schedule_print: SET_PRINT_EXTRUDER_MAP failed for lane %s, proceeding anyway",
                     lane,
                 )
         try:
