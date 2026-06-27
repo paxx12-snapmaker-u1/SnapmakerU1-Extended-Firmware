@@ -350,6 +350,7 @@ function buildExtruderMapping(gcodeColors) {
     const lbl = document.createElement('span');
     lbl.className = 'mapping-label';
     lbl.textContent = `T${ti}`;
+    const slotColors = LANES.map((_, i) => rgbaToCSS(loadedPtc?.filament_color_rgba?.[i] ?? ''));
     const sel = document.createElement('select');
     sel.className = 'mapping-select';
     const noneOpt = document.createElement('option');
@@ -359,18 +360,27 @@ function buildExtruderMapping(gcodeColors) {
     LANES.forEach((lane, i) => {
       const opt = document.createElement('option');
       opt.value = i;
-      const slotColor = rgbaToCSS(loadedPtc?.filament_color_rgba?.[i] ?? '');
+      const slotColor = slotColors[i];
       const slotType = loadedPtc?.filament_type?.[i] ?? '';
       const exist = loadedPtc?.filament_exist?.[i];
       opt.textContent = `${lane}${slotType ? ` — ${slotType}` : ''}${!exist ? ' (empty)' : ''}`;
+      if (slotColor) { opt.style.backgroundColor = slotColor; opt.style.color = '#111'; }
       opt.disabled = !exist;
       sel.appendChild(opt);
     });
+    const slotPreview = document.createElement('span');
+    slotPreview.className = 'mapping-swatch';
+    const updatePreview = () => {
+      const idx = sel.value !== '' ? parseInt(sel.value) : null;
+      slotPreview.style.background = idx !== null && slotColors[idx] ? slotColors[idx] : '#444';
+    };
     sel.value = bestSlot !== null ? bestSlot : '';
+    updatePreview();
     sel.addEventListener('change', () => {
       selectedExtruderMap[ti] = sel.value !== '' ? parseInt(sel.value) : null;
+      updatePreview();
     });
-    row.append(swatch, lbl, sel);
+    row.append(swatch, lbl, slotPreview, sel);
     table.appendChild(row);
   });
   field.style.display = 'block';
