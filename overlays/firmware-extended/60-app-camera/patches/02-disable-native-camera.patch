@@ -19,5 +19,5 @@
 +            exit 0
 +        fi
          ulimit -c 102400
-         start-stop-daemon -S -b -x "$PROG"
+         start-stop-daemon -S -b -x "$PROG" -- -c "$APPS_CGROUP"
          ;;
