@@ -1,4 +1,4 @@
-firmware/
+/firmware/
 tmp/
 tools/upfile/upfile
 tools/rk2918_tools/afptool
