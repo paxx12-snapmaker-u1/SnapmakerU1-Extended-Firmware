@@ -67,7 +67,14 @@ Open a shell in the development environment:
 
 ## Profiles
 
-The build system supports the `extended` profile with extensive modifications to the firmware.
+The `PROFILE` argument is parsed as `<firmware>[-<profile>]*`: a single required
+firmware name, followed by zero or more optional profile names, each joined
+with a `-`. The firmware name selects overlays from `overlays/firmware-<firmware>/`,
+and each profile name adds overlays from `overlays/profile-<profile>/`. Profiles
+can be freely combined, e.g. `extended-devel`, `extended-qemu`, or
+`extended-devel-qemu`.
+
+Run `make profiles` to list the firmwares and profiles currently available.
 
 ## Overlays
 
@@ -76,18 +83,19 @@ Overlays are organized into categories based on their scope and build profile. E
 ### Overlay Categories
 
 - **common/** - Core modifications applied to all firmware profiles
-- **firmware-extended/** - Modifications specific to the extended firmware profile
-- **devel/** - Development tools and utilities (only included with DEVEL=1 flag)
-- **staging/** - Disabled overlays kept for potential future use
+- **firmware-\<name\>/** - Modifications specific to a firmware, e.g. `firmware-extended/`
+- **profile-\<name\>/** - Optional, composable overlays enabled by adding `-<name>` to `PROFILE`, e.g. `profile-devel/`
 
 ## Build Options
 
-- `extended-devel` - Add development overlays from `overlays/devel/`
-  - e.g. `./dev.sh make build PROFILE=extended DEVEL=1`
+- `extended-devel` - Add the `devel` profile overlays from `overlays/profile-devel/`
+  - e.g. `./dev.sh make build PROFILE=extended-devel`
+- `extended-qemu` - Add the `qemu` profile overlays from `overlays/profile-qemu/` (eth0 hotplug and virtio-touch hwdb mapping for the QEMU dev environment)
+  - e.g. `./dev.sh make build PROFILE=extended-qemu`
 
 ### Devel Profile Features
 
-When running firmware built with the `-devel` profile, additional development tools are available:
+When running firmware built with the `devel` profile, additional development tools are available:
 
 **Entware Package Manager**
 
@@ -113,9 +121,9 @@ Once initialized, use `opkg` to install packages from the Entware repository.
 ### Directory Structure
 
 ```text
-├── common/                          Core overlays applied to all profiles
-├── devel/                           Devel overlays applied to all profiles when `-devel`
-└── firmware-${profile}/             Profile-specific firmware overlays
+├── common/                          Core overlays applied to all builds
+├── firmware-${firmware}/            Firmware-specific overlays
+└── profile-${profile}/              Optional overlays enabled by `-${profile}` in PROFILE
 ```
 
 ### Overlay Structure
@@ -132,7 +140,8 @@ Each overlay directory can contain:
 Overlays are applied in the following order:
 
 1. All overlays from `common/` (in numeric order)
-1. Profile-specific overlays from `firmware-${profile}/` (in numeric order)
+1. Firmware-specific overlays from `firmware-${firmware}/` (in numeric order)
+1. Profile-specific overlays from `profile-${profile}/` (in numeric order), for each `-${profile}` in `PROFILE`, in the order given
 
 ### Integrating Upstream Klipper Patches
 
@@ -168,10 +177,10 @@ The `20-klipper-patches` overlay in `firmware-extended/` backports upstream Klip
 ```text
 .
 ├── .github/                     Automated release builds
-├── overlays/                    Profile overlay directories
-│   ├── common/                  Core overlays for all profiles
-│   ├── devel/                   Devel overlays for all profiles
-│   └── firmware-${profile}/     Profile-specific firmware overlays
+├── overlays/                    Overlay directories
+│   ├── common/                  Core overlays for all builds
+│   ├── firmware-${firmware}/    Firmware-specific overlays
+│   └── profile-${profile}/      Optional overlays enabled by `-${profile}` in PROFILE
 ├── firmware/                    Downloaded and generated firmware files
 ├── scripts/                     Build and modification scripts
 ├── tmp/                         Temporary build artifacts

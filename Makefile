@@ -8,23 +8,27 @@ OUTPUT_FILE := firmware/firmware.bin
 BUILD_DIR ?= tmp/firmware
 
 ifneq (,$(PROFILE))
-PROFILE_MAIN := $(patsubst %-devel,%,$(PROFILE))
+PROFILE_PARTS := $(subst -, ,$(PROFILE))
+FIRMWARE_NAME := $(firstword $(PROFILE_PARTS))
+PROFILE_NAMES := $(wordlist 2,$(words $(PROFILE_PARTS)),$(PROFILE_PARTS))
 OVERLAYS += $(wildcard overlays/common/*/)
-OVERLAYS += $(wildcard overlays/firmware-$(PROFILE_MAIN)/*/)
-ifneq ($(filter %-devel,$(PROFILE)),)
-OVERLAYS += $(wildcard overlays/devel/*/)
-endif
+OVERLAYS += $(wildcard overlays/firmware-$(FIRMWARE_NAME)/*/)
+OVERLAYS += $(foreach p,$(PROFILE_NAMES),$(wildcard overlays/profile-$(p)/*/))
 endif
 
-PROFILES := $(patsubst overlays/firmware-%,%,$(wildcard overlays/firmware-*))
-PROFILES += $(patsubst overlays/firmware-%,%-devel,$(wildcard overlays/firmware-*))
+FIRMWARES := $(patsubst overlays/firmware-%,%,$(wildcard overlays/firmware-*))
+PROFILE_LIST := $(patsubst overlays/profile-%,%,$(wildcard overlays/profile-*))
+INVALID_PROFILE_NAMES := $(filter-out $(PROFILE_LIST),$(PROFILE_NAMES))
 
 $(OUTPUT_FILE): firmware/$(FIRMWARE_FILE) tools
 ifeq (,$(PROFILE))
-	@echo "Please specify a profile using 'make PROFILE=<profile_name>'. Available profiles are: $(PROFILES)."
+	@echo "Please specify a profile using 'make PROFILE=<firmware>[-<profile>]*'. Available firmwares are: $(FIRMWARES). Available profiles are: $(PROFILE_LIST)."
 	@exit 1
-else ifeq (,$(filter $(PROFILE_MAIN),$(PROFILES)))
-	@echo "Invalid profile '$(PROFILE_MAIN)'. Available profiles are: $(PROFILES)."
+else ifeq (,$(filter $(FIRMWARE_NAME),$(FIRMWARES)))
+	@echo "Invalid firmware '$(FIRMWARE_NAME)'. Available firmwares are: $(FIRMWARES)."
+	@exit 1
+else ifneq (,$(INVALID_PROFILE_NAMES))
+	@echo "Invalid profile(s) '$(INVALID_PROFILE_NAMES)'. Available profiles are: $(PROFILE_LIST)."
 	@exit 1
 endif
 	./scripts/create_firmware.sh $< $(BUILD_DIR) $@ $(OVERLAYS)
@@ -44,7 +48,8 @@ overlays:
 
 .PHONY: profiles
 profiles:
-	@echo "Available profiles: $(PROFILES)"
+	@echo "Available firmwares: $(FIRMWARES)"
+	@echo "Available profiles: $(PROFILE_LIST)"
 
 # ================= Tools =================
 
