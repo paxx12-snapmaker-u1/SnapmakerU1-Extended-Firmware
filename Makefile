@@ -10,25 +10,25 @@ BUILD_DIR ?= tmp/firmware
 ifneq (,$(PROFILE))
 PROFILE_PARTS := $(subst -, ,$(PROFILE))
 FIRMWARE_NAME := $(firstword $(PROFILE_PARTS))
-ADDON_NAMES := $(wordlist 2,$(words $(PROFILE_PARTS)),$(PROFILE_PARTS))
+MOD_NAMES := $(wordlist 2,$(words $(PROFILE_PARTS)),$(PROFILE_PARTS))
 OVERLAYS += $(wildcard overlays/common/*/)
 OVERLAYS += $(wildcard overlays/firmware-$(FIRMWARE_NAME)/*/)
-OVERLAYS += $(foreach p,$(ADDON_NAMES),$(wildcard overlays/addon-$(p)/*/))
+OVERLAYS += $(foreach p,$(MOD_NAMES),$(wildcard overlays/mods/$(p)/*/))
 endif
 
 FIRMWARES := $(patsubst overlays/firmware-%,%,$(wildcard overlays/firmware-*))
-ADDON_LIST := $(patsubst overlays/addon-%,%,$(wildcard overlays/addon-*))
-INVALID_ADDON_NAMES := $(filter-out $(ADDON_LIST),$(ADDON_NAMES))
+MOD_LIST := $(patsubst overlays/mods/%/,%,$(wildcard overlays/mods/*/))
+INVALID_MOD_NAMES := $(filter-out $(MOD_LIST),$(MOD_NAMES))
 
 $(OUTPUT_FILE): firmware/$(FIRMWARE_FILE) tools
 ifeq (,$(PROFILE))
-	@echo "Please specify a firmware using 'make PROFILE=<firmware>[-<addon>]*'. Available firmwares are: $(FIRMWARES). Available addons are: $(ADDON_LIST)."
+	@echo "Please specify a firmware using 'make PROFILE=<firmware>[-<mod>]*'. Available firmwares are: $(FIRMWARES). Available mods are: $(MOD_LIST)."
 	@exit 1
 else ifeq (,$(filter $(FIRMWARE_NAME),$(FIRMWARES)))
 	@echo "Invalid firmware '$(FIRMWARE_NAME)'. Available firmwares are: $(FIRMWARES)."
 	@exit 1
-else ifneq (,$(INVALID_ADDON_NAMES))
-	@echo "Invalid addon(s) '$(INVALID_ADDON_NAMES)'. Available addons are: $(ADDON_LIST)."
+else ifneq (,$(INVALID_MOD_NAMES))
+	@echo "Invalid mod(s) '$(INVALID_MOD_NAMES)'. Available mods are: $(MOD_LIST)."
 	@exit 1
 endif
 	./scripts/create_firmware.sh $< $(BUILD_DIR) $@ $(OVERLAYS)
@@ -46,10 +46,10 @@ extract: firmware/$(FIRMWARE_FILE) tools
 overlays:
 	@echo $(OVERLAYS)
 
-.PHONY: addons
-addons:
+.PHONY: mods
+mods:
 	@echo "Available firmwares: $(FIRMWARES)"
-	@echo "Available addons: $(ADDON_LIST)"
+	@echo "Available mods: $(MOD_LIST)"
 
 # ================= Tools =================
 
