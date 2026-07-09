@@ -142,6 +142,26 @@ HELIX_TOUCH_DEVICE=/dev/input/event0
 ENVEOF
 fi
 
+# ---- switch to fbdev and light up the panel ----------------------------------
+
+# The installer started HelixScreen with its default DRM backend; restart it
+# so it picks up the fbdev pin above. In fbdev mode nothing performs a DRM
+# commit, so the VOP2 controller keeps scanning the U-Boot boot-logo buffer
+# and the panel stays on the boot logo while /dev/fb0 updates invisibly - a
+# blank/unblank cycle forces the fbdev emulation to mode-set /dev/fb0 onto
+# the panel. (S99fb-http-restore repeats this at every boot.)
+if [ -x "$HELIX_INIT" ]; then
+    log "restarting HelixScreen on the fbdev backend"
+    "$HELIX_INIT" restart || true
+    sleep 3
+fi
+if [ -w /sys/class/graphics/fb0/blank ]; then
+    log "forcing panel scanout of /dev/fb0"
+    echo 1 > /sys/class/graphics/fb0/blank 2>/dev/null || true
+    sleep 1
+    echo 0 > /sys/class/graphics/fb0/blank 2>/dev/null || true
+fi
+
 # ---- restore the Remote Screen service --------------------------------------
 
 # The installer's autostart hook just replaced /etc/init.d/S99fb-http with a

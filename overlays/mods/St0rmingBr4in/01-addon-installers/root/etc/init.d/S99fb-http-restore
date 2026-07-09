@@ -18,9 +18,26 @@
 
 case "${1:-}" in
     start)
+        # Only act when HelixScreen owns the display.
         [ -x /userdata/helixscreen/config/helixscreen.init ] || exit 0
-        [ -x /etc/init.d/S99fb-http.stock ] || exit 0
-        /etc/init.d/S99fb-http.stock start || true
+
+        # HelixScreen is pinned to the fbdev backend (Remote Screen
+        # compatibility, see install-helixscreen.sh), so it never performs a
+        # DRM commit — and the VOP2 controller keeps scanning the U-Boot
+        # boot-logo buffer, leaving the physical panel stuck on the boot logo
+        # while /dev/fb0 updates invisibly. A blank/unblank cycle forces the
+        # fbdev emulation to mode-set /dev/fb0 onto the panel.
+        if [ -w /sys/class/graphics/fb0/blank ]; then
+            echo 1 > /sys/class/graphics/fb0/blank 2>/dev/null || true
+            sleep 1
+            echo 0 > /sys/class/graphics/fb0/blank 2>/dev/null || true
+        fi
+
+        # Restart the Remote Screen daemon that the HelixScreen boot hook
+        # skips (it replaced S99fb-http, preserving the stock launcher).
+        if [ -x /etc/init.d/S99fb-http.stock ]; then
+            /etc/init.d/S99fb-http.stock start || true
+        fi
         ;;
     stop|restart|reload)
         # The real S99fb-http (or its .stock copy) handles stop at shutdown.
