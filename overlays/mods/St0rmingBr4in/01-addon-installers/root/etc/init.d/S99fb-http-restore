@@ -1,0 +1,34 @@
+#!/bin/sh
+#
+# Re-start the Remote Screen service (fb-http) when HelixScreen owns the
+# display launcher.
+#
+# HelixScreen's autostart hook replaces /etc/init.d/S99fb-http with a delegate
+# that starts HelixScreen INSTEAD of the fb-http daemon, preserving the
+# original as S99fb-http.stock. Without this script the Remote Screen feature
+# (http://<printer-ip>/screen/) silently dies on the first boot after
+# installing HelixScreen.
+#
+# This script ships in the squashfs (so it is in the busybox boot glob, which
+# is frozen before the overlay pivot) and sorts right after S99fb-http. It
+# starts the preserved stock launcher, which itself no-ops unless Remote
+# Screen is enabled in extended2.cfg. No-op when HelixScreen is not installed
+# or when S99fb-http was not hijacked.
+#
+
+case "${1:-}" in
+    start)
+        [ -x /userdata/helixscreen/config/helixscreen.init ] || exit 0
+        [ -x /etc/init.d/S99fb-http.stock ] || exit 0
+        /etc/init.d/S99fb-http.stock start || true
+        ;;
+    stop|restart|reload)
+        # The real S99fb-http (or its .stock copy) handles stop at shutdown.
+        ;;
+    *)
+        echo "Usage: $0 {start|stop}"
+        exit 1
+        ;;
+esac
+
+exit 0
