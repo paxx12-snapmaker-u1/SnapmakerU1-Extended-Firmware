@@ -1,0 +1,32 @@
+#!/bin/sh
+#
+# Start the overlay-installed Spoolman service at boot.
+#
+# install-spoolman.sh writes /etc/init.d/S65spoolman onto the root overlay,
+# but the busybox boot glob is frozen from the read-only squashfs BEFORE
+# S01aoverlayfs pivots onto the overlay - so overlay-only init scripts never
+# run at boot (only at shutdown, via rcK). This delegate ships in the
+# squashfs (hence in the boot glob) and starts Spoolman when it is installed.
+#
+# The pgrep guard prevents a double start when the install recipe's interim
+# hook (added to S49extended-config on ssh-only installs) already started it:
+# S65spoolman's stock start does not check for a running instance.
+#
+
+case "${1:-}" in
+    start)
+        if [ -x /etc/init.d/S65spoolman ] && \
+           ! pgrep -f "uvicorn spoolman.main:app" >/dev/null 2>&1; then
+            /etc/init.d/S65spoolman start
+        fi
+        ;;
+    stop|restart|reload)
+        # rcK runs the overlay's own S65spoolman at shutdown.
+        ;;
+    *)
+        echo "Usage: $0 {start|stop}"
+        exit 1
+        ;;
+esac
+
+exit 0

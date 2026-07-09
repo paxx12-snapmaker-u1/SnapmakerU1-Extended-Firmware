@@ -115,6 +115,11 @@ if [ "$MODE" = "uninstall" ]; then
     rm -f "$MOONRAKER_EXT_DIR/05_spoolman.cfg"
     rm -rf "$SPOOLMAN_DIR"
 
+    if grep -q "BEGIN spoolman-boot-hook" /etc/init.d/S49extended-config 2>/dev/null; then
+        log "removing boot hook from S49extended-config"
+        sed -i "/# BEGIN spoolman-boot-hook/,/# END spoolman-boot-hook/d" /etc/init.d/S49extended-config
+    fi
+
     log "restarting Moonraker"
     if [ -x /etc/init.d/S61moonraker ]; then
         /etc/init.d/S61moonraker restart || true
@@ -255,6 +260,34 @@ case "$1" in
 esac
 INITEOF
 chmod 755 /etc/init.d/S65spoolman
+
+# ---- boot hook ---------------------------------------------------------------
+
+# The busybox boot glob is frozen from the read-only squashfs before the
+# overlay pivot, so the overlay-written S65spoolman above never runs at boot
+# on its own. Firmware built with the St0rmingBr4in mod ships
+# /etc/init.d/S65spoolman-boot in the squashfs for this; for ssh-only installs
+# delegate from the squashfs-shipped S49extended-config instead. The hook goes
+# at the TOP of the file (it ends in `exit 0`, so appending is dead code) and
+# both mechanisms carry a pgrep guard so they never double-start uvicorn.
+if [ -f /etc/init.d/S49extended-config ] && \
+   ! grep -q "BEGIN spoolman-boot-hook" /etc/init.d/S49extended-config; then
+    log "adding boot hook to S49extended-config"
+    {
+        head -n 1 /etc/init.d/S49extended-config
+        cat <<'HOOKEOF'
+# BEGIN spoolman-boot-hook (added by install-spoolman.sh, removed by --uninstall)
+# Overlay-installed init scripts are invisible to the boot glob (frozen from
+# the squashfs pre-overlay-pivot); start Spoolman from here instead.
+if [ "$1" = "start" ] && [ -x /etc/init.d/S65spoolman ] && ! pgrep -f "uvicorn spoolman.main:app" >/dev/null 2>&1; then
+    /etc/init.d/S65spoolman start
+fi
+# END spoolman-boot-hook
+HOOKEOF
+        tail -n +2 /etc/init.d/S49extended-config
+    } > /tmp/S49-hooked.$$ && cat /tmp/S49-hooked.$$ > /etc/init.d/S49extended-config
+    rm -f /tmp/S49-hooked.$$
+fi
 
 # ---- Moonraker integration -------------------------------------------------
 
