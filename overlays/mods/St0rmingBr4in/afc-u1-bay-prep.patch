@@ -1,0 +1,50 @@
+--- AFC_extruder.py.orig-bayprep
++++ AFC_extruder.py
+@@ -392,6 +392,30 @@
+             self.afc.lanes.pop(self.tc_lane.name)
+             self.printer.objects.pop(f"AFC_lane {self.name}")
+ 
++    # --- u1-bay-prep patch (St0rmingBr4in prototype) --------------------------
++    def _u1_bay_filament_exist(self):
++        """U1: filament staged in the rear bay (print_task_config filament_exist)
++        counts as lane presence so tool loads can start from a staged bay."""
++        if self.filament_sensor_name is None:
++            return False
++        ptc = self.printer.lookup_object("print_task_config", None)
++        if ptc is None:
++            return False
++        try:
++            idx = int(self.name.replace("extruder", "") or 0)
++            return bool(ptc.get_status()["filament_exist"][idx])
++        except Exception:
++            return False
++
++    def _u1_bay_poll(self, eventtime):
++        if self.tc_lane is not None:
++            present = self.tool_start_state or self._u1_bay_filament_exist()
++            if present != self.tc_lane.prep_state:
++                self.tc_lane.prep_state = present
++                self.tc_lane._load_state = present
++        return eventtime + 2.
++    # --- end u1-bay-prep patch -------------------------------------------------
++
+     def handle_ready(self):
+         # Check to see if extruder name is currently in `self.lanes`, if it is then that means that
+         # no other lanes are setup for this extruder, and that this is a "standalone" toolhead
+@@ -400,11 +424,15 @@
+             self.logger.info(f"{self.name} no lanes")
+             # Due to race conditions at startup, these variables might not be set correctly,
+             #  set to current tool start state
+-            self.tc_lane._load_state = self.tc_lane.prep_state = self.tool_start_state
++            self.tc_lane._load_state = self.tc_lane.prep_state = self.tool_start_state or self._u1_bay_filament_exist()
+ 
+             if self.tool_start_state:
+                 self.tc_lane.set_tool_loaded()
+                 self.tc_lane.set_loaded()
++
++            # u1-bay-prep patch: keep lane presence in sync with the bay sensor
++            if self.filament_sensor_name is not None:
++                self.reactor.register_timer(self._u1_bay_poll, self.reactor.NOW)
+ 
+             if self.tool_start == "buffer":
+                 raise error(
