@@ -70,6 +70,18 @@ SPOOLMAN_PORT=7912
 log() { printf '[install-spoolman] %s\n' "$*"; }
 die() { printf '[install-spoolman] ERROR: %s\n' "$*" >&2; exit 1; }
 
+# BusyBox wget has no TLS. The extended firmware ships a full curl at
+# /usr/local/bin/curl, which is NOT on the non-interactive PATH (e.g. when
+# run from the firmware-config web UI).
+export PATH="/usr/local/bin:$PATH"
+fetch() {
+    if command -v curl >/dev/null 2>&1; then
+        curl -fsSL "$1" -o "$2"
+    else
+        wget -q "$1" -O "$2"
+    fi
+}
+
 MODE=install
 if [ "${1:-}" = "--uninstall" ]; then
     MODE=uninstall
@@ -135,7 +147,7 @@ log "downloading Spoolman ${SPOOLMAN_VERSION}"
 mkdir -p "$SPOOLMAN_DIR"
 tmpzip=$(mktemp -t spoolman.XXXXXX.zip)
 trap 'rm -f "$tmpzip"' EXIT
-wget -q "$SPOOLMAN_ZIP_URL" -O "$tmpzip"
+fetch "$SPOOLMAN_ZIP_URL" "$tmpzip"
 
 log "extracting to $SPOOLMAN_DIR"
 # Preserve the venv if it already exists (pip cache benefits)

@@ -50,6 +50,19 @@ HELIX_INIT=/userdata/helixscreen/config/helixscreen.init
 log() { printf '[install-helixscreen] %s\n' "$*"; }
 die() { printf '[install-helixscreen] ERROR: %s\n' "$*" >&2; exit 1; }
 
+# BusyBox wget has no TLS. The extended firmware ships a full curl at
+# /usr/local/bin/curl, which is NOT on the non-interactive PATH (e.g. when
+# run from the firmware-config web UI). Put it on PATH for the official
+# installer too - it needs an HTTPS downloader itself.
+export PATH="/usr/local/bin:$PATH"
+fetch() {
+    if command -v curl >/dev/null 2>&1; then
+        curl -fsSL "$1" -o "$2"
+    else
+        wget -q "$1" -O "$2"
+    fi
+}
+
 MODE=install
 if [ "${1:-}" = "--uninstall" ]; then
     MODE=uninstall
@@ -88,7 +101,7 @@ fi
 log "downloading official HelixScreen installer"
 tmpinstaller=$(mktemp -t helixscreen-install.XXXXXX.sh)
 trap 'rm -f "$tmpinstaller"' EXIT
-wget -q "$INSTALLER_URL" -O "$tmpinstaller" \
+fetch "$INSTALLER_URL" "$tmpinstaller" \
     || die "download failed - is the printer online?"
 
 # ---- run it ----------------------------------------------------------------
@@ -104,6 +117,30 @@ fi
 
 log "running official installer (this downloads the release and takes a few minutes)"
 sh "$tmpinstaller"
+
+# ---- pin display backend to fbdev + touch device ----------------------------
+
+# HelixScreen's U1 platform hooks default to the DRM backend (tear-free page
+# flipping), but DRM rendering bypasses /dev/fb0, so the extended firmware's
+# Remote Screen (fb-http mirrors fb0) shows a frozen splash forever. Its
+# evdev touch fallback also probes /dev/input/event1 while the U1's tlsc6x
+# touch controller lives on event0. Pin both in helixscreen.env (sourced by
+# helix-launcher.sh on every start; kept across HelixScreen self-updates).
+HELIX_ENV=/userdata/helixscreen/config/helixscreen.env
+if [ -f "$HELIX_ENV" ] && ! grep -q '^# paxx12 extended firmware overrides$' "$HELIX_ENV"; then
+    log "pinning fbdev backend + touch device in helixscreen.env"
+    cat >> "$HELIX_ENV" <<'ENVEOF'
+
+# paxx12 extended firmware overrides
+# fbdev keeps /dev/fb0 current so the Remote Screen feature (/screen/) can
+# mirror HelixScreen; DRM (the U1 default) renders past the framebuffer.
+HELIX_DISPLAY_BACKEND=fbdev
+HELIX_FB_DEVICE=/dev/fb0
+# U1 touch controller (tlsc6x) - auto-detection probes event1, which
+# does not exist on this device.
+HELIX_TOUCH_DEVICE=/dev/input/event0
+ENVEOF
+fi
 
 # ---- restore the Remote Screen service --------------------------------------
 

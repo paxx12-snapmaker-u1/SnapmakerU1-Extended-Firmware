@@ -43,6 +43,18 @@ WORKDIR="/tmp/install-git.$$"
 log() { printf '[install-git] %s\n' "$*"; }
 die() { printf '[install-git] ERROR: %s\n' "$*" >&2; exit 1; }
 
+# BusyBox wget has no TLS. The extended firmware ships a full curl at
+# /usr/local/bin/curl, which is NOT on the non-interactive PATH (e.g. when
+# run from the firmware-config web UI).
+export PATH="/usr/local/bin:$PATH"
+fetch() {
+    if command -v curl >/dev/null 2>&1; then
+        curl -fsSL "$1" -o "$2"
+    else
+        wget -q "$1" -O "$2"
+    fi
+}
+
 MODE=install
 if [ "${1:-}" = "--uninstall" ]; then
     MODE=uninstall
@@ -95,7 +107,7 @@ mkdir -p "$WORKDIR"
 trap 'rm -rf "$WORKDIR"' EXIT
 
 log "downloading $GIT_DEB_NAME"
-wget -q "$GIT_DEB_URL" -O "$WORKDIR/git.deb"
+fetch "$GIT_DEB_URL" "$WORKDIR/git.deb"
 
 log "extracting .deb"
 cd "$WORKDIR"
