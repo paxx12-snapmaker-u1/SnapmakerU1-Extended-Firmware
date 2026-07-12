@@ -47,10 +47,11 @@
   display: none;
   content: "";
   width: 14px;
-  height: 2px;
-  border-radius: 2px;
-  background: currentColor;
-  box-shadow: 0 5px 0 currentColor, 0 10px 0 currentColor;
+  height: 12px;
+  background:
+    linear-gradient(currentColor, currentColor) 0 0 / 100% 2px no-repeat,
+    linear-gradient(currentColor, currentColor) 0 5px / 100% 2px no-repeat,
+    linear-gradient(currentColor, currentColor) 0 10px / 100% 2px no-repeat;
 }
 
 #${id}.is-collapsed {
