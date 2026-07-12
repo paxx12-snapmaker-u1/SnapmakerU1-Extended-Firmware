@@ -28,7 +28,7 @@
   min-height: 40px;
   padding: 0 14px;
   border-radius: 999px;
-  background: rgba(20, 24, 31, 0.92);
+  background: #1e1e20;
   color: #fff;
   font: 600 13px/1.2 sans-serif;
   text-decoration: none;
@@ -38,7 +38,7 @@
 
 #${id}:hover,
 #${id}:focus {
-  background: rgba(30, 36, 46, 0.98);
+  background: #2a2a2d;
   opacity: 1;
   transform: translateY(-1px);
 }
