@@ -21,10 +21,15 @@ inject_shortcut() {
     return
   fi
 
+  if ! grep -qi '</body>' "$index_file"; then
+    echo ">> $frontend_name index.html has no </body>, skipping Firmware Config shortcut injection."
+    return
+  fi
+
   perl -0pi -e '
     BEGIN { $tag = "    <script defer src=\"/firmware-config-shortcut.js\"></script>\n" }
     if (index($_, "firmware-config-shortcut.js") < 0) {
-      s#</body>#$tag  </body># or die "Could not find </body>\n";
+      s#</body>#$tag  </body>#;
     }
   ' "$index_file"
 
