@@ -1,0 +1,14 @@
+--- a/etc/init.d/S90lmd
++++ b/etc/init.d/S90lmd
+@@ -5,6 +5,11 @@
+
+ PROG=/usr/bin/lmd
+
++echo "Starting lmd with firmware-upgrade check disabled!"
++export LD_PRELOAD="/usr/local/lib/libfirmware-imposter.so${LD_PRELOAD:+:$LD_PRELOAD}"
++export FW_UPDATE_URL="/api/device/firmware/latest"
++export FW_UPDATE_BLOCK=1
++
+ case "$1" in
+     start)
+         ulimit -c 102400
