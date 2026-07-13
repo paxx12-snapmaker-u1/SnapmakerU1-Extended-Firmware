@@ -11,7 +11,16 @@ if [ "$CAMERA_LOGS" = "syslog" ]; then
 fi
 RTSP_ENABLED=$(/usr/local/bin/extended-config.py get "$EXTENDED_CFG" camera rtsp false)
 
-CMD_CAPTURE="/usr/local/bin/capture-v4l2-raw-mpp --device /dev/video11 --format nv12 --jpeg-quality 7 --jpeg-sock /tmp/capture-mipi-jpeg.sock --mjpeg-sock /tmp/capture-mipi-mjpeg.sock --h264-sock /tmp/capture-mipi-h264.sock --raw-frame-sock /tmp/capture-mipi-raw.sock --width 1920 --height 1080 --fps 30"
+INTERNAL_RESOLUTION=$(/usr/local/bin/extended-config.py get "$EXTENDED_CFG" camera internal_resolution 1080p25)
+case "$INTERNAL_RESOLUTION" in
+    1080p30) INTERNAL_WIDTH=1920; INTERNAL_HEIGHT=1080; INTERNAL_FPS=30 ;;
+    1080p25) INTERNAL_WIDTH=1920; INTERNAL_HEIGHT=1080; INTERNAL_FPS=25 ;;
+    1080p15) INTERNAL_WIDTH=1920; INTERNAL_HEIGHT=1080; INTERNAL_FPS=15 ;;
+    1080p5)  INTERNAL_WIDTH=1920; INTERNAL_HEIGHT=1080; INTERNAL_FPS=5  ;;
+    *)       INTERNAL_WIDTH=1920; INTERNAL_HEIGHT=1080; INTERNAL_FPS=25 ;;
+esac
+
+CMD_CAPTURE="/usr/local/bin/capture-v4l2-raw-mpp --device /dev/video11 --format nv12 --jpeg-quality 7 --jpeg-sock /tmp/capture-mipi-jpeg.sock --mjpeg-sock /tmp/capture-mipi-mjpeg.sock --h264-sock /tmp/capture-mipi-h264.sock --raw-frame-sock /tmp/capture-mipi-raw.sock --width $INTERNAL_WIDTH --height $INTERNAL_HEIGHT --fps $INTERNAL_FPS --buffers 3"
 
 CMD_WEBRTC="/usr/local/bin/stream-webrtc --h264-sock /tmp/capture-mipi-h264.sock --webrtc-sock /tmp/capture-mipi-webrtc.sock"
 

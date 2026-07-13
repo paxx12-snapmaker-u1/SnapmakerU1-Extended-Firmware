@@ -58,6 +58,52 @@ settings:
                 /etc/init.d/S90lmd stop
         default: paxx12
 
+      camera-internal-resolution:
+        label: Internal Camera Resolution
+        description: Resolution and framerate for the built-in MIPI camera. Resolution is always 1080p; only framerate can be lowered.
+        if_cmd: test "$(/usr/local/bin/extended-config.py get /home/lava/printer_data/config/extended/extended2.cfg camera internal paxx12)" = "paxx12"
+        get_cmd:
+          - /usr/local/bin/extended-config.py
+          - get
+          - /home/lava/printer_data/config/extended/extended2.cfg
+          - camera
+          - internal_resolution
+          - 1080p25
+        options:
+          1080p30:
+            label: 1920x1080 @ 30fps
+            cmd:
+              - bash
+              - -xc
+              - |
+                /usr/local/bin/extended-config.py add /home/lava/printer_data/config/extended/extended2.cfg camera internal_resolution 1080p30 &&
+                /etc/init.d/S99v4l2-mpp-mipi restart
+          1080p25:
+            label: 1920x1080 @ 25fps
+            cmd:
+              - bash
+              - -xc
+              - |
+                /usr/local/bin/extended-config.py add /home/lava/printer_data/config/extended/extended2.cfg camera internal_resolution 1080p25 &&
+                /etc/init.d/S99v4l2-mpp-mipi restart
+          1080p15:
+            label: 1920x1080 @ 15fps
+            cmd:
+              - bash
+              - -xc
+              - |
+                /usr/local/bin/extended-config.py add /home/lava/printer_data/config/extended/extended2.cfg camera internal_resolution 1080p15 &&
+                /etc/init.d/S99v4l2-mpp-mipi restart
+          1080p5:
+            label: 1920x1080 @ 5fps
+            cmd:
+              - bash
+              - -xc
+              - |
+                /usr/local/bin/extended-config.py add /home/lava/printer_data/config/extended/extended2.cfg camera internal_resolution 1080p5 &&
+                /etc/init.d/S99v4l2-mpp-mipi restart
+        default: 1080p25
+
       camera-usb:
         label: USB Camera
         description: Enable streaming from an attached USB camera.
@@ -91,6 +137,92 @@ settings:
                 /etc/init.d/S99v4l2-mpp-usb stop &&
                 /etc/init.d/S61moonraker restart
         default: none
+
+      camera-usb-resolution:
+        label: USB Camera Resolution
+        description: Resolution and framerate for the USB camera stream. Only supported by the paxx12 USB camera driver.
+        if_cmd: test "$(/usr/local/bin/extended-config.py get /home/lava/printer_data/config/extended/extended2.cfg camera usb none)" = "paxx12"
+        get_cmd:
+          - /usr/local/bin/extended-config.py
+          - get
+          - /home/lava/printer_data/config/extended/extended2.cfg
+          - camera
+          - usb_resolution
+          - 1080p25
+        options:
+          1080p30:
+            label: 1920x1080 @ 30fps
+            cmd:
+              - bash
+              - -xc
+              - |
+                /usr/local/bin/extended-config.py add /home/lava/printer_data/config/extended/extended2.cfg camera usb_resolution 1080p30 &&
+                /etc/init.d/S99v4l2-mpp-usb restart
+          1080p25:
+            label: 1920x1080 @ 25fps
+            cmd:
+              - bash
+              - -xc
+              - |
+                /usr/local/bin/extended-config.py add /home/lava/printer_data/config/extended/extended2.cfg camera usb_resolution 1080p25 &&
+                /etc/init.d/S99v4l2-mpp-usb restart
+          1080p5:
+            label: 1920x1080 @ 5fps
+            cmd:
+              - bash
+              - -xc
+              - |
+                /usr/local/bin/extended-config.py add /home/lava/printer_data/config/extended/extended2.cfg camera usb_resolution 1080p5 &&
+                /etc/init.d/S99v4l2-mpp-usb restart
+          720p30:
+            label: 1280x720 @ 30fps
+            cmd:
+              - bash
+              - -xc
+              - |
+                /usr/local/bin/extended-config.py add /home/lava/printer_data/config/extended/extended2.cfg camera usb_resolution 720p30 &&
+                /etc/init.d/S99v4l2-mpp-usb restart
+          720p25:
+            label: 1280x720 @ 25fps
+            cmd:
+              - bash
+              - -xc
+              - |
+                /usr/local/bin/extended-config.py add /home/lava/printer_data/config/extended/extended2.cfg camera usb_resolution 720p25 &&
+                /etc/init.d/S99v4l2-mpp-usb restart
+          720p5:
+            label: 1280x720 @ 5fps
+            cmd:
+              - bash
+              - -xc
+              - |
+                /usr/local/bin/extended-config.py add /home/lava/printer_data/config/extended/extended2.cfg camera usb_resolution 720p5 &&
+                /etc/init.d/S99v4l2-mpp-usb restart
+          360p30:
+            label: 640x360 @ 30fps
+            cmd:
+              - bash
+              - -xc
+              - |
+                /usr/local/bin/extended-config.py add /home/lava/printer_data/config/extended/extended2.cfg camera usb_resolution 360p30 &&
+                /etc/init.d/S99v4l2-mpp-usb restart
+          360p25:
+            label: 640x360 @ 25fps
+            cmd:
+              - bash
+              - -xc
+              - |
+                /usr/local/bin/extended-config.py add /home/lava/printer_data/config/extended/extended2.cfg camera usb_resolution 360p25 &&
+                /etc/init.d/S99v4l2-mpp-usb restart
+          360p5:
+            label: 640x360 @ 5fps
+            cmd:
+              - bash
+              - -xc
+              - |
+                /usr/local/bin/extended-config.py add /home/lava/printer_data/config/extended/extended2.cfg camera usb_resolution 360p5 &&
+                /etc/init.d/S99v4l2-mpp-usb restart
+        default: 1080p25
 
       camera-rtsp:
         label: RTSP Stream (paxx12 only)
