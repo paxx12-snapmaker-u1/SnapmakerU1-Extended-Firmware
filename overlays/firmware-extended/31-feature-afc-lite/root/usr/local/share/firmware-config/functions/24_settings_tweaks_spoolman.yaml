@@ -1,0 +1,53 @@
+settings:
+  tweaks:
+    items:
+      spoolman:
+        label: Spoolman Integration
+        description: Track filament usage and metadata with Spoolman spool management.
+        help_url: http://snapmakeru1-extended-firmware.pages.dev/spoolman
+        get_cmd:
+          - bash
+          - -c
+          - grep -q '^\[spoolman\]' /oem/printer_data/config/extended/moonraker/spoolman.cfg 2>/dev/null && echo "enabled" || echo "disabled"
+        options:
+          enabled:
+            label: Enabled
+            confirm: "Enable Spoolman integration? Enter the Spoolman server URL below.\n\nSpoolman tracks filament usage and lets you manage spool metadata from your web frontend."
+            inputs:
+              - name: SPOOLMAN_URL
+                label: Spoolman URL
+                placeholder: "http://192.168.1.100:7912"
+                regex: "^https?://.+"
+            cmd:
+              - bash
+              - -c
+              - |
+                test -f /oem/printer_data/config/extended/klipper/afc.cfg || {
+                  echo "ERROR: AFC Lite must be enabled before enabling Spoolman integration."
+                  exit 1
+                }
+                URL="${SPOOLMAN_URL%/}"
+                echo "Checking Spoolman at ${URL}..."
+                RESPONSE=$(/usr/local/bin/curl -sf --max-time 5 "${URL}/api/v1/info") || {
+                  echo "ERROR: Cannot reach Spoolman at ${URL}"
+                  echo "Ensure the server is running and the URL is correct."
+                  exit 1
+                }
+                echo "$RESPONSE" | python3 -c "import sys, json; d=json.load(sys.stdin); sys.exit(0 if 'version' in d else 1)" || {
+                  echo "ERROR: Response does not appear to be from a Spoolman server."
+                  exit 1
+                }
+                echo "Spoolman instance confirmed at ${URL}."
+                printf '[spoolman]\nserver: %s\nsync_rate: 5\n' "${URL}" > /oem/printer_data/config/extended/moonraker/spoolman.cfg
+                echo "Spoolman enabled. Restarting Moonraker..."
+                /etc/init.d/S61moonraker restart
+          disabled:
+            label: Disabled
+            cmd:
+              - bash
+              - -xc
+              - |
+                rm -vf /oem/printer_data/config/extended/moonraker/spoolman.cfg &&
+                echo "Spoolman disabled. Restarting Moonraker..." &&
+                /etc/init.d/S61moonraker restart
+        default: disabled
