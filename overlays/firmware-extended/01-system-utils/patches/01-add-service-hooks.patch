@@ -1,0 +1,39 @@
+--- a/etc/init.d/S60klipper
++++ b/etc/init.d/S60klipper
+@@ -20,3 +20,9 @@
+ LAVA_IO=/usr/bin/lava_io
+-
++# Source optional extensions in lexical order before handling the action.
++for hook in /etc/hooks/klipper.d/*.sh; do
++	[ -r "$hook" ] || continue
++	. "$hook"
++done
++unset hook
++
+ log()
+--- a/etc/init.d/S61moonraker
++++ b/etc/init.d/S61moonraker
+@@ -19,3 +19,9 @@
+ DEVICE_NAME=/home/lava/printer_data/.device_name
+-
++# Source optional extensions in lexical order before handling the action.
++for hook in /etc/hooks/moonraker.d/*.sh; do
++	[ -r "$hook" ] || continue
++	. "$hook"
++done
++unset hook
++
+ log()
+--- a/etc/init.d/S90lmd
++++ b/etc/init.d/S90lmd
+@@ -10,3 +10,9 @@
+ PROG=/usr/bin/lmd
+-
++# Source optional extensions in lexical order before handling the action.
++for hook in /etc/hooks/lmd.d/*.sh; do
++	[ -r "$hook" ] || continue
++	. "$hook"
++done
++unset hook
++
+ case "$1" in
