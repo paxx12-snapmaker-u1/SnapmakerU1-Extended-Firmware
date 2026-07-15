@@ -146,20 +146,18 @@ fi
 
 # The installer started HelixScreen with its default DRM backend; restart it
 # so it picks up the fbdev pin above. In fbdev mode nothing performs a DRM
-# commit, so the VOP2 controller keeps scanning the U-Boot boot-logo buffer
-# and the panel stays on the boot logo while /dev/fb0 updates invisibly - a
-# blank/unblank cycle forces the fbdev emulation to mode-set /dev/fb0 onto
-# the panel. (S99fb-http-restore repeats this at every boot.)
+# commit, so the panel would stay frozen on the splash's last frame while
+# /dev/fb0 updates invisibly. helix-restore-panel-scanout waits for
+# helix-screen to come up and for the splash to exit (restoring any earlier
+# loses the race to the splash's page flips), then mode-sets /dev/fb0 back
+# onto the panel. (S99fb-http-restore repeats this at every boot.)
 if [ -x "$HELIX_INIT" ]; then
     log "restarting HelixScreen on the fbdev backend"
     "$HELIX_INIT" restart || true
-    sleep 3
 fi
-if [ -w /sys/class/graphics/fb0/blank ]; then
-    log "forcing panel scanout of /dev/fb0"
-    echo 1 > /sys/class/graphics/fb0/blank 2>/dev/null || true
-    sleep 1
-    echo 0 > /sys/class/graphics/fb0/blank 2>/dev/null || true
+if [ -x /usr/local/bin/helix-restore-panel-scanout ]; then
+    log "re-attaching panel scanout to /dev/fb0"
+    /usr/local/bin/helix-restore-panel-scanout || true
 fi
 
 # ---- restore the Remote Screen service --------------------------------------

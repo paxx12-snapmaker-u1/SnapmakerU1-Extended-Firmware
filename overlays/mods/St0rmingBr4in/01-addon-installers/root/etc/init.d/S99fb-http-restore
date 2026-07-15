@@ -22,15 +22,14 @@ case "${1:-}" in
         [ -x /userdata/helixscreen/config/helixscreen.init ] || exit 0
 
         # HelixScreen is pinned to the fbdev backend (Remote Screen
-        # compatibility, see install-helixscreen.sh), so it never performs a
-        # DRM commit — and the VOP2 controller keeps scanning the U-Boot
-        # boot-logo buffer, leaving the physical panel stuck on the boot logo
-        # while /dev/fb0 updates invisibly. A blank/unblank cycle forces the
-        # fbdev emulation to mode-set /dev/fb0 onto the panel.
-        if [ -w /sys/class/graphics/fb0/blank ]; then
-            echo 1 > /sys/class/graphics/fb0/blank 2>/dev/null || true
-            sleep 1
-            echo 0 > /sys/class/graphics/fb0/blank 2>/dev/null || true
+        # compatibility, see install-helixscreen.sh), so nothing performs DRM
+        # commits after startup and the panel would stay frozen on the last
+        # boot-logo/splash frame while /dev/fb0 updates invisibly. The restore
+        # must wait out helix-screen/helix-splash startup (an immediate
+        # blank/unblank loses the race to the splash's page flips), so run it
+        # detached — init must not block.
+        if [ -x /usr/local/bin/helix-restore-panel-scanout ]; then
+            /usr/local/bin/helix-restore-panel-scanout >/tmp/helix-scanout-restore.log 2>&1 &
         fi
 
         # Restart the Remote Screen daemon that the HelixScreen boot hook
