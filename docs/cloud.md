@@ -32,7 +32,7 @@ Navigate to the [firmware-config](firmware_config.md) web interface, go to the R
 **Step 1:** Download OctoEverywhere (requires internet connection):
 ```bash
 ssh root@<printer-ip>
-octoeverywhere-pkg download
+extended-pkg octoeverywhere download
 ```
 
 **Step 2:** Edit `extended/extended2.cfg`, set the `cloud`:
