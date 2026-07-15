@@ -36,7 +36,7 @@ endif
 .PHONY: build
 build: $(OUTPUT_FILE)
 
-EXTRACT_DIR := tmp/extracted
+EXTRACT_DIR := tmp/extracted-$(FIRMWARE_VERSION)
 
 .PHONY: extract
 extract: firmware/$(FIRMWARE_FILE) tools
