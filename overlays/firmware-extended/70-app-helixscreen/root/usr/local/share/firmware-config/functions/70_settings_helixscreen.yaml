@@ -8,10 +8,10 @@ settings:
         get_cmd:
           - bash
           - -c
-          - test -d /userdata/helixscreen && test ! -x /usr/bin/gui && echo "installed" || echo "not_installed"
+          - test -d /userdata/helixscreen && test ! -x /usr/bin/gui && echo "enabled" || echo "disabled"
         options:
-          installed:
-            label: Installed
+          enabled:
+            label: Enabled
             confirm: "Remove HelixScreen and restore the stock touchscreen interface?"
             cmd:
               - bash
@@ -20,8 +20,8 @@ settings:
                 chmod +x /usr/bin/gui 2>/dev/null || true
                 rm -rf /userdata/helixscreen
                 /sbin/reboot
-          not_installed:
-            label: Not Installed
+          disabled:
+            label: Disabled
             cmd:
               - bash
               - -ec
@@ -30,7 +30,7 @@ settings:
                 /usr/local/bin/curl -sSL https://releases.helixscreen.org/install.sh | sh
                 echo
                 echo ">> HelixScreen installed. The screen will switch to HelixScreen."
-        default: not_installed
+        default: disabled
 
 actions:
   system:
