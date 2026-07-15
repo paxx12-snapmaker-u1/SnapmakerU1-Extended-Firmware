@@ -8,7 +8,7 @@ settings:
         get_cmd:
           - bash
           - -c
-          - test ! -x /usr/bin/gui && echo "installed" || echo "not_installed"
+          - test -d /userdata/helixscreen && test ! -x /usr/bin/gui && echo "installed" || echo "not_installed"
         options:
           installed:
             label: Installed
@@ -38,7 +38,7 @@ actions:
       helixscreen-update:
         label: Update HelixScreen
         description: Check for and apply the latest version of HelixScreen.
-        if_cmd: test ! -x /usr/bin/gui
+        if_cmd: test -d /userdata/helixscreen && test ! -x /usr/bin/gui
         cmd:
           - bash
           - -ec
