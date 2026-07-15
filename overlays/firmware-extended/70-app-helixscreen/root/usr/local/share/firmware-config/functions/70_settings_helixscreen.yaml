@@ -39,6 +39,7 @@ actions:
         label: Update HelixScreen
         description: Check for and apply the latest version of HelixScreen.
         if_cmd: test -d /userdata/helixscreen && test ! -x /usr/bin/gui
+        message: "Updating HelixScreen..."
         cmd:
           - bash
           - -ec
