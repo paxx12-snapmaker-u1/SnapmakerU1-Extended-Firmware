@@ -22,7 +22,7 @@ settings:
                 echo ">> HelixScreen installed. The screen will switch to HelixScreen."
           disabled:
             label: Disabled
-            confirm: "Remove HelixScreen and restore the stock touchscreen interface?"
+            confirm: "Remove HelixScreen? The printer will reboot to restore the stock interface."
             cmd:
               - bash
               - -ec
