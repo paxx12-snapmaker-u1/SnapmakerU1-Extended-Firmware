@@ -40,14 +40,17 @@ See also: [Quick overview on fan mods applied for Snapmaker U1](https://www.redd
 
 Enable via the Firmware Config web interface at `http://<printer-ip>/firmware-config/` under **Tweaks > Panda Breath Chamber Heater**.
 
-Two modes are available:
+Three modes are available:
 
 | Mode | Description |
 |------|-------------|
-| **Auto** (recommended) | Klipper heats the chamber to target, then hands off hold and cool-down to Panda native auto mode. Requires firmware v1.0.3 or v1.0.4. |
-| **Manual** (advanced) | Pure `heater_generic` control throughout. Legacy fallback; less safe if the device or network is lost during a print. |
+| **Auto** (recommended) | Klipper heats the chamber to target, then hands off hold and cool-down to Panda native auto mode. Uses the WebSocket control path. Requires firmware v1.0.3 or v1.0.4. |
+| **MQTT** (v1.0.4+) | The Panda talks to the printer's own MQTT broker on a dedicated, password-protected listener; Klipper controls the chamber heater directly via `heater_generic`. Requires firmware **v1.0.4 or newer**. |
+| **Manual** (advanced) | Pure `heater_generic` control over the WebSocket path throughout. Legacy fallback; less safe if the device or network is lost during a print. |
 
 During setup the web interface will ask for the Panda Breath IP address and will automatically bind the device to the printer.
+
+In **MQTT** mode the setup also provisions a locked-down mosquitto listener (port 1885, ACL-scoped to `panda_breath/#`) with a generated password, and binds the Panda to that broker automatically over its WebSocket API — there are no manual web-UI steps on the Panda.
 
 ## Configuration File
 

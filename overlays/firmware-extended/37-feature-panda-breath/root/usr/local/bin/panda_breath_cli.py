@@ -210,6 +210,52 @@ def bind_printer(sock, settings, printer_ip, printer_port):
     sys.exit(1)
 
 
+def bind_broker(sock, settings, broker_ip, broker_port, user, password):
+    # Stock firmware v1.0.4+ native Home-Assistant MQTT bind. The device
+    # connects to the given broker as an MQTT client (topics panda_breath/<id>/*).
+    # Reuses the same connection-state enum as the printer bind.
+    print(f"Binding broker {broker_ip}:{broker_port} (user '{user}') ...")
+    ws_send_json(sock, {"ha": {
+        "ip": broker_ip, "port": broker_port, "user": user, "password": password}})
+    # After a new bind the firmware transitions DISCONNECTED(0) -> CONNECTING(2)
+    # -> CONNECTED(3) (or an error). Wait for a terminal state, ignoring the
+    # transient 0/2 — otherwise a mosquitto restart just before the bind makes
+    # us read the momentary disconnect and report a false failure.
+    terminal = {PRINTER_STATE_CONNECTED, PRINTER_STATE_IP_ERROR,
+                PRINTER_STATE_SN_ERROR, PRINTER_STATE_ACCESS_CODE_ERROR,
+                PRINTER_STATE_UNKNOWN_ERROR}
+    try:
+        resp = ws_recv_json(
+            sock,
+            match=lambda r: r.get("ha", {}).get("state") in terminal,
+            timeout=30)
+    except TimeoutError:
+        print("Error: broker did not connect within 30s "
+              "(check broker IP/port and user/password)", file=sys.stderr)
+        sys.exit(1)
+    state = resp.get("ha", {}).get("state")
+    if state == PRINTER_STATE_CONNECTED:
+        print("Broker bind successful.")
+        return
+    if state == PRINTER_STATE_IP_ERROR:
+        print("Error: broker IP/connection error", file=sys.stderr)
+        sys.exit(1)
+    print(f"Device reported ha state {state}: bind failed "
+          "(check user/password)", file=sys.stderr)
+    sys.exit(1)
+
+
+def unbind_broker(sock, settings):
+    state = settings.get("ha", {}).get("state", 0)
+    if state in (PRINTER_STATE_DISCONNECTED, PRINTER_STATE_INVALID_INFO):
+        return
+    print(f"Disconnecting broker (state={state})...")
+    ws_send_json(sock, {"ha": {"disconnect": 1}})
+    ws_recv_json(sock, match=lambda r: r.get("ha", {}).get("state") == PRINTER_STATE_DISCONNECTED)
+    print("Broker unbind successful.")
+    print()
+
+
 def print_fw_version(sock, settings):
     print(settings.get("settings", {}).get("fw_version", "unknown"))
 
@@ -238,6 +284,19 @@ def main():
 
     sub.add_parser("unbind", help="Disconnect the bound printer from Panda Breath")
 
+    sub.add_parser("unbind-broker", help="Disconnect the bound MQTT broker from Panda Breath")
+
+    pb = sub.add_parser("bind-broker",
+                        help="Bind Panda Breath (stock v1.0.4+) to an MQTT broker")
+    pb.add_argument("--broker-ip", required=True, help="MQTT broker IP")
+    pb.add_argument("--broker-port", type=int, default=1883, help="MQTT broker port")
+    pb.add_argument("--user", default="", help="MQTT username")
+    pb.add_argument("--password", default="", help="MQTT password")
+    pb.add_argument(
+        "--version", action="append", metavar="VERSION",
+        help="Accepted firmware version (repeatable); default: "
+             + ", ".join(SUPPORTED_FW_VERSIONS))
+
     p = sub.add_parser("bind-klipper", help="Bind Panda Breath to a Klipper instance")
     p.add_argument("--printer-ip", required=True, help="Klipper printer IP")
     p.add_argument("--printer-port", type=int, default=80, help="Klipper printer port")
@@ -256,6 +315,11 @@ def main():
         ws_conn(print_fw_version)
     elif args.command == "unbind":
         ws_conn(unbind_printer)
+    elif args.command == "unbind-broker":
+        ws_conn(unbind_broker)
+    elif args.command == "bind-broker":
+        ws_conn(check_fw_version, args.version or list(SUPPORTED_FW_VERSIONS))
+        ws_conn(bind_broker, args.broker_ip, args.broker_port, args.user, args.password)
     elif args.command == "bind-klipper":
         ws_conn(check_fw_version, args.version or list(SUPPORTED_FW_VERSIONS))
         ws_conn(unbind_printer)

@@ -99,20 +99,35 @@ settings:
               2. Ensure the Panda Breath device is running firmware v1.0.4 or newer.
               3. Configure a static DHCP lease for the Panda Breath device on your router.
               4. Power-cycle the Panda Breath device and wait at least 5 seconds before proceeding.
+              5. Enter the Panda Breath IP address in the field below.
 
-              MQTT mode connects the Panda to this printer's own MQTT broker over a dedicated, password-protected listener; Klipper controls the chamber heater directly. After enabling, you will enter the broker details shown in the output on the Panda's web UI (Bind a Broker) — that is the only manual step.
+              MQTT mode connects the Panda to this printer's own MQTT broker over a dedicated, password-protected listener and binds it automatically over the Panda's WebSocket API — no manual web-UI steps. Klipper then controls the chamber heater directly.
             inputs:
               - name: ACKNOWLEDGED
                 label: "Type \"I UNDERSTAND\" to confirm you have read the documentation and accept the warranty and longevity risks"
                 placeholder: "I UNDERSTAND"
                 regex: '^I UNDERSTAND$'
+              - name: PANDA_BREATH_IP
+                label: Panda Breath IP Address
+                placeholder: "192.168.1.100"
+                regex: '^((25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])$'
             cmd:
               - bash
               - -ec
               - |
                 echo ""
+                echo ">> Detecting printer IP address..."
+                PRINTER_IP=$((ip -4 -o addr show eth0 2>/dev/null || ip -4 -o addr show wlan0 2>/dev/null) | awk '{print $4}' | cut -d/ -f1 | head -1)
+
+                echo ""
                 echo ">> Setting up the Panda Breath MQTT broker listener..."
                 /usr/local/bin/panda_breath_mqtt_setup.sh
+
+                echo ""
+                echo ">> Binding the Panda at ${PANDA_BREATH_IP} to the broker at ${PRINTER_IP}:1885 (WebSocket)..."
+                PB_PASS="$(cat /etc/mosquitto/panda_pw.plain)"
+                /usr/local/bin/panda_breath_cli.py --host "${PANDA_BREATH_IP}" bind-broker \
+                  --broker-ip "${PRINTER_IP}" --broker-port 1885 --user panda --password "${PB_PASS}"
 
                 echo ""
                 echo ">> Writing Klipper configuration (stock-mqtt)..."
@@ -128,8 +143,7 @@ settings:
                 chown lava:lava /oem/printer_data/config/extended/klipper/panda_breath.cfg
 
                 echo ""
-                echo ">> Panda Breath MQTT mode enabled. Restarting Klipper..."
-                echo ">> NEXT: bind the Panda to the broker shown above (Panda web UI -> Bind a Broker)."
+                echo ">> Panda Breath MQTT mode enabled and bound. Restarting Klipper..."
                 /etc/init.d/S60klipper restart
           manual:
             label: Manual (Advanced)

@@ -22,7 +22,9 @@ MUSER=panda
 if [[ -s "$PWPLAIN" ]]; then
   PB_PASS="$(cat "$PWPLAIN")"
 else
-  PB_PASS="$(openssl rand -hex 20)"
+  # 20 hex chars (80-bit): strong for an ACL-scoped LAN listener and within the
+  # Panda "Bind a Broker" field length limit (longer values get truncated).
+  PB_PASS="$(openssl rand -hex 10)"
   printf '%s' "$PB_PASS" > "$PWPLAIN"
   chown lava:lava "$PWPLAIN"; chmod 600 "$PWPLAIN"
 fi
@@ -56,10 +58,7 @@ fi
 PRINTER_IP=$((ip -4 -o addr show eth0 2>/dev/null || ip -4 -o addr show wlan0 2>/dev/null) \
   | awk '{print $4}' | cut -d/ -f1 | head -1)
 echo ""
-echo ">> Panda Breath MQTT broker is ready."
-echo "   In the Panda web UI -> Bind a Broker, enter:"
-echo "     IP:       ${PRINTER_IP}"
-echo "     Port:     ${PORT}"
-echo "     Username: ${MUSER}"
-echo "     Password: ${PB_PASS}"
+echo ">> Panda Breath MQTT broker is ready (listener ${PORT}, user ${MUSER})."
+echo "   IP ${PRINTER_IP}:${PORT} — the Panda is bound to this automatically over"
+echo "   its WebSocket API; no manual web-UI entry is required."
 echo ""
