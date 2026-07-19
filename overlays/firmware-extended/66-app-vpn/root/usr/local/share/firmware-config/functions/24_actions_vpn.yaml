@@ -4,13 +4,13 @@ quick_actions:
       tailscale-upgrade:
         label: Upgrade Tailscale
         description: Download and install the latest pinned Tailscale version.
-        if_cmd: /usr/local/bin/tailscale-pkg needs_upgrade
+        if_cmd: /usr/local/bin/extended-pkg tailscale needs_upgrade
         confirm: "Upgrade Tailscale and restart the VPN service?"
         cmd:
           - bash
           - -ec
           - |
-            /usr/local/bin/tailscale-pkg upgrade
+            /usr/local/bin/extended-pkg tailscale upgrade
             /etc/init.d/S99vpn restart
         message: "Upgrading Tailscale..."
 

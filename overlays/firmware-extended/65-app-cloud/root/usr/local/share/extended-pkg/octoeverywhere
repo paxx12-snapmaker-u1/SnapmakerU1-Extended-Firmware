@@ -1,0 +1,29 @@
+PKG_LABEL="OctoEverywhere"
+PKG_VERSION=5.1.0
+PKG_URL="https://github.com/QuinnDamerell/OctoPrint-OctoEverywhere/archive/refs/tags/${PKG_VERSION}.zip"
+PKG_SHA256=096b477882f00ad4e356716393a906b0c55c34284cf31c07693d5dea18eb4dc0
+# GitHub archives unpack to `OctoPrint-OctoEverywhere-<tag>`.
+PKG_PREFIX="OctoPrint-OctoEverywhere"
+
+# The venv lives beside the versioned directory, not inside it: `octoeverywhered`
+# references it by a fixed path.
+pkg_post_install() {
+    local staging=$1
+
+    echo "Setting up Python virtual environment (this can take up to 60 seconds)..."
+    if ! python3 -m venv "$PKG_APP_DIR/venv"; then
+        echo "Failed to create virtual environment"
+        return 1
+    fi
+
+    echo "Installing dependencies (this can also take a bit)..."
+    if ! "$PKG_APP_DIR/venv/bin/pip" install --disable-pip-version-check -r "$staging/requirements.txt"; then
+        echo "Failed to install dependencies"
+        return 1
+    fi
+
+    echo "Trying to install the optional zstandard package for better performance..."
+    if ! "$PKG_APP_DIR/venv/bin/pip" install --disable-pip-version-check zstandard; then
+        echo "Failed to install zstandard, continuing without it."
+    fi
+}

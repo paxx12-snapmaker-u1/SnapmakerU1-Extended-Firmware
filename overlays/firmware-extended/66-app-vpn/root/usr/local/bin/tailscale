@@ -1,1 +1,3 @@
-tailscale-pkg
+#!/usr/bin/env bash
+
+exec /usr/local/bin/extended-pkg tailscale exec tailscale "$@"
