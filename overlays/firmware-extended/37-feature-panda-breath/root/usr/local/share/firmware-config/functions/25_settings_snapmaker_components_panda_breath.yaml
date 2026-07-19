@@ -27,7 +27,19 @@ settings:
               - bash
               - -ec
               - |
-                if PANDA_BREATH_IP=$(/usr/local/bin/extended-config.py get /oem/printer_data/config/extended/klipper/panda_breath.cfg panda_breath host 2>/dev/null); then
+                CFG=/oem/printer_data/config/extended/klipper/panda_breath.cfg
+
+                if grep -qE '^[[:space:]]*firmware:[[:space:]]*stock-mqtt' "$CFG" 2>/dev/null; then
+                  # MQTT mode: disconnect the Panda from the broker (like the
+                  # device's own "Unbind" button). The Panda IP is stored as a
+                  # comment in the config so we can reach it here.
+                  PANDA_BREATH_IP=$(sed -nE 's/^#[[:space:]]*panda_device_ip:[[:space:]]*([0-9.]+).*/\1/p' "$CFG" | head -1)
+                  if [ -n "${PANDA_BREATH_IP}" ]; then
+                    echo ""
+                    echo ">> Unbinding Panda Breath broker at ${PANDA_BREATH_IP}..."
+                    /usr/local/bin/panda_breath_cli.py --host "${PANDA_BREATH_IP}" unbind-broker || true
+                  fi
+                elif PANDA_BREATH_IP=$(/usr/local/bin/extended-config.py get "$CFG" panda_breath host 2>/dev/null); then
                   echo ""
                   echo ">> Unbinding Panda Breath at ${PANDA_BREATH_IP}..."
                   /usr/local/bin/panda_breath_cli.py --host "${PANDA_BREATH_IP}" unbind || true
@@ -35,7 +47,7 @@ settings:
 
                 echo ""
                 echo ">> Removing Panda Breath configuration..."
-                rm -f /oem/printer_data/config/extended/klipper/panda_breath.cfg
+                rm -f "$CFG"
 
                 echo ""
                 echo ">> Panda Breath disabled. Restarting Klipper..."
@@ -137,6 +149,7 @@ settings:
                   'firmware: stock-mqtt' \
                   'mqtt_broker: 127.0.0.1' \
                   'mqtt_port: 1883' \
+                  "# panda_device_ip: ${PANDA_BREATH_IP}" \
                   '' \
                   '[include /usr/local/share/firmware-config/tweaks/klipper/panda_breath_heater_manual.cfg]' \
                   > /oem/printer_data/config/extended/klipper/panda_breath.cfg
