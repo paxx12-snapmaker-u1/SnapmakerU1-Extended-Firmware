@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
-GIT_URL=https://github.com/justinh-rahb/pandabreath-klipper.git
-GIT_SHA=2fc8c03b918519060f0a2cc6b40a56fbc232e74f
+GIT_URL=https://github.com/plastikman/pandabreath-klipper.git
+GIT_SHA=a36f41174a0b4133e8dd875d127640aca1607b44
 
 if [[ -z "$CREATE_FIRMWARE" ]]; then
   echo "Error: This script should be run within the create_firmware.sh environment."
