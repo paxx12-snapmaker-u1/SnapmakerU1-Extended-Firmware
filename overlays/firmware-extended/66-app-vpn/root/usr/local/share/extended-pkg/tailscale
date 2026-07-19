@@ -1,0 +1,7 @@
+PKG_LABEL="Tailscale"
+PKG_VERSION=1.92.5
+PKG_URL="https://pkgs.tailscale.com/stable/tailscale_${PKG_VERSION}_arm64.tgz"
+PKG_SHA256=13a59c3181337dfc9fdf9dea433b04c1fbf73f72ec059f64d87466b79a3a313c
+PKG_BINARIES="tailscale tailscaled"
+PKG_CLEAN_PATHS="/home/lava/printer_data/tailscale"
+PKG_LEGACY_DIR="/oem/apps/tailscale-1.92.5"

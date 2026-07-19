@@ -31,7 +31,7 @@ Tailscale setup requires [SSH access](ssh_access.md) to the printer.
 **Step 1:** Download Tailscale (requires internet connection):
 ```bash
 ssh root@<printer-ip>
-tailscale-pkg download
+extended-pkg tailscale download
 ```
 
 **Step 2:** Edit `extended/extended2.cfg`, set the `vpn`:
