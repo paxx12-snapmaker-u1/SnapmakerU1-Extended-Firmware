@@ -1,7 +1,7 @@
 PKG_LABEL="OctoEverywhere"
-PKG_VERSION=5.1.0
+PKG_VERSION=5.1.1
 PKG_URL="https://github.com/QuinnDamerell/OctoPrint-OctoEverywhere/archive/refs/tags/${PKG_VERSION}.zip"
-PKG_SHA256=096b477882f00ad4e356716393a906b0c55c34284cf31c07693d5dea18eb4dc0
+PKG_SHA256=264f3fd3b1b1f326cfc019e7716b6ffa8759658852ce076b94022ef7da40f8fe
 # GitHub archives unpack to `OctoPrint-OctoEverywhere-<tag>`.
 PKG_PREFIX="OctoPrint-OctoEverywhere"
 
