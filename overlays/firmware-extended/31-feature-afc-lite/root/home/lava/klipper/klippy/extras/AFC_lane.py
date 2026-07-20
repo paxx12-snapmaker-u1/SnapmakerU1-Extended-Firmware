@@ -1,6 +1,4 @@
-import json
 import logging
-import os
 
 class AFCLaneState:
     EMPTY = "empty"
@@ -69,6 +67,7 @@ class AFCLane:
             state['type'] = dict(enumerate(status.get('filament_type', []))).get(self.lane_index, 'NONE')
             state['subtype'] = dict(enumerate(status.get('filament_sub_type', []))).get(self.lane_index, 'NONE')
             state['color'] = dict(enumerate(status.get('filament_color_rgba', []))).get(self.lane_index, 'FFFFFFFF')
+            state['spool_id'] = dict(enumerate(status.get('filament_spool_id', []))).get(self.lane_index, 0)
             if status.get('auto_replenish_filament', False):
                 state['runout_lane'] = 'AUTO'
 
@@ -104,9 +103,16 @@ class AFCLane:
         response['tool_loaded'] = state.get('tool_loaded', response['load'])
         response['loaded_to_hub'] = False
         response['material'] = state.get('type', 'NONE')
-        response['spool_id'] = None
+        filament_name = ' '.join(
+            p for p in (state.get('vendor', 'NONE'),
+                        state.get('type', 'NONE'),
+                        state.get('subtype', 'NONE'))
+            if p and p != 'NONE')
+        if filament_name:
+            response['filament_name'] = filament_name
+        response['spool_id'] = state.get('spool_id', 0)
         response['color'] = f"#{state.get('color', 'FFFFFFFF')[:6]}" # RGB only, ignore alpha
-        response['weight'] = 1000 # AFC doesn't track weight
+        # weight intentionally omitted; AFC doesn't track it and the UI hides it when absent
         response['runout_lane'] = state.get('runout_lane', '?')
         response['filament_status'] = 'unknown'
         response['filament_status_led'] = 'gray'

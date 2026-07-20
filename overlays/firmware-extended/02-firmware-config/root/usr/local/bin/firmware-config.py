@@ -289,6 +289,10 @@ class FirmwareConfigHandler(SimpleHTTPRequestHandler):
                 items = group_cfg.get('items', {})
                 settings_list = []
                 for setting_id, config in items.items():
+                    if_cmd = config.get('if_cmd')
+                    if if_cmd and not self._check_condition(if_cmd):
+                        continue
+
                     try:
                         cmd_result = subprocess.run(
                             config["get_cmd"],

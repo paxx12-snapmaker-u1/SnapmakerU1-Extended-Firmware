@@ -13,6 +13,7 @@ The extended firmware includes hardware-accelerated camera support with WebRTC s
 - MIPI CSI internal camera and USB camera support
 - Low-latency WebRTC streaming (best quality and performance)
 - Hot-plug detection for USB cameras
+- Configurable resolution/framerate presets (paxx12 service only)
 - Web-based camera controls with settings persistence
 - Optional RTSP streaming support
 - Compatible with AI detection and Snapmaker Cloud features
@@ -138,6 +139,31 @@ To disable USB camera, set `usb: none` in extended2.cfg.
 When enabled, USB cameras are accessible at `http://<printer-ip>/webcam2/`.
 
 Note: Only one streaming mode can be active per camera.
+
+### Resolution & Framerate
+
+Available for the paxx12 camera service only.
+
+The internal camera is fixed at 1080p (required for AI detection); only framerate can be lowered. The USB camera can be lowered in both resolution and framerate to reduce bandwidth/CPU usage.
+
+#### Using firmware-config Web UI (preferred)
+
+Navigate to the [firmware-config](firmware_config.md) web interface, go to the Camera section, and select **Internal Camera Resolution** and/or **USB Camera Resolution**. These options only appear once the corresponding camera is set to the paxx12 service.
+
+#### Manual Setup (advanced)
+
+**Step 1:** Edit `/home/lava/printer_data/config/extended/extended2.cfg`:
+```ini
+[camera]
+internal_resolution: 1080p25
+usb_resolution: 720p25
+```
+
+Internal camera options: `1080p30`, `1080p25` (default), `1080p15`, `1080p5`.
+
+USB camera options: `1080p30`, `1080p25` (default), `1080p5`, `720p30`, `720p25`, `720p5`, `360p30`, `360p25`, `360p5`.
+
+**Step 2:** Restart the relevant camera service (`S99v4l2-mpp-mipi` or `S99v4l2-mpp-usb`) or reboot the printer for changes to take effect.
 
 ### RTSP Streaming
 

@@ -8,8 +8,15 @@ fi
 
 set -xeo pipefail
 
-if [[ ! -d tmp/extracted/rootfs.original ]]; then
-  unsquashfs -d tmp/extracted/rootfs.original tmp/extracted/rk-unpacked/rootfs.img
+EXTRACT_DIR="tmp/extracted-$(sed -n 's/^FIRMWARE_VERSION=//p' vars.mk)"
+
+if [[ ! -d "$EXTRACT_DIR" ]]; then
+  echo "$EXTRACT_DIR not found, run 'make extract' first" >&2
+  exit 1
+fi
+
+if [[ ! -d "$EXTRACT_DIR/rootfs.original" ]]; then
+  unsquashfs -d "$EXTRACT_DIR/rootfs.original" "$EXTRACT_DIR/rk-unpacked/rootfs.img"
 fi
 
 OVERLAY_NAME="$1"

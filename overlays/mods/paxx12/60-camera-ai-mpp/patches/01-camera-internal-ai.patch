@@ -1,0 +1,13 @@
+--- a/etc/init.d/S99v4l2-mpp-mipi
++++ b/etc/init.d/S99v4l2-mpp-mipi
+@@ -23,8 +23,8 @@
+ CMD_RTSP="/usr/local/bin/stream-rtsp --h264-sock /tmp/capture-mipi-h264.sock --rtsp-port 8554 --max-clients 4"
+ 
+ start() {
+-    if [ "$CAMERA_INTERNAL" != "paxx12" ]; then
+-        echo "Internal MIPI camera is not set to 'paxx12', not starting."
++    if [ "$CAMERA_INTERNAL" != "paxx12" ] && [ "$CAMERA_INTERNAL" != "paxx12-ai" ]; then
++        echo "Internal MIPI camera is not set to 'paxx12' or 'paxx12-ai', not starting."
+         return
+     fi
+ 

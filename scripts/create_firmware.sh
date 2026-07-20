@@ -64,6 +64,12 @@ check_perms "$ROOTFS_DIR/etc/passwd" 0 0
 check_perms "$ROOTFS_DIR/home/lava/bin/hwver.sh" 1000 1000
 echo "   Ownership check passed"
 
+if [[ -z "$CI" ]]; then
+  echo ">> Restoring chroot cache..."
+  mkdir -p "$CHROOT_CACHE" "$ROOTFS_DIR/cache"
+  cp -a "$CHROOT_CACHE/." "$ROOTFS_DIR/cache/"
+fi
+
 for overlay; do
   if [[ ! -d "$overlay" ]]; then
     echo "!! Overlay directory '$overlay' does not exist, skipping."
@@ -100,6 +106,12 @@ for overlay; do
     done
   fi
 done
+
+if [[ -z "$CI" ]]; then
+  echo ">> Saving chroot cache..."
+  cp -a "$ROOTFS_DIR/cache/." "$CHROOT_CACHE/"
+  rm -rf "$ROOTFS_DIR/cache"
+fi
 
 echo ">> Checking for non-ARM binaries in rootfs..."
 if FILES=$(find "$ROOTFS_DIR" -type f -exec file {} + | grep "ELF" | grep -v "ARM"); then

@@ -1,0 +1,12 @@
+--- a/home/lava/origin_printer_data/config/printer.cfg
++++ b/home/lava/origin_printer_data/config/printer.cfg
+@@ -260,6 +260,9 @@
+ 
+ [led cavity_led]
+ white_pin: PA10
++# 300Hz cycle_time divides evenly into both 25fps and 30fps camera framerates,
++# avoiding beat-frequency flicker against the default 100Hz (cycle_time: 0.010).
++cycle_time: 0.003333
+ 
+ [purifier]
+ # exhaust fan

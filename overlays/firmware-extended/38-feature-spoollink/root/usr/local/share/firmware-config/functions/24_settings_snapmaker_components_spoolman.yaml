@@ -1,0 +1,48 @@
+settings:
+  snapmaker_components:
+    items:
+      spoolman:
+        label: Spoolman Integration
+        description: Track filament usage and metadata with Spoolman spool management.
+        help_url: http://snapmakeru1-extended-firmware.pages.dev/spoolman
+        get_cmd:
+          - bash
+          - -c
+          - /usr/local/bin/extended-config.py get /oem/printer_data/config/extended/extended2.cfg spoolman host 2>/dev/null | grep -q . && echo "enabled" || echo "disabled"
+        options:
+          enabled:
+            label: Enabled
+            confirm: "Enable Spoolman integration? Enter the Spoolman server URL below.\n\nSpoolman tracks filament usage and lets you manage spool metadata from your web frontend."
+            inputs:
+              - name: SPOOLMAN_URL
+                label: Spoolman URL
+                placeholder: "http://192.168.1.100:7912"
+                regex: "^https?://.+"
+            cmd:
+              - bash
+              - -c
+              - |
+                URL="${SPOOLMAN_URL%/}"
+                if ! curl -fsS --max-time 10 "${URL}/api/v1/info" | grep -q '"version"'; then
+                  echo "ERROR: Spoolman validation failed (could not reach ${URL})."
+                  exit 1
+                fi
+                /usr/local/bin/extended-config.py uncomment /oem/printer_data/config/extended/extended2.cfg spoolman
+                /usr/local/bin/extended-config.py add /oem/printer_data/config/extended/extended2.cfg spoolman host "${URL}" || {
+                  echo "ERROR: Failed to set Spoolman host."
+                  exit 1
+                }
+                echo "Spoolman enabled. Restarting Klipper and Moonraker to start SpoolLink..."
+                /etc/init.d/S60klipper restart
+                /etc/init.d/S61moonraker restart
+          disabled:
+            label: Disabled
+            cmd:
+              - bash
+              - -xc
+              - |
+                /usr/local/bin/extended-config.py comment /oem/printer_data/config/extended/extended2.cfg spoolman
+                echo "SpoolLink disabled. Restarting Klipper and Moonraker..."
+                /etc/init.d/S60klipper restart
+                /etc/init.d/S61moonraker restart
+        default: disabled

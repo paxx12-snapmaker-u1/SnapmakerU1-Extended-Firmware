@@ -43,8 +43,10 @@ Toggle settings directly from the web interface:
 | Frontend | Fluidd, Mainsail | Switch between web interfaces |
 | Require Login (Fluidd only) | Enabled, Disabled | Require login for Moonraker API access |
 | Internal Camera | Paxx12, Snapmaker, Disabled | Select camera service |
+| Internal Camera Resolution | 1080p30, 1080p25, 1080p15, 1080p5 | Framerate for the internal camera (paxx12 service only; resolution is fixed at 1080p for AI detection) |
 | Camera RTSP Stream | Enabled, Disabled | Enable RTSP streaming |
 | USB Camera | Enabled, Disabled | Enable USB camera support |
+| USB Camera Resolution | 1080p30, 1080p25, 1080p5, 720p30, 720p25, 720p5, 360p30, 360p25, 360p5 | Resolution and framerate for the USB camera (paxx12 service only) |
 | Remote Screen | Enabled, Disabled | Enable remote screen access |
 | Klipper Metrics Exporter | Enabled, Disabled | Enable Prometheus metrics |
 | VPN Provider | None, Tailscale | Enable VPN remote access (Experimental) |
@@ -144,9 +146,15 @@ Note: Remote screen requires additional Moonraker configuration. See [Remote Scr
 - `snapmaker` - Native Snapmaker camera service
 - `none` - Disable internal camera
 
+**internal_resolution** - Internal camera framerate (paxx12 service only; resolution is fixed at 1080p for AI detection)
+- `1080p30`, `1080p25` (default), `1080p15`, `1080p5`
+
 **usb** - USB camera service selection
 - `paxx12` - Enable USB camera with paxx12 service at `http://<printer-ip>/webcam2/`
 - `none` (default) - USB camera disabled
+
+**usb_resolution** - USB camera resolution and framerate (paxx12 service only)
+- `1080p30`, `1080p25` (default), `1080p5`, `720p30`, `720p25`, `720p5`, `360p30`, `360p25`, `360p5`
 
 **rtsp** - Enable RTSP streaming support (paxx12 service only)
 - `true` - Enable RTSP streaming at `rtsp://<printer-ip>:8554/stream` (internal) and `rtsp://<printer-ip>:8555/stream` (USB)
@@ -206,8 +214,12 @@ remote_screen: false
 [camera]
 # Internal (Case) camera options: paxx12, snapmaker, none
 internal: paxx12
+# Internal (Case) camera resolution/framerate preset, resolution is always 1080p: 1080p30, 1080p25, 1080p15, 1080p5
+# internal_resolution: 1080p25
 # External (USB) camera options: paxx12, none
 usb: none
+# External (USB) camera resolution/framerate preset: 1080p30, 1080p25, 1080p5, 720p30, 720p25, 720p5, 360p30, 360p25, 360p5
+# usb_resolution: 1080p25
 # Enable RTSP streaming server: true, false
 rtsp: false
 

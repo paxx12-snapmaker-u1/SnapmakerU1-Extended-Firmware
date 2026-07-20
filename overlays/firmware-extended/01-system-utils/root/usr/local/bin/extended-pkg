@@ -1,0 +1,243 @@
+#!/usr/bin/env bash
+
+#
+# Generic package manager for the optional apps installed to `/oem/apps`.
+#
+# Every app is the same download: fetch a pinned archive, verify its checksum,
+# unpack it into `$APP_DIR/<prefix>-<version>` and point `$APP_DIR/latest` at
+# it. Only the version, URL, checksum and a couple of paths differ, so those
+# live in `/usr/local/share/extended-pkg/<name>`, which is sourced here.
+#
+# Usage: extended-pkg <name> check|needs_upgrade|download|upgrade|clean
+#        extended-pkg <name> exec <binary> [args...]
+#
+# Package definitions may set:
+#
+#   PKG_LABEL        Human-readable name used in messages (default: <name>)
+#   PKG_VERSION      Pinned version (required)
+#   PKG_URL          Archive URL, `.zip` or a gzipped tarball (required)
+#   PKG_SHA256       Expected checksum of the archive (required)
+#   PKG_APP_DIR      Install root (default: /oem/apps/<name>)
+#   PKG_PREFIX       Versioned directory name, minus `-$PKG_VERSION`
+#                    (default: <name>)
+#   PKG_BINARIES     Paths, relative to the install directory, that must exist
+#                    and be executable for the package to count as installed.
+#                    When empty, the install directory merely has to exist.
+#   PKG_CLEAN_PATHS  Extra paths `clean` removes, e.g. state directories.
+#   PKG_LEGACY_DIR   Pre-`latest` install directory. Used until an upgrade
+#                    replaces it, and removed once one does.
+#
+# and may define:
+#
+#   pkg_post_install <staging_dir>
+#                    Run after extraction, before the install is moved into
+#                    place. Returning non-zero fails the install.
+#
+
+set -u
+
+PKG_SHARE_DIR="/usr/local/share/extended-pkg"
+
+usage() {
+    echo "Usage: extended-pkg <name> check|needs_upgrade|download|upgrade|clean"
+    echo "       extended-pkg <name> exec <binary> [args...]"
+    exit 1
+}
+
+[[ $# -ge 2 ]] || usage
+
+PKG=$1
+COMMAND=$2
+shift 2
+
+if [[ ! -f "$PKG_SHARE_DIR/$PKG" ]]; then
+    echo "Unknown package '$PKG'. Known packages:"
+    for definition in "$PKG_SHARE_DIR"/*; do
+        [[ -f "$definition" ]] && echo "  $(basename "$definition")"
+    done
+    exit 1
+fi
+
+PKG_LABEL="$PKG"
+PKG_APP_DIR="/oem/apps/$PKG"
+PKG_PREFIX="$PKG"
+PKG_BINARIES=""
+PKG_CLEAN_PATHS=""
+PKG_LEGACY_DIR=""
+
+# shellcheck disable=SC1090
+source "$PKG_SHARE_DIR/$PKG"
+
+for required in PKG_VERSION PKG_URL PKG_SHA256; do
+    if [[ -z "${!required:-}" ]]; then
+        echo "Package '$PKG' does not set $required"
+        exit 1
+    fi
+done
+
+VERSIONED_DIR="$PKG_APP_DIR/$PKG_PREFIX-$PKG_VERSION"
+TMP_DIR="$PKG_APP_DIR/tmp"
+STAGING_DIR="$TMP_DIR/$PKG_PREFIX-$PKG_VERSION"
+
+# Follow the `latest` symlink to the installed version, so an older build keeps
+# working until an upgrade replaces it with the pinned version.
+INSTALL_DIR="$PKG_APP_DIR/latest"
+if [[ -n "$PKG_LEGACY_DIR" && ( ! -L "$INSTALL_DIR" || ! -e "$INSTALL_DIR" ) ]]; then
+    INSTALL_DIR="$PKG_LEGACY_DIR"
+fi
+
+installed() {
+    if [[ -z "$PKG_BINARIES" ]]; then
+        [[ -d "$INSTALL_DIR" ]]
+        return
+    fi
+
+    local binary
+    for binary in $PKG_BINARIES; do
+        [[ -x "$INSTALL_DIR/$binary" ]] || return 1
+    done
+}
+
+check() {
+    if installed; then
+        echo "$PKG_LABEL is installed."
+        return 0
+    else
+        echo "$PKG_LABEL is not installed."
+        return 1
+    fi
+}
+
+needs_upgrade() {
+    if [[ -L "$PKG_APP_DIR/latest" && -e "$PKG_APP_DIR/latest" ]]; then
+        [[ "$(readlink "$PKG_APP_DIR/latest")" != "$PKG_PREFIX-$PKG_VERSION" ]]
+    elif [[ -n "$PKG_LEGACY_DIR" ]] && installed; then
+        # Installed under the old layout — upgrading migrates it to `latest`.
+        return 0
+    else
+        return 1
+    fi
+}
+
+clean() {
+    echo "Removing $PKG_LABEL installation..."
+    # shellcheck disable=SC2086
+    rm -rf "$PKG_APP_DIR" $PKG_LEGACY_DIR $PKG_CLEAN_PATHS
+    echo "Removed."
+}
+
+# Unpack `$1` into `$2`, dropping the archive's single leading directory.
+extract() {
+    local archive=$1 dest=$2
+
+    case "$archive" in
+        *.zip)
+            rm -rf "$dest.unpack"
+            mkdir -p "$dest.unpack"
+            unzip -q "$archive" -d "$dest.unpack" || return 1
+
+            local top=("$dest.unpack"/*)
+            if [[ ${#top[@]} -ne 1 || ! -d "${top[0]}" ]]; then
+                echo "Expected a single directory in $archive"
+                return 1
+            fi
+
+            rm -rf "$dest"
+            mv "${top[0]}" "$dest" || return 1
+            rmdir "$dest.unpack"
+            ;;
+        *)
+            mkdir -p "$dest"
+            tar --strip-components=1 -xzf "$archive" -C "$dest" || return 1
+            ;;
+    esac
+}
+
+download() {
+    local archive="$TMP_DIR/${PKG_URL##*/}"
+
+    rm -rf "$TMP_DIR"
+    mkdir -p "$TMP_DIR"
+
+    echo "Downloading $PKG_LABEL $PKG_VERSION..."
+    if ! /usr/local/bin/curl -fSL -o "$archive" "$PKG_URL"; then
+        echo "Download failed"
+        return 1
+    fi
+
+    echo "Verifying checksum..."
+    if ! echo "$PKG_SHA256  $archive" | sha256sum -c; then
+        echo "Checksum verification failed"
+        return 1
+    fi
+
+    echo "Installing..."
+    if ! extract "$archive" "$STAGING_DIR"; then
+        echo "Extraction failed"
+        return 1
+    fi
+    rm -f "$archive"
+
+    if declare -F pkg_post_install >/dev/null; then
+        pkg_post_install "$STAGING_DIR" || return 1
+    fi
+
+    local binary
+    for binary in $PKG_BINARIES; do
+        if [[ ! -x "$STAGING_DIR/$binary" ]]; then
+            echo "Installation failed: binaries not found"
+            return 1
+        fi
+    done
+
+    # shellcheck disable=SC2086
+    rm -rf "$PKG_APP_DIR/$PKG_PREFIX-"* $PKG_LEGACY_DIR
+    mv "$STAGING_DIR" "$PKG_APP_DIR/"
+    ln -sfn "$PKG_PREFIX-$PKG_VERSION" "$PKG_APP_DIR/latest"
+    rm -rf "$TMP_DIR"
+    echo "$PKG_LABEL $PKG_VERSION installed to $PKG_APP_DIR"
+}
+
+case "$COMMAND" in
+    check)
+        check
+        ;;
+    needs_upgrade)
+        needs_upgrade
+        ;;
+    upgrade)
+        if ! download; then
+            rm -rf "$TMP_DIR"
+            exit 1
+        fi
+        ;;
+    download)
+        if check; then
+            exit 0
+        fi
+        if ! clean; then
+            echo "Failed to clean old installation"
+            exit 1
+        fi
+        if ! download; then
+            rm -rf "$PKG_APP_DIR"
+            exit 1
+        fi
+        ;;
+    clean)
+        clean
+        ;;
+    exec)
+        [[ $# -ge 1 ]] || usage
+        binary=$1
+        shift
+        if [[ ! -x "$INSTALL_DIR/$binary" ]]; then
+            echo "$PKG_LABEL is not installed. Run 'extended-pkg $PKG download' first."
+            exit 1
+        fi
+        exec "$INSTALL_DIR/$binary" "$@"
+        ;;
+    *)
+        usage
+        ;;
+esac
