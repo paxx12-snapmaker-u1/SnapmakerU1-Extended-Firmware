@@ -54,7 +54,15 @@ In **MQTT** mode the setup also provisions a locked-down mosquitto listener (por
 
 ## Home Assistant
 
-The stock v1.0.4+ firmware ships a full Home Assistant MQTT integration: on connect it publishes autodiscovery configs under `homeassistant/#` for the chamber temperature, target/filter/heater/drying temperatures, mode and drying-mode selects, and `work_on`/`drying_running` switches. Because MQTT mode uses the printer's own broker (and the ACL permits `homeassistant/#`), **any Home Assistant instance pointed at that broker discovers the Panda automatically** — no extra configuration on the device. Klipper and Home Assistant can watch the same broker at once.
+The stock v1.0.4+ firmware ships a full Home Assistant MQTT integration: on connect it publishes autodiscovery configs under `homeassistant/#` for the chamber temperature, target/filter/heater/drying temperatures, mode and drying-mode selects, and `work_on`/`drying_running` switches. Because MQTT mode uses the printer's own broker (and the ACL permits `homeassistant/#`), **any Home Assistant instance pointed at that broker discovers the Panda automatically** — no extra configuration on the device.
+
+**Important — the Panda binds to one broker.** Enabling MQTT mode binds the Panda to the *printer's* broker. If you were previously using the Panda's native Home Assistant feature pointed at a *different* broker, that binding is replaced — so connect Home Assistant to the **printer's** broker instead:
+
+- **Host / port:** the printer's IP, port **1885**
+- **Username:** `panda`
+- **Password:** the value printed in the firmware-config output when you enabled MQTT mode (a 20-character token). Re-run the enable step to see it again if needed.
+
+Home Assistant then autodiscovers the chamber as a full device, alongside Klipper. (Home Assistant depends on the printer being powered and reachable, since the broker lives on the printer.)
 
 Note that Klipper remains the controller: the safety reconciliation (below) will force the chamber **off** if it is switched on from Home Assistant or the device button while Klipper is not commanding heat. So Home Assistant is ideal for **monitoring**; use `M141` (or a Klipper macro) to actually drive the chamber.
 
