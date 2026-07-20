@@ -64,7 +64,7 @@ The stock v1.0.4+ firmware ships a full Home Assistant MQTT integration: on conn
 
 Home Assistant then autodiscovers the chamber as a full device, alongside Klipper. (Home Assistant depends on the printer being powered and reachable, since the broker lives on the printer.)
 
-Note that Klipper remains the controller: the safety reconciliation (below) will force the chamber **off** if it is switched on from Home Assistant or the device button while Klipper is not commanding heat. So Home Assistant is ideal for **monitoring**; use `M141` (or a Klipper macro) to actually drive the chamber.
+**By design, Home Assistant is for monitoring, not control.** When the Panda is paired with the printer, Klipper is the single source of truth for heat — driving the chamber from HA as well would just be two controllers fighting. So the safety reconciliation (below) intentionally forces the chamber **off** if it is switched on from Home Assistant or the device button while Klipper is not commanding heat. Watch the chamber in HA; drive it with `M141` (or a Klipper macro).
 
 ## Safety and failure modes
 
