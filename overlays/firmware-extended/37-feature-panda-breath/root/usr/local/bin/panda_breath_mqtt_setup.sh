@@ -53,8 +53,11 @@ fi
 mosquitto_passwd -c -b "$PWFILE" "$MUSER" "$PB_PASS"
 chown lava:lava "$PWFILE"; chmod 600 "$PWFILE"
 
-# 3. ACL — this user may only touch its own topics (+ read HA discovery)
-printf 'user %s\ntopic readwrite panda_breath/#\ntopic read homeassistant/#\n' "$MUSER" > "$ACL"
+# 3. ACL — this user owns its own topics and may publish Home Assistant
+#    autodiscovery configs (the stock firmware advertises the chamber as a full
+#    HA device on homeassistant/#, so any HA instance on this broker discovers
+#    it automatically alongside Klipper's own control).
+printf 'user %s\ntopic readwrite panda_breath/#\ntopic readwrite homeassistant/#\n' "$MUSER" > "$ACL"
 chown lava:lava "$ACL"; chmod 600 "$ACL"
 
 # 4. inject the listener now (same path the boot hook uses) and restart broker
