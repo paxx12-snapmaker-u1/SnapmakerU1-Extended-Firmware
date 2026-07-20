@@ -141,8 +141,17 @@ settings:
                 echo ""
                 echo ">> Binding the Panda at ${PANDA_BREATH_IP} to the broker at ${PRINTER_IP}:1885 (WebSocket)..."
                 PB_PASS="$(cat /home/lava/printer_data/mqtt/panda_pw.plain)"
-                /usr/local/bin/panda_breath_cli.py --host "${PANDA_BREATH_IP}" bind-broker \
-                  --broker-ip "${PRINTER_IP}" --broker-port 1885 --user panda --password "${PB_PASS}"
+                # Non-fatal: if the WebSocket bind fails (device unreachable), we
+                # still finish enabling and leave the printed broker details so
+                # the Panda can be bound manually from its web UI.
+                if /usr/local/bin/panda_breath_cli.py --host "${PANDA_BREATH_IP}" bind-broker \
+                     --broker-ip "${PRINTER_IP}" --broker-port 1885 --user panda --password "${PB_PASS}"; then
+                  echo "   Panda bound automatically."
+                else
+                  echo "   WARNING: automatic bind failed (Panda WebSocket unreachable)."
+                  echo "   Configure the Panda manually with the broker details shown above:"
+                  echo "     Broker IP ${PRINTER_IP}  Port 1885  Username panda  Password ${PB_PASS}"
+                fi
 
                 echo ""
                 echo ">> Discovering device id from the broker..."
