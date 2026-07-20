@@ -52,6 +52,16 @@ During setup the web interface will ask for the Panda Breath IP address and will
 
 In **MQTT** mode the setup also provisions a locked-down mosquitto listener (port 1885, ACL-scoped to `panda_breath/#`) with a generated password, and binds the Panda to that broker automatically over its WebSocket API — there are no manual web-UI steps on the Panda.
 
+## Safety and failure modes
+
+The Panda Breath is an autonomous device: it holds its own heating state and will keep heating on its own. The integration enforces one invariant — **the chamber only heats while Klipper is commanding it** — through several layers:
+
+- **Reconciliation:** Klipper continuously checks the device's reported state. If the device is heating while Klipper is *not* commanding heat — because it auto-resumed from NVS after a power cycle, was switched on from Home Assistant or the physical button, or missed an off command — Klipper forces it off within about a second.
+- **Idle timeout:** the printer's `[idle_timeout]` runs `TURN_OFF_HEATERS`, which turns the chamber off after the configured idle period (300 s by default) even if it was simply left on.
+- **Reboot:** the broker listener is stored in persistent `printer_data` and re-applied on every boot, so the link comes back after a power cycle. The Panda auto-resumes heating from NVS, but Klipper reclaims control and turns it off on boot (a print that resumes will re-command it deliberately).
+
+**Inherent limitation (MQTT/WiFi):** if the Panda's WiFi or the broker link fails *while the chamber is heating*, Klipper cannot reach the device to turn it off. The Panda will keep heating to its last commanded target until connectivity returns (at which point the reconciliation/idle-timeout shut it off), bounded only by the device's own hardware limits. This is inherent to a network-attached accessory. Where a lost link must *guarantee* heater shutdown, a directly-wired MCU is the safer choice — Klipper's MCU watchdog and `verify_heater` shut the heater down on a dead link, which a WiFi accessory cannot.
+
 ## Configuration File
 
 After enabling, a config file is placed at:
