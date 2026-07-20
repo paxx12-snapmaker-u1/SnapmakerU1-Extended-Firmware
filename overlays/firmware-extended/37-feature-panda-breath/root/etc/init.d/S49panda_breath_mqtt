@@ -1,0 +1,33 @@
+#!/bin/sh
+# Panda Breath MQTT — re-apply the dedicated mosquitto listener on boot.
+#
+# The listener definition must live in /etc/mosquitto/mosquitto.conf, which is
+# on the read-only squashfs overlay and resets on every boot. The credentials
+# and ACL live under printer_data (persisted, ext4). This hook — ordered before
+# S50mosquitto — re-injects the listener from the persisted config so the
+# stock-mqtt integration survives reboots. It is a no-op when the feature is
+# disabled (no persisted credentials), so the broker stays safe.
+
+PERSIST=/home/lava/printer_data/mqtt
+CONF=/etc/mosquitto/mosquitto.conf
+PORT=1885
+
+inject() {
+	[ -f "$PERSIST/panda_pw.conf" ] && [ -f "$PERSIST/acl_panda.conf" ] || return 0
+	grep -q "listener $PORT" "$CONF" 2>/dev/null && return 0
+	cat >> "$CONF" <<EOF
+
+# Panda Breath stock-mqtt listener (re-applied on boot from printer_data)
+listener $PORT
+allow_anonymous false
+password_file $PERSIST/panda_pw.conf
+acl_file $PERSIST/acl_panda.conf
+max_connections 8
+EOF
+}
+
+case "$1" in
+	start|restart|reload|"") inject ;;
+	stop) ;;
+esac
+exit 0

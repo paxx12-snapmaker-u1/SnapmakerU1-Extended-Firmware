@@ -7,58 +7,64 @@
 # password and a topic ACL (panda_breath/* only). The internal 127.0.0.1:1883
 # listener is untouched and stays private; the Klipper extra uses that one.
 #
+# Persistence: /etc/mosquitto is on the squashfs overlay and resets on boot, so
+# the password/ACL live under printer_data (persisted) and the listener block
+# is re-injected on each boot by /etc/init.d/S49panda_breath_mqtt. Everything
+# here writes to the persisted location.
+#
 # Idempotent: re-runs reuse the generated password and don't duplicate config.
+#   panda_breath_mqtt_setup.sh          set up + start the listener
+#   panda_breath_mqtt_setup.sh remove   tear the listener + credentials down
 
 set -eo pipefail
 
+PERSIST=/home/lava/printer_data/mqtt
+PWFILE="$PERSIST/panda_pw.conf"
+PWPLAIN="$PERSIST/panda_pw.plain"   # lets us re-show / re-bind the credential
+ACL="$PERSIST/acl_panda.conf"
 CONF=/etc/mosquitto/mosquitto.conf
-PWFILE=/etc/mosquitto/panda_pw.conf
-PWPLAIN=/etc/mosquitto/panda_pw.plain     # root-only, lets us re-show the cred
-ACL=/etc/mosquitto/acl_panda.conf
+HOOK=/etc/init.d/S49panda_breath_mqtt
 PORT=1885
 MUSER=panda
 
-# 1. password — reuse if already generated, otherwise create a strong one
+# ── teardown ────────────────────────────────────────────────────────────────
+if [[ "${1:-}" == "remove" ]]; then
+  rm -f "$PWFILE" "$PWPLAIN" "$ACL"
+  sed -i '/# Panda Breath stock-mqtt listener/,/max_connections 8/d' "$CONF" 2>/dev/null || true
+  /etc/init.d/S50mosquitto restart >/dev/null 2>&1 || true
+  echo ">> Panda Breath MQTT broker listener removed."
+  exit 0
+fi
+
+mkdir -p "$PERSIST"
+chown lava:lava "$PERSIST" 2>/dev/null || true
+
+# 1. password — reuse the persisted one if present, else generate a strong,
+#    transcription-safe (20 hex char / 80-bit) credential.
 if [[ -s "$PWPLAIN" ]]; then
   PB_PASS="$(cat "$PWPLAIN")"
 else
-  # 20 hex chars (80-bit): strong for an ACL-scoped LAN listener and within the
-  # Panda "Bind a Broker" field length limit (longer values get truncated).
   PB_PASS="$(openssl rand -hex 10)"
   printf '%s' "$PB_PASS" > "$PWPLAIN"
   chown lava:lava "$PWPLAIN"; chmod 600 "$PWPLAIN"
 fi
 
-# 2. hashed password file for mosquitto
+# 2. hashed password file for mosquitto (persisted)
 mosquitto_passwd -c -b "$PWFILE" "$MUSER" "$PB_PASS"
 chown lava:lava "$PWFILE"; chmod 600 "$PWFILE"
 
 # 3. ACL — this user may only touch its own topics (+ read HA discovery)
 printf 'user %s\ntopic readwrite panda_breath/#\ntopic read homeassistant/#\n' "$MUSER" > "$ACL"
-chown lava:lava "$ACL"; chmod 644 "$ACL"
+chown lava:lava "$ACL"; chmod 600 "$ACL"
 
-# 4. listener (idempotent, backed up)
-cp -n "$CONF" "$CONF.bak-panda" 2>/dev/null || true
-if ! grep -q "listener $PORT\b" "$CONF"; then
-  cat >> "$CONF" <<EOF
-
-# Panda Breath stock-mqtt listener (LAN): auth + ACL, restricted to panda_breath/*
-listener $PORT
-allow_anonymous false
-password_file $PWFILE
-acl_file $ACL
-max_connections 8
-EOF
-fi
-
-# 5. restart broker so the new listener takes effect
+# 4. inject the listener now (same path the boot hook uses) and restart broker
+"$HOOK" start
 /etc/init.d/S50mosquitto restart >/dev/null 2>&1 || true
 
-# 6. print the binding the user enters once in the Panda web UI
+# 5. report the binding (the firmware-config step binds the Panda automatically)
 PRINTER_IP=$((ip -4 -o addr show eth0 2>/dev/null || ip -4 -o addr show wlan0 2>/dev/null) \
   | awk '{print $4}' | cut -d/ -f1 | head -1)
 echo ""
 echo ">> Panda Breath MQTT broker is ready (listener ${PORT}, user ${MUSER})."
-echo "   IP ${PRINTER_IP}:${PORT} — the Panda is bound to this automatically over"
-echo "   its WebSocket API; no manual web-UI entry is required."
+echo "   IP ${PRINTER_IP}:${PORT} — persisted under printer_data, survives reboots."
 echo ""

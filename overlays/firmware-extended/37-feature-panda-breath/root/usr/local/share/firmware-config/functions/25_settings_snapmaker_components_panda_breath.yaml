@@ -39,6 +39,9 @@ settings:
                     echo ">> Unbinding Panda Breath broker at ${PANDA_BREATH_IP}..."
                     /usr/local/bin/panda_breath_cli.py --host "${PANDA_BREATH_IP}" unbind-broker || true
                   fi
+                  echo ""
+                  echo ">> Removing the persisted MQTT broker listener..."
+                  /usr/local/bin/panda_breath_mqtt_setup.sh remove || true
                 elif PANDA_BREATH_IP=$(/usr/local/bin/extended-config.py get "$CFG" panda_breath host 2>/dev/null); then
                   echo ""
                   echo ">> Unbinding Panda Breath at ${PANDA_BREATH_IP}..."
@@ -137,23 +140,30 @@ settings:
 
                 echo ""
                 echo ">> Binding the Panda at ${PANDA_BREATH_IP} to the broker at ${PRINTER_IP}:1885 (WebSocket)..."
-                PB_PASS="$(cat /etc/mosquitto/panda_pw.plain)"
+                PB_PASS="$(cat /home/lava/printer_data/mqtt/panda_pw.plain)"
                 /usr/local/bin/panda_breath_cli.py --host "${PANDA_BREATH_IP}" bind-broker \
                   --broker-ip "${PRINTER_IP}" --broker-port 1885 --user panda --password "${PB_PASS}"
 
                 echo ""
+                echo ">> Discovering device id from the broker..."
+                MAC=$(timeout 12 mosquitto_sub -h 127.0.0.1 -p 1883 -t 'panda_breath/+/availability' -C 1 -v 2>/dev/null | awk '{print $1}' | cut -d/ -f2)
+                [ -n "${MAC}" ] && echo "   device id: ${MAC}" || echo "   (not seen yet; extra will auto-discover once state arrives)"
+
+                echo ""
                 echo ">> Writing Klipper configuration (stock-mqtt)..."
                 mkdir -p /oem/printer_data/config/extended/klipper
-                printf '%s\n' \
-                  '[panda_breath]' \
-                  'firmware: stock-mqtt' \
-                  'mqtt_broker: 127.0.0.1' \
-                  'mqtt_port: 1883' \
-                  "# panda_device_ip: ${PANDA_BREATH_IP}" \
-                  '' \
-                  '[include /usr/local/share/firmware-config/tweaks/klipper/panda_breath_heater_manual.cfg]' \
-                  > /oem/printer_data/config/extended/klipper/panda_breath.cfg
-                chown lava:lava /oem/printer_data/config/extended/klipper/panda_breath.cfg
+                CFG=/oem/printer_data/config/extended/klipper/panda_breath.cfg
+                {
+                  echo '[panda_breath]'
+                  echo 'firmware: stock-mqtt'
+                  echo 'mqtt_broker: 127.0.0.1'
+                  echo 'mqtt_port: 1883'
+                  [ -n "${MAC}" ] && echo "mqtt_device_id: ${MAC}"
+                  echo "# panda_device_ip: ${PANDA_BREATH_IP}"
+                  echo ''
+                  echo '[include /usr/local/share/firmware-config/tweaks/klipper/panda_breath_heater_manual.cfg]'
+                } > "$CFG"
+                chown lava:lava "$CFG"
 
                 echo ""
                 echo ">> Panda Breath MQTT mode enabled and bound. Restarting Klipper..."
