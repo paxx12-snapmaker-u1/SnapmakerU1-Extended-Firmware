@@ -27,30 +27,9 @@ settings:
               - bash
               - -ec
               - |
-                CFG=/oem/printer_data/config/extended/klipper/panda_breath.cfg
-
-                if grep -qE '^[[:space:]]*firmware:[[:space:]]*stock-mqtt' "$CFG" 2>/dev/null; then
-                  # MQTT mode: disconnect the Panda from the broker (like the
-                  # device's own "Unbind" button). The Panda IP is stored as a
-                  # comment in the config so we can reach it here.
-                  PANDA_BREATH_IP=$(sed -nE 's/^#[[:space:]]*panda_device_ip:[[:space:]]*([0-9.]+).*/\1/p' "$CFG" | head -1)
-                  if [ -n "${PANDA_BREATH_IP}" ]; then
-                    echo ""
-                    echo ">> Unbinding Panda Breath broker at ${PANDA_BREATH_IP}..."
-                    /usr/local/bin/panda_breath_cli.py --host "${PANDA_BREATH_IP}" unbind-broker || true
-                  fi
-                  echo ""
-                  echo ">> Removing the persisted MQTT broker listener..."
-                  /usr/local/bin/panda_breath_mqtt_setup.sh remove || true
-                elif PANDA_BREATH_IP=$(/usr/local/bin/extended-config.py get "$CFG" panda_breath host 2>/dev/null); then
-                  echo ""
-                  echo ">> Unbinding Panda Breath at ${PANDA_BREATH_IP}..."
-                  /usr/local/bin/panda_breath_cli.py --host "${PANDA_BREATH_IP}" unbind || true
-                fi
-
-                echo ""
-                echo ">> Removing Panda Breath configuration..."
-                rm -f "$CFG"
+                # Release the device from its current binding and remove the
+                # config (handles MQTT-broker and WebSocket-printer modes alike).
+                /usr/local/bin/panda_breath_teardown.sh
 
                 echo ""
                 echo ">> Panda Breath disabled. Restarting Klipper..."
@@ -83,6 +62,14 @@ settings:
               - bash
               - -ec
               - |
+                # Leave any current mode cleanly first. This is essential when
+                # switching from MQTT: while the Panda is broker-bound its
+                # WebSocket settings frame does not report a usable fw_version,
+                # so the bind-klipper firmware-version check below would fail.
+                echo ""
+                echo ">> Leaving any current Panda Breath mode cleanly..."
+                /usr/local/bin/panda_breath_teardown.sh
+
                 echo ""
                 echo ">> Detecting printer IP address..."
                 PRINTER_IP=$((ip -4 -o addr show eth0 2>/dev/null || ip -4 -o addr show wlan0 2>/dev/null) | awk '{print $4}' | cut -d/ -f1)
@@ -130,6 +117,13 @@ settings:
               - bash
               - -ec
               - |
+                # Leave any current mode cleanly first, so switching from
+                # auto/manual releases the WebSocket printer binding before we
+                # bind the broker (and re-entering MQTT starts from a clean slate).
+                echo ""
+                echo ">> Leaving any current Panda Breath mode cleanly..."
+                /usr/local/bin/panda_breath_teardown.sh
+
                 echo ""
                 echo ">> Detecting printer IP address..."
                 PRINTER_IP=$((ip -4 -o addr show eth0 2>/dev/null || ip -4 -o addr show wlan0 2>/dev/null) | awk '{print $4}' | cut -d/ -f1 | head -1)
@@ -206,6 +200,12 @@ settings:
               - bash
               - -ec
               - |
+                # Leave any current mode cleanly first (see auto mode above for
+                # why this matters when switching away from MQTT).
+                echo ""
+                echo ">> Leaving any current Panda Breath mode cleanly..."
+                /usr/local/bin/panda_breath_teardown.sh
+
                 echo ""
                 echo ">> Detecting printer IP address..."
                 PRINTER_IP=$((ip -4 -o addr show eth0 2>/dev/null || ip -4 -o addr show wlan0 2>/dev/null) | awk '{print $4}' | cut -d/ -f1)
