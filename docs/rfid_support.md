@@ -128,7 +128,7 @@ To enable it, navigate to the [firmware-config](firmware_config.md) web interfac
 
 - **OpenRFID** - Filament is identified by brand and type. Spools unrecognized by Snapmaker Orca are hidden in Snapmaker Orca.
 - **OpenRFID (force generic vendor)** - Same as OpenRFID, but spools are labeled as Generic so they always appear in Snapmaker Orca.
-- **External** - Disables the built-in readers entirely, useful for external readers such as [wasikuss/snapmaker-u1-remote-rfid-reader](https://github.com/wasikuss/snapmaker-u1-remote-rfid-reader).
+- **External** - Disables the built-in readers entirely, useful for external readers such as [wasikuss/snapmaker-u1-remote-rfid-reader](https://github.com/wasikuss/snapmaker-u1-remote-rfid-reader) or [CheapSpoolDisplay](https://rocka84.github.io/CheapSpoolDisplay/).
 
 ### Supported Tags
 
