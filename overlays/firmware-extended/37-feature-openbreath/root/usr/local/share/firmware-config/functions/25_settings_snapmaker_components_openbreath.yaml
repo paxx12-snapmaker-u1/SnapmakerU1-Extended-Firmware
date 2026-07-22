@@ -31,19 +31,17 @@ settings:
           enabled:
             label: Enabled (Auto-hold)
             confirm: |
-              WARNING: A chamber heater significantly raises sustained enclosure temperatures, accelerating wear on electronics, motors, and other components beyond their rated conditions. Any damage attributable to elevated thermal stress is unlikely to be covered under warranty. Additional motherboard cooling is required before use — see the documentation for details.
+              WARNING: A chamber heater raises sustained enclosure temperatures, accelerating wear on electronics and motors beyond their rated conditions — likely NOT warranty-covered. Additional motherboard cooling is required (see docs).
 
-              OpenBreath is community open firmware for a MAINS-POWERED heater. There is NO WARRANTY. A fault could cause overheating, fire, or damage — use at your own risk and never run it unattended.
+              OpenBreath is community open firmware for a MAINS-POWERED heater. NO WARRANTY — a fault could cause overheating, fire, or damage. Use at your own risk; never run it unattended.
 
-              Before enabling OpenBreath, complete all of the following:
+              Before enabling:
+              1. Add active cooling to the motherboard (see docs).
+              2. Flash OpenBreath firmware on the Panda Breath and provision its Wi-Fi.
+              3. Give the OpenBreath device a static DHCP lease — Klipper connects by IP.
+              4. Enter its IP below.
 
-              1. Install additional active cooling on the motherboard (see documentation).
-              2. Flash the OpenBreath firmware onto your Panda Breath device (see the OpenBreath project) and provision its Wi-Fi.
-              3. Configure a static DHCP lease for the OpenBreath device on your router — Klipper connects to it by IP address on every print.
-              4. If you set a control token on the device (NVS ctl_token), have it ready to enter below.
-              5. Enter the OpenBreath device IP address in the field below.
-
-              OpenBreath holds the chamber target on-device (its own thermostat + comms watchdog). Klipper pushes the target and keeps a heartbeat lease; if Klipper stops, the device latches the heater off.
+              Advanced: to use a device control token (NVS ctl_token), add a "token:" line to the OpenBreath config after enabling (see docs).
             inputs:
               - name: ACKNOWLEDGED
                 label: "Type \"I UNDERSTAND\" to confirm you have read the documentation and accept the warranty, safety, and longevity risks"
@@ -53,10 +51,6 @@ settings:
                 label: OpenBreath Device IP Address
                 placeholder: "192.168.1.100"
                 regex: '^((25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])$'
-              - name: OPENBREATH_TOKEN
-                label: "Control token (optional — leave blank unless you set NVS ctl_token on the device)"
-                placeholder: ""
-                regex: '^.*$'
             cmd:
               - bash
               - -ec
@@ -66,9 +60,6 @@ settings:
                 mkdir -p /oem/printer_data/config/extended/klipper
                 cp -n /usr/local/share/firmware-config/tweaks/klipper/openbreath.cfg /oem/printer_data/config/extended/klipper/openbreath.cfg
                 /usr/local/bin/extended-config.py add /oem/printer_data/config/extended/klipper/openbreath.cfg openbreath host "${OPENBREATH_IP}"
-                if [ -n "${OPENBREATH_TOKEN}" ]; then
-                  /usr/local/bin/extended-config.py add /oem/printer_data/config/extended/klipper/openbreath.cfg openbreath token "${OPENBREATH_TOKEN}"
-                fi
                 chown lava:lava /oem/printer_data/config/extended/klipper/openbreath.cfg
 
                 echo ""

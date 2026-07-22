@@ -1,5 +1,7 @@
 firmware/
 tmp/
+# local build outputs (create_firmware.sh OUTPUT_FILE)
+/U1_extended*.bin
 *.o
 *.so
 tools/upfile/upfile
