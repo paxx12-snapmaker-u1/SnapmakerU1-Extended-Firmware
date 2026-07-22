@@ -1,0 +1,77 @@
+settings:
+  snapmaker_components:
+    items:
+      openbreath:
+        label: OpenBreath Chamber Heater
+        description: OpenBreath open-firmware Panda Breath chamber heater integration (M141/M191 + Fluidd).
+        help_url: https://github.com/plastikman/OpenBreath
+        get_cmd:
+          - bash
+          - -c
+          - |
+            if test -f /oem/printer_data/config/extended/klipper/openbreath.cfg; then
+              echo "enabled"
+            else
+              echo "disabled"
+            fi
+        options:
+          disabled:
+            label: Disabled
+            cmd:
+              - bash
+              - -ec
+              - |
+                echo ""
+                echo ">> Removing OpenBreath configuration..."
+                rm -f /oem/printer_data/config/extended/klipper/openbreath.cfg
+
+                echo ""
+                echo ">> OpenBreath disabled. Restarting Klipper..."
+                /etc/init.d/S60klipper restart
+          enabled:
+            label: Enabled (Auto-hold)
+            confirm: |
+              WARNING: A chamber heater significantly raises sustained enclosure temperatures, accelerating wear on electronics, motors, and other components beyond their rated conditions. Any damage attributable to elevated thermal stress is unlikely to be covered under warranty. Additional motherboard cooling is required before use — see the documentation for details.
+
+              OpenBreath is community open firmware for a MAINS-POWERED heater. There is NO WARRANTY. A fault could cause overheating, fire, or damage — use at your own risk and never run it unattended.
+
+              Before enabling OpenBreath, complete all of the following:
+
+              1. Install additional active cooling on the motherboard (see documentation).
+              2. Flash the OpenBreath firmware onto your Panda Breath device (see the OpenBreath project) and provision its Wi-Fi.
+              3. Configure a static DHCP lease for the OpenBreath device on your router — Klipper connects to it by IP address on every print.
+              4. If you set a control token on the device (NVS ctl_token), have it ready to enter below.
+              5. Enter the OpenBreath device IP address in the field below.
+
+              OpenBreath holds the chamber target on-device (its own thermostat + comms watchdog). Klipper pushes the target and keeps a heartbeat lease; if Klipper stops, the device latches the heater off.
+            inputs:
+              - name: ACKNOWLEDGED
+                label: "Type \"I UNDERSTAND\" to confirm you have read the documentation and accept the warranty, safety, and longevity risks"
+                placeholder: "I UNDERSTAND"
+                regex: '^I UNDERSTAND$'
+              - name: OPENBREATH_IP
+                label: OpenBreath Device IP Address
+                placeholder: "192.168.1.100"
+                regex: '^((25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])$'
+              - name: OPENBREATH_TOKEN
+                label: "Control token (optional — leave blank unless you set NVS ctl_token on the device)"
+                placeholder: ""
+                regex: '^.*$'
+            cmd:
+              - bash
+              - -ec
+              - |
+                echo ""
+                echo ">> Writing OpenBreath configuration..."
+                mkdir -p /oem/printer_data/config/extended/klipper
+                cp -n /usr/local/share/firmware-config/tweaks/klipper/openbreath.cfg /oem/printer_data/config/extended/klipper/openbreath.cfg
+                /usr/local/bin/extended-config.py add /oem/printer_data/config/extended/klipper/openbreath.cfg openbreath host "${OPENBREATH_IP}"
+                if [ -n "${OPENBREATH_TOKEN}" ]; then
+                  /usr/local/bin/extended-config.py add /oem/printer_data/config/extended/klipper/openbreath.cfg openbreath token "${OPENBREATH_TOKEN}"
+                fi
+                chown lava:lava /oem/printer_data/config/extended/klipper/openbreath.cfg
+
+                echo ""
+                echo ">> OpenBreath enabled. Restarting Klipper..."
+                /etc/init.d/S60klipper restart
+        default: disabled
