@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 
 GIT_URL=https://github.com/plastikman/dragonbreath-klipper.git
-GIT_SHA=bfbf2613082f180074598183b477e12f3e189c6f
+# v2 helper (API v2 client) — dragonbreath-klipper#3 merged to main. Pairs with
+# DragonBreath firmware >= v0.3.0 (flash firmware first, then restart klippy).
+GIT_SHA=ce57757f9eb120ec4806d779b2e1f22ebb95f075
 
 if [[ -z "$CREATE_FIRMWARE" ]]; then
   echo "Error: This script should be run within the create_firmware.sh environment."
