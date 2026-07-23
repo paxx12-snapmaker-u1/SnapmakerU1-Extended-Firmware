@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 GIT_URL=https://github.com/plastikman/openbreath-klipper.git
-GIT_SHA=85ce0379fb510d370ec92001738e664891125c48
+GIT_SHA=d01ff8c40f43191375c68ea6fcfdcb745612e042
 
 if [[ -z "$CREATE_FIRMWARE" ]]; then
   echo "Error: This script should be run within the create_firmware.sh environment."
