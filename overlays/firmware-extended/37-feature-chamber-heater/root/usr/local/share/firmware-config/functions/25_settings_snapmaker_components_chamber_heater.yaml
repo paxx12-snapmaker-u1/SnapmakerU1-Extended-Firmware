@@ -2,15 +2,15 @@ settings:
   snapmaker_components:
     items:
       chamber_heater:
-        label: PandaBreath / OpenBreath Chamber Heater
-        description: Chamber heater integration — stock Panda Breath (auto) or OpenBreath open firmware.
-        help_url: https://github.com/plastikman/OpenBreath
+        label: PandaBreath / DragonBreath Chamber Heater
+        description: Chamber heater integration — stock Panda Breath (auto) or DragonBreath open firmware.
+        help_url: https://github.com/plastikman/DragonBreath
         get_cmd:
           - bash
           - -c
           - |
-            if test -f /oem/printer_data/config/extended/klipper/openbreath.cfg; then
-              echo "openbreath"
+            if test -f /oem/printer_data/config/extended/klipper/dragonbreath.cfg; then
+              echo "dragonbreath"
             elif test -f /oem/printer_data/config/extended/klipper/panda_breath.cfg; then
               echo "panda-auto"
             else
@@ -32,7 +32,7 @@ settings:
                 echo ""
                 echo ">> Removing chamber heater configuration..."
                 rm -f /oem/printer_data/config/extended/klipper/panda_breath.cfg
-                rm -f /oem/printer_data/config/extended/klipper/openbreath.cfg
+                rm -f /oem/printer_data/config/extended/klipper/dragonbreath.cfg
 
                 echo ""
                 echo ">> Chamber heater disabled. Restarting Klipper..."
@@ -65,8 +65,8 @@ settings:
               - bash
               - -ec
               - |
-                if test -f /oem/printer_data/config/extended/klipper/openbreath.cfg; then
-                  echo "ERROR: OpenBreath is currently enabled. Set the chamber heater to"
+                if test -f /oem/printer_data/config/extended/klipper/dragonbreath.cfg; then
+                  echo "ERROR: DragonBreath is currently enabled. Set the chamber heater to"
                   echo "       Disabled first, then enable Panda Auto."
                   exit 1
                 fi
@@ -90,27 +90,27 @@ settings:
                 echo ""
                 echo ">> Panda Breath auto mode enabled. Restarting Klipper..."
                 /etc/init.d/S60klipper restart
-          openbreath:
-            label: OpenBreath
+          dragonbreath:
+            label: DragonBreath
             confirm: |
               WARNING: A chamber heater raises sustained enclosure temperatures, accelerating wear on electronics and motors beyond their rated conditions — likely NOT warranty-covered. Additional motherboard cooling is required (see docs).
 
-              OpenBreath is community open firmware for a MAINS-POWERED heater. NO WARRANTY — a fault could cause overheating, fire, or damage. Use at your own risk; never run it unattended.
+              DragonBreath is community open firmware for a MAINS-POWERED heater. NO WARRANTY — a fault could cause overheating, fire, or damage. Use at your own risk; never run it unattended.
 
               Before enabling:
               1. Add active cooling to the motherboard (see docs).
-              2. Flash OpenBreath firmware on the Panda Breath and provision its Wi-Fi.
-              3. Give the OpenBreath device a static DHCP lease — Klipper connects by IP.
+              2. Flash DragonBreath firmware on the Panda Breath and provision its Wi-Fi.
+              3. Give the DragonBreath device a static DHCP lease — Klipper connects by IP.
               4. Enter its IP below.
 
-              Advanced: to use a device control token (NVS ctl_token), add a "token:" line to the OpenBreath config after enabling (see docs).
+              Advanced: to use a device control token (NVS ctl_token), add a "token:" line to the DragonBreath config after enabling (see docs).
             inputs:
               - name: ACKNOWLEDGED
                 label: "Type \"I UNDERSTAND\" to confirm you have read the documentation and accept the warranty, safety, and longevity risks"
                 placeholder: "I UNDERSTAND"
                 regex: '^I UNDERSTAND$'
-              - name: OPENBREATH_IP
-                label: OpenBreath Device IP Address
+              - name: DRAGONBREATH_IP
+                label: DragonBreath Device IP Address
                 placeholder: "192.168.1.100"
                 regex: '^((25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])$'
             cmd:
@@ -119,18 +119,18 @@ settings:
               - |
                 if test -f /oem/printer_data/config/extended/klipper/panda_breath.cfg; then
                   echo "ERROR: Panda Auto is currently enabled. Set the chamber heater to"
-                  echo "       Disabled first, then enable OpenBreath."
+                  echo "       Disabled first, then enable DragonBreath."
                   exit 1
                 fi
 
                 echo ""
-                echo ">> Writing OpenBreath configuration..."
+                echo ">> Writing DragonBreath configuration..."
                 mkdir -p /oem/printer_data/config/extended/klipper
-                cp -n /usr/local/share/firmware-config/tweaks/klipper/openbreath.cfg /oem/printer_data/config/extended/klipper/openbreath.cfg
-                /usr/local/bin/extended-config.py add /oem/printer_data/config/extended/klipper/openbreath.cfg openbreath host "${OPENBREATH_IP}"
-                chown lava:lava /oem/printer_data/config/extended/klipper/openbreath.cfg
+                cp -n /usr/local/share/firmware-config/tweaks/klipper/dragonbreath.cfg /oem/printer_data/config/extended/klipper/dragonbreath.cfg
+                /usr/local/bin/extended-config.py add /oem/printer_data/config/extended/klipper/dragonbreath.cfg dragonbreath host "${DRAGONBREATH_IP}"
+                chown lava:lava /oem/printer_data/config/extended/klipper/dragonbreath.cfg
 
                 echo ""
-                echo ">> OpenBreath enabled. Restarting Klipper..."
+                echo ">> DragonBreath enabled. Restarting Klipper..."
                 /etc/init.d/S60klipper restart
         default: disabled
