@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 
 GIT_URL=https://github.com/plastikman/dragonbreath-klipper.git
-# v2 helper (API v2 client) — dragonbreath-klipper main @ #4 (SSE reconnect
-# backoff). Pairs with DragonBreath firmware >= v0.3.0 (flash firmware first,
-# then restart klippy).
-GIT_SHA=af4dfde597a2f504dbe15add98da4f37d5795769
+# v2 helper (API v2 client) — dragonbreath-klipper feat/filtration-fan: adds the
+# fan-only filtration blower as [output_pin dragonbreath_filter]. Pairs with
+# DragonBreath firmware >= v0.6.5 (the `filter` command). Flash firmware first,
+# then restart klippy.
+GIT_SHA=876dbf24c9048dfa66d2a0a9f3b6173f702becc7
 
 if [[ -z "$CREATE_FIRMWARE" ]]; then
   echo "Error: This script should be run within the create_firmware.sh environment."
