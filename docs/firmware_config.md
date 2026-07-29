@@ -53,7 +53,7 @@ Toggle settings directly from the web interface:
 | Cloud | None, OctoEverywhere | Enable Cloud-based remote access (Experimental) |
 | Tweaks | TMC AutoTune, TMC Reduced Current, Object Processing, AFC Stub | Experimental Klipper tweaks ([tweaks](tweaks.md)) |
 | Troubleshooting | Faulty Toolhead Bypass | Temporary toolhead thermistor bypass so the remaining toolheads can still be used ([faulty_toolhead](faulty_toolhead.md)) |
-| RFID Detection System | External, Snapmaker, OpenRFID, OpenRFID (force generic vendor) | Set how filament is detected ([rfid_support](rfid_support.md)) |
+| RFID Detection System | External, Snapmaker, OpenRFID, OpenRFID (force generic vendor) | Set how filament is detected ([RFID Format & Reader Design](design/rfid.md)) |
 
 Changes are applied immediately and relevant services are restarted.
 
@@ -171,7 +171,7 @@ Note: Remote screen requires additional Moonraker configuration. See [Remote Scr
 - `openrfid` - Alternative detection with extended spool/tag support
 - `openrfid-generic` - Same as openrfid, labels all spool vendors as generic
 
-See [Alternative Filament Detection](rfid_support.md#alternative-detection-systems) for setup instructions.
+See [Alternative Filament Detection](design/rfid.md#enabling-openrfid) for setup instructions.
 
 #### [remote_access]
 
