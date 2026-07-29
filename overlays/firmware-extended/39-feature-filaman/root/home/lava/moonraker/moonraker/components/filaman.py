@@ -43,6 +43,11 @@ FILAMENT_DT_STATE_DETECTING = 1
 PUSH_FETCH_ATTEMPTS = 4
 PUSH_FETCH_RETRY_DELAY = 2.0
 
+# A single status update reporting the E position this much lower than the
+# previous one is treated as an axis reset (G92 E0 / SET_POSITION), not a
+# retraction -- even long filament-change retracts stay well under this.
+EXTRUDER_RESET_JUMP_MM = 100.0
+
 # Moonraker renders config templates with '{' / '}' as the Jinja variable
 # delimiters, so a literal brace in a plain value would be stripped. Only
 # expand options that actually reference a template.
@@ -114,6 +119,9 @@ class FilaManManager:
         self._highest_epos: float = 0.0
         self._last_epos: float = 0.0
         self._current_extruder: str = "extruder"
+        # Populated once klippy is ready; empty until then, in which case
+        # extruder validation is skipped rather than rejecting everything.
+        self._known_extruders: set = set()
 
         # Klipper object name ("filament_switch_sensor e0_filament") -> extruder name
         self.filament_sensors: Dict[str, str] = {}
@@ -381,6 +389,10 @@ class FilaManManager:
         objects_list: List[str] = await self.klippy_apis.get_object_list(default=[])
         self._has_filament_detect = "filament_detect" in objects_list
         self._has_print_task_config = "print_task_config" in objects_list
+        self._known_extruders = {
+            name for name in objects_list
+            if name == "extruder" or re.match(r"^extruder\d+$", name)
+        }
         if self.track_filament_sensors:
             self._discover_filament_sensors(objects_list)
 
@@ -443,6 +455,7 @@ class FilaManManager:
     def _handle_status_update(self, status: Dict[str, Any], _: float) -> None:
         toolhead: Optional[Dict[str, Any]] = status.get("toolhead")
         if toolhead is not None:
+            previous_epos = self._last_epos
             epos: float = toolhead.get("position", [0, 0, 0, self._highest_epos])[3]
             self._last_epos = epos
             extr = toolhead.get("extruder", self._current_extruder)
@@ -466,6 +479,12 @@ class FilaManManager:
                 if self.spool_id is not None:
                     self._add_extrusion(self.spool_id, epos - self._highest_epos)
                 self._highest_epos = epos
+            elif previous_epos - epos > EXTRUDER_RESET_JUMP_MM:
+                # A drop this large since the last sample is an E-axis reset
+                # (G92 E0 / SET_POSITION), not a retraction: resync the
+                # baseline so usage tracking continues instead of stalling
+                # until epos climbs back past the pre-reset high-water mark.
+                self._highest_epos = epos
 
         requested = self._record_filament_detect_state(status)
         self._apply_sensor_states(status)
@@ -478,10 +497,7 @@ class FilaManManager:
     # ------------------------------------------------------------------ #
 
     def _discover_filament_sensors(self, objects: List[str]) -> None:
-        known_extruders = {
-            name for name in objects
-            if name == "extruder" or re.match(r"^extruder\d+$", name)
-        }
+        known_extruders = self._known_extruders
 
         for obj_name in objects:
             if not obj_name.startswith(
@@ -774,6 +790,13 @@ class FilaManManager:
         """Assign a spool to a specific extruder."""
         if not isinstance(spool_id, int) and spool_id is not None:
             raise self.server.error("spool_id must be an integer or None")
+        if spool_id is not None and spool_id <= 0:
+            # FilaMan spool IDs are 1-based; treat 0/negative the same as
+            # "no spool" instead of pushing a channel that will never resolve.
+            spool_id = None
+
+        if self._known_extruders and extruder not in self._known_extruders:
+            raise self.server.error(f"Unknown extruder: {extruder}")
 
         old_id = self.extruder_spools.get(extruder)
         if old_id == spool_id and (extruder != self._current_extruder or self.spool_id == spool_id):
