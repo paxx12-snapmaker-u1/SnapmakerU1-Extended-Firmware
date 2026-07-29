@@ -8,7 +8,7 @@ this widget as an isolated, minimal delta on top of stock fluidd.
 
 ## Why this isn't wired into the build yet
 
-`pre-scripts/01-install-fluidd.sh` in this repo downloads the official
+`../pre-scripts/01-install-fluidd.sh` in this repo downloads the official
 `fluidd-core/fluidd` release ZIP and never builds fluidd from source, so an
 existing-patches mechanism here (see `../patches/`) only ever touches already-built
 output (e.g. `index.html`). This patch touches Vue/TypeScript source, so applying it
@@ -30,7 +30,7 @@ out here.
 ## Base and validation
 
 - Diffed against `fluidd-core/fluidd` tag `v1.37.2` — the exact version currently
-  pinned in `pre-scripts/01-install-fluidd.sh`.
+  pinned in `../pre-scripts/01-install-fluidd.sh`.
 - Applied cleanly (`git apply`) to a fresh `v1.37.2` checkout; `pnpm run type-check`
   and `pnpm run lint` both pass with zero errors on the patched tree.
 
@@ -44,5 +44,5 @@ pnpm install
 pnpm run build
 ```
 
-The resulting `dist/` can replace what `pre-scripts/01-install-fluidd.sh` currently
+The resulting `dist/` can replace what `../pre-scripts/01-install-fluidd.sh` currently
 downloads, once this repo has a source-build path for fluidd.
