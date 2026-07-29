@@ -64,6 +64,7 @@ Heavily expanded firmware with extensive features and customization:
 - [RFID Filament Tag Support](rfid_support.md) - NTAG213/215/216 support for OpenSpool format
 - [Alternative Filament Detection](rfid_support.md#alternative-detection-systems) - Alternative detection implementations with extended spool/tag support from Bambu, Creality, Anycubic, and others
 - [Spoolman Integration](spoolman.md) - Automatic filament metadata sync and spool tracking via Spoolman, resolving spools by ID or RFID card UID
+- [FilaMan Integration](filaman.md) - Native spool tracking and filament usage reporting via FilaMan, with full multi-toolhead support and automatic runout detection
 
 **Monitoring & Notifications:**
 
