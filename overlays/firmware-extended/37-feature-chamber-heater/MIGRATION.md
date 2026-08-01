@@ -105,7 +105,12 @@ device-flip is therefore proven — the orchestrator just wraps this POST plus a
 poll-for-`/api/v2/info` and the cfg swap. Stdlib-only (`urllib`/`http.client`), no deps.
 
 ## Consent + the "not yet migrated" state
-Prompt on **both** surfaces; simple **Accept / Deny** (no typed acknowledgement).
+Simple **Accept / Deny** in firmware-config (no typed acknowledgement).
+
+> **Decision gate (later): prompt vs. fully automatic.** We may instead make the
+> conversion **automatic** (no prompt — just migrate on update). Same orchestrator; the
+> only change is dropping the consent gate, so this can be decided at the end without
+> rework. The first-boot `panda_breath.cfg` auto-disable (below) is needed either way.
 - **/firmware-config (web UI) — decided, easy:** the settings-YAML `confirm` block IS the
   Accept (proceed) / Deny (cancel), shown before the migrate `cmd` runs; explains the
   over-WiFi flash + auto-revert-on-failure; streaming `cmd` narrates progress.
