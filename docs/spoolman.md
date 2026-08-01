@@ -35,6 +35,7 @@ automatically when the filament is loaded:
 | [SpoolKid](https://github.com/marko-p/SpoolKid) | [Marco](https://github.com/marko-p) | iOS ([TestFlight beta](https://testflight.apple.com/join/Y4BmejQk); build from source) | Links tag UIDs to spools, including UID-only linking for Mifare Classic and other tags it can't otherwise read | – | [GitHub](https://github.com/marko-p/SpoolKid) (MIT) | [![Ko-fi](https://img.shields.io/badge/Ko--fi-FF5E5B?logo=kofi&logoColor=white)](https://ko-fi.com/spoolkid) |
 | [SpoolTagger](https://codeberg.org/NiftyBits/SpoolTagger) | [NiftyBits](https://codeberg.org/NiftyBits) | Windows, Linux (desktop, ACR122U USB NFC reader) | Links tags to spools (up to 2 tags per spool) | ✅ (see notes) | [Codeberg](https://codeberg.org/NiftyBits/SpoolTagger) (MIT) | [![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-FFDD00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/NiftyBits) |
 | [3DMRP](https://github.com/MKloberg/3dmrp) | [MKloberg](https://github.com/MKloberg) | Self-hosted (Windows), phone via Chrome on Android | Print-farm manager — links tags to spools, NFC scan-to-select; also AFC lane control and U1 touchscreen mirror | – (see notes) | [GitHub](https://github.com/MKloberg/3dmrp) (source) | [![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-FFDD00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/mkloberg) |
+| [Spool Studio](https://github.com/GeorgHo/SpoolStudio) | [GeorgHo](https://github.com/GeorgHo) | Android | Links tags to spools via NFC card UID; writes Paxx12-compatible OpenSpool tags and shows the printer-reported toolhead status | ✅ (see notes) | [GitHub](https://github.com/GeorgHo/SpoolStudio) (MIT) | — |
 
 **Notes:**
 
@@ -48,6 +49,9 @@ automatically when the filament is loaded:
     startup.
   - **3DMRP** — writes the current convention since v0.8.1; earlier links
     are updated on the next rescan.
+  - **Spool Studio** — v3 converts tags written by its own older
+    (pre-SpoolLink) spool-id format after confirmation; v2 stable remains
+    available for older firmware that predates SpoolLink.
 - 3DMRP's Android support is its Chrome-based mobile NFC client (Web NFC
   API); the print-farm server itself runs on Windows only.
 - Apps that write filament data (material, colour, temperatures) to tags
@@ -86,6 +90,23 @@ SET_SPOOL_ID LANE=E0 SPOOL_ID=5
 |-----------|---------|-------------|
 | `LANE` | — | AFC lane name (e.g. `E0`) |
 | `SPOOL_ID` | `0` | Spoolman spool ID; `0` clears the assignment |
+
+## Known Conflicts
+
+- **Leftover pre-SpoolLink Spoolman macros.** If Spoolman was previously
+  wired up by hand (e.g. a community `spoolman_multi_tool`-style Klipper
+  include with `CHANGE_SPOOL` and related macros) before switching to
+  SpoolLink, that file conflicts with the integration and can leave
+  Klipper failing to start with an error such as:
+
+  ```
+  [Errno 2] No such file or directory: '/printer_data/config/variables.cfg'
+  ```
+
+  Rename or remove the old include (e.g. add a `.bak` suffix) before
+  enabling Spoolman here. See
+  [#567](https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware/pull/567#issuecomment-5118303479)
+  for a reported case and workaround.
 
 ## Limitations
 
