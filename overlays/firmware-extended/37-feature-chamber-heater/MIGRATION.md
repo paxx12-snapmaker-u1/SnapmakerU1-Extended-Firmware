@@ -74,14 +74,22 @@ not a probe of the device.
   `wait_for_dragonbreath`, and `migrate` (idempotent: probe→skip-if-done→flash→wait). The
   `--image` default is the bundled path; flash is over the **LAN**, no internet. Probe
   validated by IP against the bench (returns `dragonbreath`).
-- ✅ **`25_settings_..._chamber_heater.yaml`** (edited) — **removed `panda-auto`**; added a
-  **`migrate` option ("Convert to DragonBreath")** whose `cmd` is the orchestrator
-  (read host from the Panda cfg → `dragonbreath_migrate.py migrate` → cfg-swap
-  `panda_breath*`→`dragonbreath.cfg` carrying the host → restart klippy; fails loud, leaves
-  cfg intact on flash failure). Consent = the `confirm` **Accept/Deny** block, **no
-  inputs** (host comes from the existing cfg, so nothing can HTTP-400). `get_cmd` returns
-  `migrate` when `panda_breath.cfg` / `.pending-migration` / `.needs-migration` is present.
-  `dragonbreath` (manual) option kept as the decline→manual escape hatch.
+- ✅ **`25_settings_..._chamber_heater.yaml`** (edited) — **removed `panda-auto`**. Dropdown
+  is now just **Disabled / DragonBreath** (two real end states). `get_cmd`:
+  `dragonbreath.cfg` → `dragonbreath`, else `disabled`. `dragonbreath` (manual) option kept
+  for users who flashed themselves. **The migration is NOT a dropdown option** — see below.
+- ✅ **`24_actions_chamber_heater.yaml`** (new) — the migration is a **quick-action button
+  "Convert to DragonBreath"**, not a dropdown state. WHY: a firmware-config `<select>` fires
+  its `cmd` only `onchange`, so a pre-selected `migrate` state never fired, and the only
+  escapes were destructive (Disabled deletes the migration source). An action button fires on
+  **click**, is gated by `if_cmd: test -f …/.needs-migration` (appears *only* for a pending
+  stock-Panda user, vanishes once converted), and carries the **Accept/Deny** consent as its
+  `confirm` modal (Confirm/Cancel). Its `cmd` is the orchestrator (read host from the Panda
+  cfg → `dragonbreath_migrate.py migrate` → cfg-swap `panda_breath*`→`dragonbreath.cfg`
+  carrying the host → clear pending+flag → restart klippy; fails loud, leaves cfg intact on
+  flash failure). **Validated end-to-end on real hardware (2026-07-31):** stock Panda 1.0.3 →
+  clicked the button → flashed DragonBreath v1.0.2 over LAN → shim carried WiFi+Moonraker →
+  `[dragonbreath]` live (`connected:true`, 36 °C).
 - ✅ **`root/etc/init.d/S58chamber-migration-guard`** (new) — runs **before** S60klipper;
   renames a lingering `panda_breath.cfg`→`.pending-migration` + drops `.needs-migration` so
   klippy starts clean (1.6.0 deleted the `panda_breath.py` module) and the dropdown shows

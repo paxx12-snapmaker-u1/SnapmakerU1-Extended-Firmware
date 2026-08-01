@@ -1,0 +1,73 @@
+quick_actions:
+  chamber_heater:
+    items:
+      convert-to-dragonbreath:
+        label: Convert to DragonBreath
+        description: A stock Panda Breath chamber heater was detected. Convert it to DragonBreath open firmware over Wi-Fi (no USB) to keep it working on this release.
+        # Only shown while a stock Panda conversion is pending. The S58 first-boot guard
+        # sets this flag when it neutralizes a lingering panda_breath.cfg; the conversion
+        # cmd (or an explicit Disabled) clears it, so the button disappears once done.
+        if_cmd: test -f /oem/printer_data/config/extended/klipper/.needs-migration
+        confirm: |
+          CONVERT YOUR CHAMBER HEATER TO DRAGONBREATH (over Wi-Fi — no USB)
+
+          This paxx release removes the old stock Panda Breath integration. To keep your chamber heater working, your Panda Breath device is converted to DragonBreath open firmware. The conversion runs entirely over your local network — no USB cable, and neither the printer nor the Panda needs an internet connection.
+
+          What happens when you Confirm:
+          1. The bundled DragonBreath firmware is flashed to your Panda Breath over Wi-Fi. Your stock firmware is kept in the device's backup slot, so it can always revert to stock.
+          2. The device rejoins your Wi-Fi and Moonraker automatically (saved settings carry over — no re-provisioning).
+          3. Your Klipper config is switched to DragonBreath and Klipper restarts. The old config is kept until DragonBreath is confirmed live, so a failure never leaves you with a dead heater.
+
+          WARNING: A chamber heater raises sustained enclosure temperatures, accelerating wear on electronics and motors beyond their rated conditions — likely NOT warranty-covered. DragonBreath is community open firmware for a MAINS-POWERED heater with NO WARRANTY; never run it unattended. Additional motherboard cooling is required (see docs).
+
+          Confirm to convert now. Cancel to keep the chamber heater disabled (you can convert later, or flash DragonBreath yourself and use the DragonBreath dropdown option).
+        message: "Converting your Panda Breath to DragonBreath (do not power off the printer or the Panda)..."
+        cmd:
+          - bash
+          - -ec
+          - |
+            CFG=/oem/printer_data/config/extended/klipper
+
+            echo ""
+            echo ">> Locating the Panda Breath device..."
+            SRC=""
+            if test -f "$CFG/panda_breath.cfg"; then
+              SRC="$CFG/panda_breath.cfg"
+            elif test -f "$CFG/panda_breath.cfg.pending-migration"; then
+              SRC="$CFG/panda_breath.cfg.pending-migration"
+            fi
+            if test -z "$SRC"; then
+              echo "ERROR: No Panda Breath configuration found — nothing to convert."
+              echo "       If you have already flashed DragonBreath, use the DragonBreath dropdown option."
+              exit 1
+            fi
+            HOST=$(/usr/local/bin/extended-config.py get "$SRC" panda_breath host 2>/dev/null || true)
+            if test -z "$HOST"; then
+              echo "ERROR: Could not read the Panda Breath host/IP from $SRC."
+              echo "       Flash DragonBreath manually and use the DragonBreath dropdown option."
+              exit 1
+            fi
+            echo ">> Panda Breath device: ${HOST}"
+
+            echo ""
+            echo ">> Flashing DragonBreath over Wi-Fi (this can take a minute; do not power off)..."
+            # Idempotent: if the device already reports DragonBreath (a prior run flashed
+            # but didn't finish the cfg swap) it skips the flash. Image is the bundled
+            # local copy — no internet.
+            /usr/local/bin/dragonbreath_migrate.py --host "${HOST}" migrate
+
+            echo ""
+            echo ">> Switching Klipper to DragonBreath..."
+            mkdir -p "$CFG"
+            cp -n /usr/local/share/firmware-config/tweaks/klipper/dragonbreath.cfg "$CFG/dragonbreath.cfg"
+            /usr/local/bin/extended-config.py add "$CFG/dragonbreath.cfg" dragonbreath host "${HOST}"
+            chown lava:lava "$CFG/dragonbreath.cfg"
+
+            # DragonBreath is live and configured — retire the Panda config + flag so the
+            # Convert button disappears and the heater dropdown reflects DragonBreath.
+            rm -f "$CFG/panda_breath.cfg" "$CFG/panda_breath.cfg.pending-migration"
+            rm -f "$CFG/.needs-migration"
+
+            echo ""
+            echo ">> Conversion complete. Restarting Klipper..."
+            /etc/init.d/S60klipper restart
