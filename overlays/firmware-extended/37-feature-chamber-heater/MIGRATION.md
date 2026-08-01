@@ -104,6 +104,24 @@ rollback), and the v1.0.2 shim carried **WiFi + Moonraker** over automatically. 
 device-flip is therefore proven — the orchestrator just wraps this POST plus a
 poll-for-`/api/v2/info` and the cfg swap. Stdlib-only (`urllib`/`http.client`), no deps.
 
+## Consent + the "not yet migrated" state
+- **Confirmation prompt = the settings-YAML `confirm` block** (as the existing options
+  use), shown in the firmware-config **web UI** before the migrate `cmd` runs — explains
+  the over-WiFi flash + auto-revert-on-failure — plus an `inputs` typed acknowledgement
+  (`^I UNDERSTAND$`, consistent with the mains-heater options). Streaming `cmd` narrates
+  progress. (A native U1 **touchscreen** banner is a bigger lift — screen-app integration
+  — and is an optional follow-up; the web-UI confirm ships first.)
+- **Decline → Disabled:** if the user doesn't confirm (or picks Disabled), the chamber
+  heater is set to **Disabled** (clean, no broken heater object) and the manual route
+  stays open (flash DragonBreath themselves → pick the DragonBreath option). No forced
+  flash without consent.
+- **First-boot safety (must-have):** 1.6.0 removes the Panda Klipper module at build time,
+  so a user still carrying `panda_breath.cfg` who hasn't migrated would make **klippy fail
+  to load `[panda_breath]`**. A first-boot runtime hook must **auto-disable a lingering
+  `panda_breath.cfg`** (comment/rename so klippy starts clean) and set a "migration
+  pending" flag — which is what makes the migrate action appear (`if_cmd`-gated). So the
+  un-consented state is a *disabled* heater, never a *broken printer*.
+
 ## Safety / rollback (forced flash)
 Stock always bootable via **boot-inactive** (stock stays in the inactive slot; bootloader
 + partition table untouched); dual-OTA auto-rollback on a bad image; **staged config**
@@ -112,8 +130,10 @@ a silent dead heater.
 
 ## Open questions
 1. ~~Exact stock update request~~ — **RESOLVED + validated on 1.0.3 and 1.0.4** (POST `/ota`, above).
-2. Consent/trigger: auto-detect-and-prompt on the dropdown vs a one-tap "Convert" option
-   (recommended: one tap, since it's a forced firmware flash).
+2. ~~Consent/trigger~~ — **DECIDED**: an `if_cmd`-gated "Convert to DragonBreath" action
+   with a `confirm` block + typed acknowledgement in firmware-config; **decline → Disabled**;
+   **first-boot auto-disables a lingering `panda_breath.cfg`** so the un-consented state is
+   a disabled heater, not a broken printer. See "Consent + the 'not yet migrated' state".
 3. Settings carry-over: which stock settings map to DragonBreath (setpoint, AUTO
    threshold, filter) — enumerate + default the rest.
 4. `host` value: `dragonbreath.local` (mDNS) vs the device's DHCP IP (same MAC usually
