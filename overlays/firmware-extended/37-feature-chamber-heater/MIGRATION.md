@@ -76,17 +76,26 @@ as the stock-vs-DragonBreath discriminator.
   DragonBreath. Per Justin: **SSH-iterate the scripts on a live U1, CI-build the image only
   once for the final test.**
 
-## ⚠ The one open unknown — the stock firmware-update call
-The stock Panda's web UI *does* accept a firmware upload over the network (users OTA'd
-DragonBreath 1.0.x that way), but this overlay has **no** flasher and the exact request
-isn't captured here. Two candidates to confirm from the stock firmware (we have the
-binary + a bench device):
-- an **HTTP `POST /ota`** (raw octet-stream; per the `dragonbreath-webflash-installer`
-  RE notes), or
-- a **`/ws` command** that streams the image.
+## The stock firmware-update call — RESOLVED + validated ✅
+RE'd from the stock web UI (`ota_post_file`), and **flashed end-to-end on a bench device
+from BOTH stock 1.0.3 and 1.0.4 → DragonBreath, no USB** (same app binary → identical
+`/ota` handler on both). It's a plain HTTP POST:
 
-**This is the first implementation task**: RE the exact endpoint/headers/chunking and
-validate it flashes `dragonbreath-<ver>.bin` on the bench, before wiring the orchestrator.
+```
+POST /ota HTTP/1.1
+Host: <panda-ip>
+Content-Type: application/octet-stream;charset=UTF-8
+OTA-Type: ota_fw
+
+<raw dragonbreath-<ver>.bin>          # size ceiling 0x480000 (4.5 MB); our image ~1.08 MB
+```
+e.g. `curl -X POST -H 'OTA-Type: ota_fw' -H 'Content-Type: application/octet-stream' \
+      --data-binary @dragonbreath.bin http://<ip>/ota` → **HTTP 200**, stock writes it
+to the **inactive OTA slot** and reboots into it. Verified on the bench: device came up
+`project=dragonbreath`, `inactive_slot=panda_breath` (stock intact for boot-inactive
+rollback), and the v1.0.2 shim carried **WiFi + Moonraker** over automatically. The whole
+device-flip is therefore proven — the orchestrator just wraps this POST plus a
+poll-for-`/api/v2/info` and the cfg swap. Stdlib-only (`urllib`/`http.client`), no deps.
 
 ## Safety / rollback (forced flash)
 Stock always bootable via **boot-inactive** (stock stays in the inactive slot; bootloader
@@ -95,7 +104,7 @@ Stock always bootable via **boot-inactive** (stock stays in the inactive slot; b
 a silent dead heater.
 
 ## Open questions
-1. Exact stock update request (above) — RE + bench-validate first.
+1. ~~Exact stock update request~~ — **RESOLVED + validated on 1.0.3 and 1.0.4** (POST `/ota`, above).
 2. Consent/trigger: auto-detect-and-prompt on the dropdown vs a one-tap "Convert" option
    (recommended: one tap, since it's a forced firmware flash).
 3. Settings carry-over: which stock settings map to DragonBreath (setpoint, AUTO
