@@ -1,0 +1,51 @@
+#!/bin/sh
+#
+# First-boot / every-boot safety guard for the Panda -> DragonBreath migration.
+#
+# paxx 1.6.0 removes the stock Panda `panda_breath.py` Klipper module. A user who
+# updated while still on stock Panda carries a `panda_breath.cfg` with a
+# `[panda_breath]` section that klippy can no longer load — klippy would fail to
+# start, bricking the whole printer's motion, not just the heater.
+#
+# This guard runs BEFORE S60klipper. If it finds a live `panda_breath.cfg`, it
+# renames it aside (so `[panda_breath]` is not parsed) and drops a `.needs-migration`
+# flag. klippy then starts clean, and the firmware-config chamber-heater dropdown
+# shows "Convert to DragonBreath" (get_cmd keys off exactly these files). The renamed
+# file is KEPT — the migrate action reads the device host/IP back out of it.
+#
+# Idempotent: once renamed, later boots are a no-op.
+
+CFG=/oem/printer_data/config/extended/klipper
+
+start() {
+    [ -d "$CFG" ] || return 0
+
+    if [ -f "$CFG/panda_breath.cfg" ]; then
+        echo "chamber-migration-guard: neutralizing lingering panda_breath.cfg (module removed in this release)"
+        mv -f "$CFG/panda_breath.cfg" "$CFG/panda_breath.cfg.pending-migration"
+        touch "$CFG/.needs-migration"
+        chown lava:lava "$CFG/panda_breath.cfg.pending-migration" "$CFG/.needs-migration" 2>/dev/null
+        sync
+    elif [ -f "$CFG/panda_breath.cfg.pending-migration" ]; then
+        # Already neutralized on a prior boot; make sure the flag is present so the
+        # dropdown still offers the conversion.
+        [ -f "$CFG/.needs-migration" ] || touch "$CFG/.needs-migration"
+    fi
+}
+
+case "$1" in
+    start)
+        start
+        ;;
+    stop)
+        ;;
+    restart|reload)
+        start
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|restart}"
+        exit 1
+        ;;
+esac
+
+exit 0

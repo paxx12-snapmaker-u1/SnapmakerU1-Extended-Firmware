@@ -60,28 +60,48 @@ not a probe of the device.
    via Moonraker; then mark the dropdown DragonBreath. On failure, keep the old cfg and
    report — never leave it half-swapped.
 
-## Components to build (files, modeled on PR 604)
-- **`scripts/03-bundle-dragonbreath-firmware.sh`** (build-time) — `cache_file.sh` the
-  pinned `dragonbreath-<ver>.bin` (from the GitHub release, checksum-verified) into
-  `root/usr/local/share/chamber-heater/dragonbreath.bin`. Version pinned alongside the
-  `GIT_SHA` pin in `01-install-dragonbreath.sh`.
-- **`root/usr/local/bin/panda_breath_cli.py`** (extend) OR a new
-  **`dragonbreath_migrate.py`** — add the network flash: POST the `.bin` to stock's update
-  endpoint + progress readback. Keep it stdlib-only (no new deps), like the existing CLI.
-  Also the detect/classify helper (info-v2 probe + `fw_version`).
-- **`25_settings_..._chamber_heater.yaml`** (edit) — **remove the `panda-auto` option**;
-  the `dragonbreath` option's `cmd` gains the full detect→flash→verify→cfg-swap→reload
-  orchestration (streaming progress to the web UI); `confirm` text reframed from "flash
-  it yourself first" to "this upgrades your chamber heater over WiFi, reverts to stock if
-  anything fails"; optionally an `if_cmd`-gated "Convert to DragonBreath" that only shows
-  when a stock Panda is detected. `get_cmd` detection unchanged (cfg-file presence).
-- **Remove Panda:** delete `scripts/02-install-panda-breath.sh`, the `panda_breath.py`
-  install, `panda_breath.cfg` + `panda_breath_heater_auto.cfg`, and the `panda-auto`
-  branch; retire `docs/panda_breath.md` in favour of a DragonBreath doc.
-- **`test/run.sh`** (extend) — after `scp root/` + klippy restart, invoke the migration
-  entrypoint over SSH against a bench device (stock Panda) and assert it ends up on
-  DragonBreath. Per Justin: **SSH-iterate the scripts on a live U1, CI-build the image only
-  once for the final test.**
+## Components — SCAFFOLDED (local, on `feature/dragonbreath-migration`)
+- ✅ **`scripts/03-bundle-dragonbreath-firmware.sh`** (build-time) — `cache_file.sh` the
+  pinned `dragonbreath-v1.0.2.bin` (GitHub release, sha256-verified) into
+  `root/usr/local/share/chamber-heater/dragonbreath.bin`. **Bundled at build time, not
+  fetched at migrate time** — the printer/Panda are never assumed to have internet; only
+  the CI/build host does. Shipped **uncompressed** (~1.08 MB in a ~270 MB image; a
+  compiled ESP `.bin` compresses to ~0.6 MB and a compressed bundle would add a decompress
+  failure mode on the U1 at migrate time — not worth ~0.4 MB). Version pinned alongside
+  the `GIT_SHA` pin in `01-install-dragonbreath.sh`.
+- ✅ **`root/usr/local/bin/dragonbreath_migrate.py`** (new, stdlib-only) — `probe` (GET
+  `/api/v2/info`, is it DragonBreath?), `flash` (POST the local `.bin` to stock `/ota`),
+  `wait_for_dragonbreath`, and `migrate` (idempotent: probe→skip-if-done→flash→wait). The
+  `--image` default is the bundled path; flash is over the **LAN**, no internet. Probe
+  validated by IP against the bench (returns `dragonbreath`).
+- ✅ **`25_settings_..._chamber_heater.yaml`** (edited) — **removed `panda-auto`**; added a
+  **`migrate` option ("Convert to DragonBreath")** whose `cmd` is the orchestrator
+  (read host from the Panda cfg → `dragonbreath_migrate.py migrate` → cfg-swap
+  `panda_breath*`→`dragonbreath.cfg` carrying the host → restart klippy; fails loud, leaves
+  cfg intact on flash failure). Consent = the `confirm` **Accept/Deny** block, **no
+  inputs** (host comes from the existing cfg, so nothing can HTTP-400). `get_cmd` returns
+  `migrate` when `panda_breath.cfg` / `.pending-migration` / `.needs-migration` is present.
+  `dragonbreath` (manual) option kept as the decline→manual escape hatch.
+- ✅ **`root/etc/init.d/S58chamber-migration-guard`** (new) — runs **before** S60klipper;
+  renames a lingering `panda_breath.cfg`→`.pending-migration` + drops `.needs-migration` so
+  klippy starts clean (1.6.0 deleted the `panda_breath.py` module) and the dropdown shows
+  the conversion. Idempotent. So an un-migrated user gets a *disabled* heater, never a
+  *broken printer*.
+- ✅ **Removed Panda:** deleted `scripts/02-install-panda-breath.sh`, `panda_breath_cli.py`,
+  `panda_breath.cfg`, `panda_breath_heater_auto.cfg`, and the `panda-auto` branch.
+- ✅ **`test/run.sh`** (extended) — SSH-pushes the overlay, stages a local `dragonbreath.bin`
+  onto the device (build-time bundle is skipped in the iterate path), runs the guard +
+  klippy restart, and prints how to trigger the conversion. Per @justinh-rahb:
+  **SSH-iterate on a live U1, CI-build the image only once for the final test.**
+
+## End-to-end validation plan (the final step — real cross-version migration)
+Downgrade the U1 to **paxx 1.4.1** (still ships the stock Panda path), bind a real Panda
+Breath, then **update off this `feature/dragonbreath-migration` branch** — reproducing an
+actual Panda user being force-migrated on update. Assert: guard neutralizes the Panda cfg,
+klippy starts clean, "Convert to DragonBreath" appears, Accept flashes the bundled image
+over Wi-Fi (no internet), the device comes up `project=dragonbreath` with WiFi+Moonraker
+carried by the v1.0.2 shim, cfg swaps, and `[dragonbreath]` loads live. CI-build the image
+once for this run.
 
 ## The stock firmware-update call — RESOLVED + validated ✅
 RE'd from the stock web UI (`ota_post_file`), and **flashed end-to-end on a bench device
