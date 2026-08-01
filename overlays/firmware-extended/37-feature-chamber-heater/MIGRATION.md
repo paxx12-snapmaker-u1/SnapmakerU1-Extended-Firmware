@@ -105,12 +105,21 @@ device-flip is therefore proven — the orchestrator just wraps this POST plus a
 poll-for-`/api/v2/info` and the cfg swap. Stdlib-only (`urllib`/`http.client`), no deps.
 
 ## Consent + the "not yet migrated" state
-- **Confirmation prompt = the settings-YAML `confirm` block** (as the existing options
-  use), shown in the firmware-config **web UI** before the migrate `cmd` runs — explains
-  the over-WiFi flash + auto-revert-on-failure — plus an `inputs` typed acknowledgement
-  (`^I UNDERSTAND$`, consistent with the mains-heater options). Streaming `cmd` narrates
-  progress. (A native U1 **touchscreen** banner is a bigger lift — screen-app integration
-  — and is an optional follow-up; the web-UI confirm ships first.)
+Prompt on **both** surfaces; simple **Accept / Deny** (no typed acknowledgement).
+- **/firmware-config (web UI) — decided, easy:** the settings-YAML `confirm` block IS the
+  Accept (proceed) / Deny (cancel), shown before the migrate `cmd` runs; explains the
+  over-WiFi flash + auto-revert-on-failure; streaming `cmd` narrates progress.
+- **U1 main touchscreen — wanted, mechanism UNRESOLVED.** The main screen is **Snapmaker's
+  native UI** drawing to `/dev/fb0`; paxx only *mirrors* it (`fb-http` in `screen-apps`,
+  served at `127.0.0.1:8092`) and does **not** render it. There is **no modal/notification
+  hook in the overlays** (no KlipperScreen/Guppy/action-prompt support). So an interactive
+  Accept/Deny on the native screen is not a simple injection — it depends on whether that
+  screen surfaces Klipper `M117`/messages/action-prompts or exposes a notification API.
+  **Determine this on a LIVE U1** (read-only: what process draws `/dev/fb0`, does the
+  native screen show Klipper messages/prompts, any notify path) before designing it.
+  Likely outcomes, best→worst: a Klipper **action-prompt** with Accept/Deny buttons (if
+  the screen renders it) → a text **notice** via `M117`/Klipper message that directs the
+  user to Settings (non-interactive) → real screen-stack integration (bigger lift).
 - **Decline → Disabled:** if the user doesn't confirm (or picks Disabled), the chamber
   heater is set to **Disabled** (clean, no broken heater object) and the manual route
   stays open (flash DragonBreath themselves → pick the DragonBreath option). No forced
@@ -130,10 +139,10 @@ a silent dead heater.
 
 ## Open questions
 1. ~~Exact stock update request~~ — **RESOLVED + validated on 1.0.3 and 1.0.4** (POST `/ota`, above).
-2. ~~Consent/trigger~~ — **DECIDED**: an `if_cmd`-gated "Convert to DragonBreath" action
-   with a `confirm` block + typed acknowledgement in firmware-config; **decline → Disabled**;
-   **first-boot auto-disables a lingering `panda_breath.cfg`** so the un-consented state is
-   a disabled heater, not a broken printer. See "Consent + the 'not yet migrated' state".
+2. Consent — firmware-config **Accept/Deny** DECIDED (`if_cmd`-gated Convert action +
+   `confirm`; decline → Disabled; first-boot auto-disables a lingering `panda_breath.cfg`).
+   **U1 touchscreen prompt still open** — mechanism must be found on a live U1 (native
+   Snapmaker screen; no overlay hook). See "Consent + the 'not yet migrated' state".
 3. Settings carry-over: which stock settings map to DragonBreath (setpoint, AUTO
    threshold, filter) — enumerate + default the rest.
 4. `host` value: `dragonbreath.local` (mDNS) vs the device's DHCP IP (same MAC usually
