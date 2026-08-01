@@ -109,17 +109,24 @@ Prompt on **both** surfaces; simple **Accept / Deny** (no typed acknowledgement)
 - **/firmware-config (web UI) — decided, easy:** the settings-YAML `confirm` block IS the
   Accept (proceed) / Deny (cancel), shown before the migrate `cmd` runs; explains the
   over-WiFi flash + auto-revert-on-failure; streaming `cmd` narrates progress.
-- **U1 main touchscreen — wanted, mechanism UNRESOLVED.** The main screen is **Snapmaker's
-  native UI** drawing to `/dev/fb0`; paxx only *mirrors* it (`fb-http` in `screen-apps`,
-  served at `127.0.0.1:8092`) and does **not** render it. There is **no modal/notification
-  hook in the overlays** (no KlipperScreen/Guppy/action-prompt support). So an interactive
-  Accept/Deny on the native screen is not a simple injection — it depends on whether that
-  screen surfaces Klipper `M117`/messages/action-prompts or exposes a notification API.
-  **Determine this on a LIVE U1** (read-only: what process draws `/dev/fb0`, does the
-  native screen show Klipper messages/prompts, any notify path) before designing it.
-  Likely outcomes, best→worst: a Klipper **action-prompt** with Accept/Deny buttons (if
-  the screen renders it) → a text **notice** via `M117`/Klipper message that directs the
-  user to Settings (non-interactive) → real screen-stack integration (bigger lift).
+- **U1 main touchscreen — NOT practical (probed live on the U1; verdict).** The main
+  screen is **Snapmaker's closed `/usr/bin/gui`** binary; paxx only *mirrors* it
+  (`fb-http`, viewable at `<ip>/screen/snapshot`), it doesn't render it. Investigation:
+  - The gui talks **Moonraker JSON-RPC tunneled over MQTT** (`127.0.0.1:1883`, topics
+    `<serial>STFT/request|response|status|notification`, `LAVA/notification`). It is a
+    *client* that queries `printer.objects.query` and receives `notify_status_update`
+    pushes.
+  - **It does NOT surface arbitrary messages:** Klipper `M117` and `RESPOND` produced
+    **nothing** on screen. Its dialogs (home, print, the firmware **upgrade dialog**) are
+    **hardcoded gui logic tied to specific Snapmaker state**, not a generic "show
+    dialog/toast(text, buttons)" API on the bus.
+  - So a custom on-screen prompt requires either **reversing/patching the closed `gui`**
+    (big lift, breaks on any Snapmaker stock update) or **hijacking the native
+    firmware-upgrade dialog** (wrong + dangerous — it runs `systemUpgrade.sh` on the
+    SoC/MCU). No clean hook exists.
+  - **Verdict: don't do the touchscreen prompt.** The consent lives in **firmware-config**
+    (Accept/Deny). If an on-screen nudge is ever wanted, it's a standalone RE project
+    against Snapmaker's closed UI, out of scope here.
 - **Decline → Disabled:** if the user doesn't confirm (or picks Disabled), the chamber
   heater is set to **Disabled** (clean, no broken heater object) and the manual route
   stays open (flash DragonBreath themselves → pick the DragonBreath option). No forced
@@ -139,10 +146,11 @@ a silent dead heater.
 
 ## Open questions
 1. ~~Exact stock update request~~ — **RESOLVED + validated on 1.0.3 and 1.0.4** (POST `/ota`, above).
-2. Consent — firmware-config **Accept/Deny** DECIDED (`if_cmd`-gated Convert action +
-   `confirm`; decline → Disabled; first-boot auto-disables a lingering `panda_breath.cfg`).
-   **U1 touchscreen prompt still open** — mechanism must be found on a live U1 (native
-   Snapmaker screen; no overlay hook). See "Consent + the 'not yet migrated' state".
+2. ~~Consent~~ — **DECIDED**: firmware-config **Accept/Deny** (`if_cmd`-gated Convert
+   action + `confirm`; decline → Disabled; first-boot auto-disables a lingering
+   `panda_breath.cfg`). **U1 touchscreen prompt = NOT doing it** — live probe showed the
+   closed Snapmaker `gui` has no clean way to display a custom prompt (ignores M117/
+   RESPOND; hardcoded dialogs only). See "Consent + the 'not yet migrated' state".
 3. Settings carry-over: which stock settings map to DragonBreath (setpoint, AUTO
    threshold, filter) — enumerate + default the rest.
 4. `host` value: `dragonbreath.local` (mDNS) vs the device's DHCP IP (same MAC usually
