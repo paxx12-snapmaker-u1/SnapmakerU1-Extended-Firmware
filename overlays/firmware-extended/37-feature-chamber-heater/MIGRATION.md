@@ -27,14 +27,21 @@ conversion lives; it builds on PR 604's structure.
 
 ## The conversion flow (runtime, on the U1)
 Idempotent + resumable; consent-gated; fails loud (a quietly-dead heater after a forced
-update is the worst outcome). Reuses the existing stdlib WS client + `fw_version` readback
-as the stock-vs-DragonBreath discriminator.
+update is the worst outcome).
 
-1. **Detect / classify** the device at the user's IP (or `PandaBreath.local` /
-   `dragonbreath.local`):
-   - `GET http://<ip>/api/v2/info` answers `project=dragonbreath` → **already migrated, skip.**
-   - stock WS `version` returns `V1.0.3`/`V1.0.4` → **convert.**
-   - unreachable → surface "needs attention", let the user retry.
+**No device-firmware detection is needed.** Mainline paxx never shipped DragonBreath —
+only testers run it (via the PR 604 build), and they already have `dragonbreath.cfg`. So
+the population is unambiguous and the existing host-side `get_cmd` already classifies it:
+`panda_breath.cfg` present ⇒ **stock user ⇒ migrate**; `dragonbreath.cfg` present ⇒
+already on DragonBreath ⇒ **skip**; neither ⇒ disabled. The trigger is the config state,
+not a probe of the device.
+
+1. **Read the device host** from `panda_breath.cfg` (`host`, e.g. `PandaBreath.local` or
+   the saved IP) — that's where we POST. One small **idempotency/resume guard**: a quick
+   `GET http://<host>/api/v2/info` — if it *already* answers `project=dragonbreath` (a
+   prior run flashed but didn't finish the cfg-swap), **skip the flash and jump to the cfg
+   swap.** This is "already done?", not "is it stock?". Unreachable ⇒ surface "needs
+   attention" and let the user retry.
 2. **Flash** the bundled `dragonbreath-<ver>.bin` to the stock firmware-update endpoint
    (⚠ **the one thing to RE — see below**). Stock writes it to the inactive OTA slot and
    reboots into it; the **stock app stays in the other slot** (boot-inactive rollback,
