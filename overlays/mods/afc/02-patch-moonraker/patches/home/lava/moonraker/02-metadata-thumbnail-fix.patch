@@ -1,0 +1,308 @@
+From 490df1c9397bbd16c4543e7d71c7f737eb4a7c70 Mon Sep 17 00:00:00 2001
+From: jimmyjon711 <jcmadill1@gmail.com>
+Date: Thu, 23 Jul 2026 22:11:52 -0700
+Subject: [PATCH 10/10] Fixing thumbnails to work for fluidd/mainsail and for
+ screen
+
+---
+ moonraker/components/file_manager/metadata.py | 215 ++++++++++++------
+ 1 file changed, 149 insertions(+), 66 deletions(-)
+
+diff --git a/moonraker/components/file_manager/metadata.py b/moonraker/components/file_manager/metadata.py
+index d1b868f..df3fa41 100644
+--- a/moonraker/components/file_manager/metadata.py
++++ b/moonraker/components/file_manager/metadata.py
+@@ -248,6 +248,18 @@ class BaseSlicer(object):
+     def parse_filament_weights(self) -> Optional[List[float]]:
+         return None
+ 
++    def parse_printer_vendor(self) -> Optional[str]:
++        return None
++
++    def parse_printer_model(self) -> Optional[str]:
++        return None
++
++    def parse_printer_variant(self) -> Optional[str]:
++        return None
++
++    def parse_profile_version(self) -> Optional[str]:
++        return None
++
+     def parse_filament_retract_length_toolchange(self) -> Optional[List[float]]:
+         return None
+ 
+@@ -260,6 +272,9 @@ class BaseSlicer(object):
+     def parse_filament_colors(self) -> Optional[List[str]]:
+         return None
+ 
++    def parse_filament_change_count(self) -> Optional[int]:
++        return None
++
+     def parse_extruder_colors(self) -> Optional[List[str]]:
+         return None
+ 
+@@ -288,51 +303,83 @@ class BaseSlicer(object):
+         return None
+ 
+     def parse_thumbnails(self) -> Optional[List[Dict[str, Any]]]:
++        # Newer slicers (eg. recent OrcaSlicer/BambuStudio builds) can tag
++        # thumbnail blocks with a format suffix, e.g. "thumbnail_JPG begin
++        # ... thumbnail_JPG end" or "thumbnail_QOI begin ... end". A plain
++        # "thumbnail begin ... end" is assumed to be png.
++        pattern = r"(thumbnail(?:_[A-Za-z0-9]+)?) begin([;/\+=\w\s]+?); \1 end"
++        thumb_matches: List[Any] = []
+         for data in [self.header_data, self.footer_data]:
+-            thumb_matches: List[str] = re.findall(
+-                r"; thumbnail begin[;/\+=\w\s]+?; thumbnail end", data)
++            thumb_matches = list(re.finditer(pattern, data))
+             if thumb_matches:
+                 break
+         else:
+             return None
+-        # Create the top-level .thumbs directory
++
++        # Match mainline moonraker: .thumbs lives as a sibling directory
++        # right next to the gcode file itself. This is what Fluidd/Mainsail
++        # expect when resolving a thumbnail's relative_path.
+         file_dir = os.path.dirname(self.path)
++        thumb_dir = os.path.join(file_dir, ".thumbs")
+ 
+-        # Look for "gcodes" directory in the path as root_dir
++        if not os.path.exists(thumb_dir):
++            try:
++                os.mkdir(thumb_dir)
++            except Exception:
++                logger.info(f"Unable to create thumb dir: {thumb_dir}")
++                return None
++
++        def rel_thumb_path_for(name: str) -> str:
++            return os.path.join(".thumbs", name)
++
++        # The Snapmaker U1 screens don't consistently resolve thumbnails via
++        # the JSON relative_path - the file-selection screen looks for a
++        # 96x96 and the Filament Setup screen looks for a 300x300, both
++        # directly out of a single flat .thumbs directory at the root of
++        # the "gcodes" folder (the layout the original Snapmaker firmware
++        # patch used), regardless of which subfolder the gcode file itself
++        # lives in.
+         path_parts = self.path.split(os.sep)
+         gcodes_index = -1
+         for i, part in enumerate(path_parts):
+             if part == "gcodes":
+                 gcodes_index = i
+                 break
++        root_dir = (
++            os.sep.join(path_parts[:gcodes_index + 1])
++            if gcodes_index != -1 else file_dir
++        )
++        root_thumb_dir = os.path.join(root_dir, ".thumbs")
+ 
+-        if gcodes_index != -1:
+-            # Found the "gcodes" directory
+-            root_dir = os.sep.join(path_parts[:gcodes_index + 1])
+-        else:
+-            # No "gcodes" directory found, use the file's directory as root_dir
+-            root_dir = file_dir
+-
+-        thumb_dir = os.path.join(root_dir, ".thumbs")
++        try:
++            os.makedirs(root_thumb_dir, exist_ok=True)
++        except Exception:
++            logger.info(f"Unable to create root thumb dir: {root_thumb_dir}")
+ 
+-        if not os.path.exists(thumb_dir):
++        def mirror_to_root(name: str, src_path: str) -> None:
++            if os.path.normpath(root_thumb_dir) == os.path.normpath(thumb_dir):
++                return
+             try:
+-                os.mkdir(thumb_dir)
+-            except Exception:
+-                logger.info(f"Unable to create thumb dir: {thumb_dir}")
+-                return None
+-
+-        # Calculate the path relative to root_dir
+-        rel_path = os.path.relpath(file_dir, root_dir)
+-        if rel_path != ".":
+-            thumb_dir = os.path.join(thumb_dir, rel_path)
+-            os.makedirs(thumb_dir, exist_ok=True)
++                shutil.copyfile(src_path, os.path.join(root_thumb_dir, name))
++            except Exception as e:
++                logger.info(f"Unable to mirror thumbnail to root: {e}")
+ 
+         thumb_base = os.path.splitext(os.path.basename(self.path))[0]
+         parsed_matches: List[Dict[str, Any]] = []
++        # Fluidd/Mainsail's file list expects a small 32x32 preview. The
++        # Snapmaker U1 file-selection screen expects a 96x96 preview, and
++        # its Filament Setup screen expects a 300x300 preview. Track all
++        # three so we only synthesize the ones that aren't already
++        # embedded by the slicer.
++        has_miniature: bool = False
+         has_medium: bool = False
++        has_full: bool = False
+         for match in thumb_matches:
+-            lines = re.split(r"\r?\n", match.replace('; ', ''))
++            ext = match.group(1).partition("_")[2].lower() or "png"
++            if ext not in SUPPORTED_THUMB_FORMATS:
++                logger.info(f"Unsupported thumbnail extension: {ext}")
++                continue
++            lines = re.split(r"\r?\n", match.group(2).replace('; ', ''))
+             info = regex_find_ints(r"(%D)", lines[0])
+             data = "".join(lines[1:-1])
+             if len(info) != 3:
+@@ -345,54 +392,85 @@ class BaseSlicer(object):
+                     f"MetadataError: Thumbnail Size Mismatch: "
+                     f"detected {info[2]}, actual {len(data)}")
+                 continue
+-            thumb_name = f"{thumb_base}-{info[0]}x{info[1]}.png"
++            dest_ext = FMT_CONV_MAP.get(ext, ext)
++            thumb_name = f"{thumb_base}-{info[0]}x{info[1]}.{dest_ext}"
+             thumb_path = os.path.join(thumb_dir, thumb_name)
+-
+-            # Calculate the thumbnail path relative to the gcode file's directory
+-            if file_dir == root_dir:
+-                rel_thumb_path = os.path.join(".thumbs", thumb_name)
++            rel_thumb_path = rel_thumb_path_for(thumb_name)
++
++            raw = base64.b64decode(data.encode())
++            if dest_ext != ext:
++                # Convert image. Format is determined by destination file
++                # extension. Only formats supported by Pillow should be used.
++                with Image.open(io.BytesIO(raw)) as im:
++                    im.save(thumb_path)
+             else:
+-                rel_path_from_root = os.path.relpath(file_dir, root_dir)
+-                rel_thumb_path = os.path.join(".thumbs", rel_path_from_root, thumb_name)
+-
+-            with _sync_open(thumb_path, "wb") as f:
+-                f.write(base64.b64decode(data.encode()))
++                with _sync_open(thumb_path, "wb") as f:
++                    f.write(raw)
++            if (info[0], info[1]) in ((96, 96), (300, 300)):
++                mirror_to_root(thumb_name, thumb_path)
+             parsed_matches.append({
+                 'width': info[0], 'height': info[1],
+                 'size': os.path.getsize(thumb_path),
+                 'relative_path': rel_thumb_path})
++            if info[0] == 32 and info[1] == 32:
++                has_miniature = True
+             if info[0] == 96 and info[1] == 96:
+                 has_medium = True
+-        if len(parsed_matches) > 0 and not has_medium:
+-            # find the largest thumb index
++            if info[0] == 300 and info[1] == 300:
++                has_full = True
++
++        if not parsed_matches:
++            return None
++
++        if not has_miniature or not has_medium or not has_full:
++            # find the largest embedded thumbnail to downscale from
+             largest_match = parsed_matches[0]
+             for item in parsed_matches:
+                 if item['size'] > largest_match['size']:
+                     largest_match = item
+-            # Create miniature thumbnail if one does not exist
+             thumb_full_name = largest_match['relative_path'].split("/")[-1]
+-            thumb_path = os.path.join(thumb_dir, f"{thumb_full_name}")
+-
+-            # Calculate the thumbnail path relative to the gcode file's directory
+-            if file_dir == root_dir:
+-                rel_path_medium = os.path.join(".thumbs", f"{thumb_base}-96x96.png")
+-            else:
+-                rel_path_from_root = os.path.relpath(file_dir, root_dir)
+-                rel_path_medium = os.path.join(".thumbs", rel_path_from_root, f"{thumb_base}-96x96.png")
+-
+-            thumb_path_medium = os.path.join(
+-                thumb_dir, f"{thumb_base}-96x96.png")
+-            # read file
++            largest_thumb_path = os.path.join(thumb_dir, thumb_full_name)
+             try:
+-                with Image.open(thumb_path) as im:
+-                    # Create 96x96 thumbnail
+-                    im.thumbnail((96, 96))
+-                    im.save(thumb_path_medium, format="PNG")
+-                    parsed_matches.insert(0, {
+-                        'width': im.width, 'height': im.height,
+-                        'size': os.path.getsize(thumb_path_medium),
+-                        'relative_path': rel_path_medium
+-                    })
++                with Image.open(largest_thumb_path) as src_im:
++                    if not has_miniature:
++                        small_name = f"{thumb_base}-32x32.png"
++                        thumb_path_small = os.path.join(thumb_dir, small_name)
++                        with src_im.copy() as im:
++                            im.thumbnail((32, 32))
++                            im.save(thumb_path_small, format="PNG")
++                        parsed_matches.insert(0, {
++                            'width': im.width, 'height': im.height,
++                            'size': os.path.getsize(thumb_path_small),
++                            'relative_path': rel_thumb_path_for(small_name)
++                        })
++                    if not has_medium:
++                        medium_name = f"{thumb_base}-96x96.png"
++                        thumb_path_medium = os.path.join(
++                            thumb_dir, medium_name)
++                        with src_im.copy() as im:
++                            im.thumbnail((96, 96))
++                            im.save(thumb_path_medium, format="PNG")
++                        mirror_to_root(medium_name, thumb_path_medium)
++                        parsed_matches.insert(0, {
++                            'width': im.width, 'height': im.height,
++                            'size': os.path.getsize(thumb_path_medium),
++                            'relative_path': rel_thumb_path_for(medium_name)
++                        })
++                    if not has_full:
++                        full_name = f"{thumb_base}-300x300.png"
++                        thumb_path_full = os.path.join(thumb_dir, full_name)
++                        with src_im.copy() as im:
++                            # thumbnail() only ever downscales; if the
++                            # largest embedded thumbnail is already
++                            # smaller than 300x300 this is a no-op resize.
++                            im.thumbnail((300, 300))
++                            im.save(thumb_path_full, format="PNG")
++                        mirror_to_root(full_name, thumb_path_full)
++                        parsed_matches.insert(0, {
++                            'width': im.width, 'height': im.height,
++                            'size': os.path.getsize(thumb_path_full),
++                            'relative_path': rel_thumb_path_for(full_name)
++                        })
+             except Exception as e:
+                 logger.info(str(e))
+         return parsed_matches
+@@ -535,14 +613,7 @@ class PrusaSlicer(BaseSlicer):
+         return None
+ 
+     def parse_filament_type(self) -> Optional[str]:
+-        result = regex_find_strings(
+-            r";\sfilament_type\s=\s(%S)", ",;", self.footer_data
+-        )
+-        if len(result) > 1:
+-            return json.dumps(result)
+-        elif result:
+-            return result[0]
+-        return None
++        return regex_find_string(r";\sfilament_type\s=\s(%S)", self.footer_data)
+ 
+     def parse_filament_retract_length_toolchange(self) -> Optional[List[float]]:
+         # Use (.*)$ to capture empty values as well
+@@ -654,6 +725,18 @@ class PrusaSlicer(BaseSlicer):
+             return res
+         return regex_find_int(r"; total filament change = (%D)", self.footer_data)
+ 
++    def parse_printer_vendor(self) -> Optional[str]:
++        return regex_find_string(r'; printer_vendor = (%S)', self.footer_data)
++
++    def parse_printer_model(self) -> Optional[str]:
++        return regex_find_string(r'; printer_model = (%S)', self.footer_data)
++
++    def parse_printer_variant(self) -> Optional[str]:
++        return regex_find_string(r'; printer_variant = (%S)', self.footer_data)
++
++    def parse_profile_version(self) -> Optional[str]:
++        return regex_find_string(r'; profile_version = (%S)', self.footer_data)
++
+     def parse_line_width(self) -> Optional[float]:
+         return regex_find_float(r";\sline_width\s=\s(%F)", self.footer_data)
+ 
+-- 
+2.55.0

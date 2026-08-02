@@ -8,29 +8,6 @@ class SpoolLink:
         self.gcode = self.printer.lookup_object('gcode')
         self.printer.lookup_object('webhooks').register_endpoint(
             'spoollink/set', self._handle_set)
-        self.printer.register_event_handler('klippy:ready', self._handle_ready)
-
-    def _handle_ready(self):
-        fd = self.printer.lookup_object('filament_detect', None)
-        if fd is not None:
-            fd.register_cb_2_update_filament_info(self._on_filament_info)
-
-    def _on_filament_info(self, channel, info, is_clear):
-        if is_clear:
-            return
-        spool_id = info.get('SPOOL_ID', 0) or 0
-        uid_raw = info.get('CARD_UID') or []
-        card_uid = (''.join('%02X' % b for b in uid_raw)
-                    if uid_raw and any(b != 0 for b in uid_raw) else '')
-        wh = self.printer.lookup_object('webhooks')
-        if spool_id != 0 or not wh.has_remote_method('spoollink_resolve_spool'):
-            return
-        if card_uid:
-            wh.call_remote_method('spoollink_resolve_spool',
-                                  channel=channel, spool_id=spool_id,
-                                  card_uid=card_uid)
-        else:
-            self.gcode.respond_raw('// SpoolLink: E%d no card present' % (channel + 1))
 
     def _handle_set(self, web_request):
         wh = self.printer.lookup_object('webhooks')

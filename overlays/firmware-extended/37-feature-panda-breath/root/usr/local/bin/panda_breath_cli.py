@@ -139,10 +139,20 @@ def ws_conn(fn, *args):
         ws_close(sock)
 
 
-def check_fw_version(sock, settings, expected):
+# Stock OEM firmware versions this integration is known to work with over the
+# WebSocket transport. 1.0.4 only adds a Home Assistant MQTT interface; the
+# WebSocket protocol used here is unchanged from 1.0.3, so both are accepted.
+SUPPORTED_FW_VERSIONS = ("V1.0.3", "V1.0.4")
+
+
+def check_fw_version(sock, settings, allowed):
     firmware = settings.get("settings", {}).get("fw_version", "")
-    if firmware != expected:
-        print(f"Error: expected firmware {expected}, got '{firmware}'", file=sys.stderr)
+    if firmware not in allowed:
+        print(
+            f"Error: unsupported firmware '{firmware}' "
+            f"(supported: {', '.join(allowed)})",
+            file=sys.stderr,
+        )
         sys.exit(1)
     print(f"Firmware OK: {firmware}")
     print()
@@ -231,7 +241,10 @@ def main():
     p = sub.add_parser("bind-klipper", help="Bind Panda Breath to a Klipper instance")
     p.add_argument("--printer-ip", required=True, help="Klipper printer IP")
     p.add_argument("--printer-port", type=int, default=80, help="Klipper printer port")
-    p.add_argument("--version", default="V1.0.3", help="Required firmware version")
+    p.add_argument(
+        "--version", action="append", metavar="VERSION",
+        help="Accepted firmware version (repeatable); default: "
+             + ", ".join(SUPPORTED_FW_VERSIONS))
 
     args = parser.parse_args()
     host = args.host
@@ -244,7 +257,7 @@ def main():
     elif args.command == "unbind":
         ws_conn(unbind_printer)
     elif args.command == "bind-klipper":
-        ws_conn(check_fw_version, args.version)
+        ws_conn(check_fw_version, args.version or list(SUPPORTED_FW_VERSIONS))
         ws_conn(unbind_printer)
         ws_conn(set_printer_type, PRINTER_TYPE_KLIPPER)
         # unbind again in case printer_type change caused a reconnect (previously saved Klipper)

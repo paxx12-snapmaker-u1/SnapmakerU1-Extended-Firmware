@@ -21,7 +21,7 @@ settings:
               - |
                 /usr/local/bin/extended-config.py add /home/lava/printer_data/config/extended/extended2.cfg remote_access cloud none &&
                 /etc/init.d/S99cloud stop
-                /usr/local/bin/octoeverywhere-pkg clean
+                /usr/local/bin/extended-pkg octoeverywhere clean
                 rm -rf /home/lava/printer_data/octoeverywhere-store
           octoeverywhere:
             label: OctoEverywhere
@@ -38,7 +38,7 @@ settings:
                 sleep 5
 
                 echo ">> Downloading OctoEverywhere package..."
-                /usr/local/bin/octoeverywhere-pkg download
+                /usr/local/bin/extended-pkg octoeverywhere download
 
                 echo ">> Enabling OctoEverywhere..."
                 /usr/local/bin/extended-config.py add /home/lava/printer_data/config/extended/extended2.cfg remote_access cloud octoeverywhere

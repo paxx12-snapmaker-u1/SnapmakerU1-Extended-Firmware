@@ -206,7 +206,7 @@ To extract and examine the base firmware:
 ./dev.sh make extract
 ```
 
-Output: `tmp/extracted/`
+Output: `tmp/extracted-<version>/` (the `FIRMWARE_VERSION` from `vars.mk`)
 
 ## Upgrade Firmware
 
