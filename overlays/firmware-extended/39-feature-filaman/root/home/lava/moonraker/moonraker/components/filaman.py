@@ -37,6 +37,14 @@ DEFAULT_FILAMENT_DIAMETER_MM = 1.75
 # filament_detect.state[channel]: the printer is asking for filament info
 FILAMENT_DT_STATE_DETECTING = 1
 
+# A channel we pushed full filament info to can get wiped again shortly after
+# by the printer's own RFID pipeline re-reading the (unchanged) tag in that
+# feeder -- it reacts to the same DETECTING transition we do, and a "tag
+# present, no data" or "tag not present" read clears fields we already set.
+# Re-pushing is retried this often before giving up, so an unresolvable
+# reader can't make us retry forever.
+FILAMENT_RECLAIM_MAX_ATTEMPTS = 3
+
 # A spool lookup on the way to the printer is retried this often, with a delay
 # growing by this step. The FilaMan backend and Moonraker usually come up
 # together, so the first attempts after a power cycle can well go nowhere.
@@ -134,6 +142,10 @@ class FilaManManager:
         self._filament_detect_state: Dict[int, int] = {}
         self._has_filament_detect: bool = False
         self._has_print_task_config: bool = False
+        # Per channel: did we last push full filament info (vs. a clear)?
+        # Only channels we actually pushed to are candidates for reclaiming.
+        self._pushed_official: Dict[int, bool] = {}
+        self._reclaim_tries: Dict[int, int] = {}
         self._repush_timer: Optional[asyncio.TimerHandle] = None
 
         self._error_logged: bool = False
@@ -385,6 +397,8 @@ class FilaManManager:
         self._sensor_present = {}
         self._printer_present = {}
         self._filament_detect_state = {}
+        self._pushed_official = {}
+        self._reclaim_tries = {}
 
         objects_list: List[str] = await self.klippy_apis.get_object_list(default=[])
         self._has_filament_detect = "filament_detect" in objects_list
@@ -406,7 +420,9 @@ class FilaManManager:
             # still detecting also invalidates its filament_exist entry.
             objects["filament_detect"] = ["state"]
         if self._has_print_task_config:
-            objects["print_task_config"] = ["filament_exist"]
+            objects["print_task_config"] = [
+                "filament_exist", "filament_vendor", "filament_type"
+            ]
 
         result: Dict[str, Dict[str, Any]]
         result = await self.klippy_apis.subscribe_objects(
@@ -445,6 +461,7 @@ class FilaManManager:
         requested = self._record_filament_detect_state(result)
         self._apply_sensor_states(result, initial=True)
         self._apply_filament_exist(result, initial=True)
+        self._reclaim_cleared_filament_fields(result)
         for channel in requested:
             self._handle_filament_request(channel)
         if self.repush_on_startup:
@@ -489,6 +506,7 @@ class FilaManManager:
         requested = self._record_filament_detect_state(status)
         self._apply_sensor_states(status)
         self._apply_filament_exist(status)
+        self._reclaim_cleared_filament_fields(status)
         for channel in requested:
             self._handle_filament_request(channel)
 
@@ -598,6 +616,49 @@ class FilaManManager:
 
     def _is_detecting(self, channel: int) -> bool:
         return self._filament_detect_state.get(channel) == FILAMENT_DT_STATE_DETECTING
+
+    def _reclaim_cleared_filament_fields(self, status: Dict[str, Any]) -> None:
+        """Re-push spool info the printer's own RFID pipeline wiped out from under us.
+
+        A toolchange re-reads the (unchanged) NFC tag in that feeder. If the
+        read comes back as "no data" or "not present", the firmware clears
+        VENDOR/MAIN_TYPE for the channel -- even though we already answered
+        with a fully assigned spool for it. We only act on channels we
+        actually pushed to, so channels left to the RFID reader (no FilaMan
+        spool assigned) are untouched.
+        """
+        task_config = status.get("print_task_config")
+        if not isinstance(task_config, dict):
+            return
+        vendors = task_config.get("filament_vendor")
+        types = task_config.get("filament_type")
+        if not isinstance(vendors, list) and not isinstance(types, list):
+            return
+        vendors = vendors if isinstance(vendors, list) else []
+        types = types if isinstance(types, list) else []
+
+        for channel in self._pushed_official:
+            if not self._pushed_official.get(channel):
+                continue
+            extruder = "extruder" if channel == 0 else f"extruder{channel}"
+            spool_id = self.extruder_spools.get(extruder)
+            if spool_id is None:
+                continue
+            vendor = vendors[channel] if channel < len(vendors) else None
+            main_type = types[channel] if channel < len(types) else None
+            if vendor or main_type:
+                self._reclaim_tries.pop(channel, None)
+                continue
+            tries = self._reclaim_tries.get(channel, 0)
+            if tries >= FILAMENT_RECLAIM_MAX_ATTEMPTS:
+                continue
+            self._reclaim_tries[channel] = tries + 1
+            logging.info(
+                f"ch{channel}: filament fields cleared under FilaMan spool "
+                f"{spool_id} ({extruder}), re-pushing ({tries + 1}/"
+                f"{FILAMENT_RECLAIM_MAX_ATTEMPTS})"
+            )
+            self.eventloop.create_task(self._push_spool_to_printer(extruder, spool_id))
 
     def _update_presence(
         self,
@@ -867,6 +928,9 @@ class FilaManManager:
                 logging.warning(
                     f"filament_detect clear ch{channel} failed: {response.error}"
                 )
+            else:
+                self._pushed_official[channel] = False
+                self._reclaim_tries.pop(channel, None)
             return
 
         spool_data = await self._fetch_spool_with_retry(extruder, spool_id, channel)
@@ -912,6 +976,8 @@ class FilaManManager:
                 f"filament_detect set ch{channel} spool {spool_id} failed: {response.error}"
             )
         else:
+            self._pushed_official[channel] = True
+            self._reclaim_tries.pop(channel, None)
             logging.info(
                 f"Pushed spool {spool_id} → printer channel {channel}: "
                 f"type={info.get('MAIN_TYPE')}, vendor={info.get('VENDOR')}, "
