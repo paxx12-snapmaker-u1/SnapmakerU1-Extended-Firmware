@@ -52,6 +52,8 @@ class SpoolLink:
             url = "http://" + url
         self._spoolman_url = url
         self._cache_dir: Optional[str] = config.get("cache_dir", None)
+        self._force_generic_vendor = config.getboolean(
+            "force_generic_vendor", False)
         self.http_client: HttpClient = self.server.lookup_component("http_client")
         self.klippy_apis: APIComp = self.server.lookup_component("klippy_apis")
 
@@ -70,8 +72,10 @@ class SpoolLink:
 
     async def component_init(self) -> None:
         logging.info(
-            "spoollink starting (spoolman: %s, cache: %s)",
-            self._spoolman_url, self._cache_dir or "disabled")
+            "spoollink starting (spoolman: %s, cache: %s, "
+            "force generic vendor: %s)",
+            self._spoolman_url, self._cache_dir or "disabled",
+            self._force_generic_vendor)
         await self._ensure_fields()
 
     # -- Klippy lifecycle ---------------------------------------------------
@@ -446,6 +450,11 @@ class SpoolLink:
         material = filament.get("material", "PLA")
         vendor = (filament.get("vendor") or {}).get("name", "Generic")
         variant = _parse_variant(vendor, filament)
+
+        if (self._force_generic_vendor
+                and vendor.strip().lower() != "snapmaker"):
+            vendor = "Generic"
+            variant = ""
 
         raw_multi = filament.get("multi_color_hexes") or ""
         colors = [c.strip().upper()[:6] for c in raw_multi.split(",") if c.strip()]
