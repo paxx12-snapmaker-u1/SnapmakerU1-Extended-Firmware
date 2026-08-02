@@ -56,6 +56,9 @@ class SpoolLink:
         self.klippy_apis: APIComp = self.server.lookup_component("klippy_apis")
 
         self._channel_uids: Dict[int, str] = {}
+        self._resolved_uid: Dict[int, str] = {}
+        self._refill_tries: Dict[int, int] = {}
+        self._ptc_vendors: list = []
         self._toolhead_extruder: str = "extruder"
         self._ptc_spool_ids: List[int] = []
         self._active_spool_id: Optional[int] = None
@@ -80,7 +83,8 @@ class SpoolLink:
         logging.info("[spoollink] Klippy ready, subscribing to objects")
         status = await self.klippy_apis.subscribe_objects({
             "filament_detect": None,
-            "print_task_config": ["filament_spool_id"],
+            "print_task_config": ["filament_spool_id",
+                                  "filament_vendor", "filament_type"],
             "toolhead": ["extruder"],
         }, self._handle_status_update, {})
         self._handle_status_update(status, 0.)
@@ -88,6 +92,9 @@ class SpoolLink:
     def _handle_klippy_disconnect(self) -> None:
         logging.info("[spoollink] Klippy disconnected")
         self._channel_uids = {}
+        self._resolved_uid = {}
+        self._refill_tries = {}
+        self._ptc_vendors = []
         self._ptc_spool_ids = []
         self._active_spool_id = None
 
@@ -119,6 +126,13 @@ class SpoolLink:
                              self._ptc_spool_ids, new_ids)
                 self._ptc_spool_ids = new_ids
                 self._fire(self._sync_active_spool())
+            # A load operation makes the printer re-read the NFC tag. The tag only
+            # carries a UID, so the firmware writes empty vendor/material fields and
+            # overwrites what we resolved from Spoolman. Detect that and re-resolve.
+            vendors = ptc.get("filament_vendor")
+            if vendors is not None:
+                self._ptc_vendors = list(vendors)
+                self._check_cleared_fields()
 
         fd = status.get("filament_detect")
         if fd is None:
@@ -126,6 +140,26 @@ class SpoolLink:
         info_list = fd.get("info", [])
         for ch, info in enumerate(info_list):
             self._handle_filament_detect_channel(ch, info)
+
+    def _check_cleared_fields(self) -> None:
+        # Vendor gone while the same card is still in the feeder -> re-resolve.
+        # Capped at three attempts per card: without the cap an unresolvable
+        # spool would retry forever.
+        for ch, uid in list(self._channel_uids.items()):
+            if not uid or self._resolved_uid.get(ch) != uid:
+                continue
+            vendor = (self._ptc_vendors[ch]
+                      if ch < len(self._ptc_vendors) else None)
+            if vendor in (None, "", "NONE", "None"):
+                tries = self._refill_tries.get(ch, 0)
+                if tries < 3:
+                    self._refill_tries[ch] = tries + 1
+                    logging.info("[spoollink] ch%d: display fields cleared "
+                                 "(card %s still present) - re-resolving (%d/3)",
+                                 ch, uid, tries + 1)
+                    self._fire(self._resolve_spool(ch, card_uid=uid))
+            else:
+                self._refill_tries.pop(ch, None)
 
     def _handle_filament_detect_channel(self, ch: int, info: Any) -> None:
         if not isinstance(info, dict):
@@ -136,6 +170,7 @@ class SpoolLink:
         if uid_hex and uid_hex != prev:
             logging.info("[spoollink] ch%d: card UID changed to %s, resolving",
                          ch, uid_hex)
+            self._refill_tries.pop(ch, None)
             self._fire(self._resolve_spool(ch, card_uid=uid_hex))
 
     # -- Active spool sync --------------------------------------------------
@@ -495,6 +530,8 @@ class SpoolLink:
         reply = await self._spoollink_set(channel, message, info=info)
         if reply is not None:
             logging.info("[spoollink] ch%d: spool %s applied", channel, spool_id)
+            self._resolved_uid[channel] = uid_hex
+            self._refill_tries.pop(channel, None)
 
 
 def load_component(config: ConfigHelper) -> SpoolLink:
