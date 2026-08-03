@@ -1,7 +1,7 @@
 --- a/klippy/extras/filament_feed.py
 +++ b/klippy/extras/filament_feed.py
 @@ -187,8 +187,10 @@
-             self.white_light.set_pwm(print_time, 0)
+             self.white_light.set_pwm(print_time, 0, FEED_MIN_TIME)
  
  class FeedPort:
 -    def __init__(self, printer, reactor, pin, threshold):
