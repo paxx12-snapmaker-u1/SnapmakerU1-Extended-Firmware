@@ -60,7 +60,7 @@
         .loading { color: var(--muted); font-size: 13px; padding: 12px; text-align: center; }
         .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 1000; align-items: center; justify-content: center; }
         .modal-overlay.visible { display: flex; }
-        .modal { background: var(--card); border-radius: 12px; padding: 24px; width: 720px; max-width: 90vw; max-height: 80vh; display: flex; flex-direction: column; }
+        .modal { background: var(--card); border-radius: 12px; padding: 24px; width: 720px; max-width: 90vw; max-height: 80vh; display: flex; flex-direction: column; overflow-y: auto; }
         .modal-title { color: #fff; font-size: 18px; font-weight: 600; margin-bottom: 16px; }
         .modal-message { color: var(--text); margin-bottom: 20px; }
         .modal-status { color: var(--muted); font-size: 12px; margin-bottom: 12px; }
@@ -106,6 +106,11 @@
         <div class="card">
             <div class="card-header"><span class="card-title">Status</span></div>
             <div id="status-container" class="info-grid"><div class="loading"><span class="spinner"></span> Loading...</div></div>
+        </div>
+
+        <div class="card" id="quick-actions-card" style="display:none">
+            <div class="card-header"><span class="card-title">Quick Actions</span></div>
+            <div id="quick-actions-container"><div class="loading"><span class="spinner"></span> Loading...</div></div>
         </div>
 
         <div class="card">
@@ -276,13 +281,23 @@
             }
         }
 
-        async function loadActions() {
-            const container = $('actions-container');
+        async function loadActions(containerId, apiPath, cardId) {
+            const container = $(containerId);
+            const card = cardId ? $(cardId) : null;
             try {
-                const grouped = await (await apiFetch('api/actions')).json();
-                actionsData = Object.values(grouped).flatMap(g => g.items);
+                const grouped = await (await apiFetch(apiPath)).json();
 
-                container.innerHTML = Object.entries(grouped).map(([_, group]) =>
+                if (card) {
+                    if (Object.keys(grouped).length === 0) {
+                        card.style.display = 'none';
+                        return;
+                    }
+                    card.style.display = 'block';
+                }
+
+                const groupActions = Object.values(grouped).flatMap(g => g.items);
+                actionsData.push(...groupActions);
+                container.innerHTML = Object.values(grouped).map(group =>
                     `<div class="group-section">
                         <div class="group-title">${group.label}</div>
                         ${group.items.filter(action => !action.hidden || showHidden).map(action =>
@@ -297,6 +312,7 @@
                     </div>`
                 ).join('');
             } catch (e) {
+                if (card) card.style.display = 'block';
                 container.innerHTML = `<div class="loading" style="color:var(--error)">Error: ${e.message}</div>`;
             }
         }
@@ -670,6 +686,7 @@
             try {
                 const resp = await apiFetch(`api/action/${id}`, { method: 'POST' });
                 await streamResponse(resp, id);
+                refreshAll();
             } catch (e) {
                 appendLog(`\nERROR: ${e.message}`);
                 setMessage('Failed', 'var(--error)');
@@ -800,8 +817,15 @@
             const btn = document.querySelector('h1 .btn');
             btn.innerHTML = '<span class="spinner"></span> Refresh';
             btn.disabled = true;
+            actionsData = [];
             try {
-                await Promise.all([loadStatus(), loadLinks(), loadSettings(), loadActions()]);
+                await Promise.all([
+                    loadStatus(),
+                    loadLinks(),
+                    loadSettings(),
+                    loadActions('quick-actions-container', 'api/quick-actions', 'quick-actions-card'),
+                    loadActions('actions-container', 'api/actions')
+                ]);
             } finally {
                 btn.innerHTML = '&#x21bb; Refresh';
                 btn.disabled = false;

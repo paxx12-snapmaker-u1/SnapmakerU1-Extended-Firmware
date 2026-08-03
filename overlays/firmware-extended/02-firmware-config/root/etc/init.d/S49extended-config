@@ -4,7 +4,24 @@ DEFAULT_DIR="/usr/local/share/firmware-config/extended"
 EXTENDED_DIR="/home/lava/printer_data/config/extended"
 
 start() {
-    if [ -f /mnt/udisk/extended-recover.txt ] || [ -f /oem/.extended-recover ]; then
+    # `.txt.txt` covers Windows users with "Hide extensions for known file types" enabled,
+    # who type `extended-recover.txt`/`full-recover.txt` but get a double extension from Explorer.
+
+    # Full recovery clears the extended config, printer data and the debug/overlay
+    # persistence flag, then reboots so the cleared flags take effect: `/oem/.debug`
+    # is read by `S01aoverlayfs` and `/oem/.printer_data` by `S48setup-lava-env`,
+    # both of which run before this script, so the reset only applies on next boot.
+    if [ -f /mnt/udisk/full-recover.txt ] || [ -f /mnt/udisk/full-recover.txt.txt ] || [ -f /oem/.full-recover ]; then
+        echo "Performing full recovery: removing extended config, printer data and debug flag, then rebooting..."
+        rm -f /mnt/udisk/full-recover.txt /mnt/udisk/full-recover.txt.txt /oem/.full-recover
+        rm -f /oem/.printer_data /oem/.debug
+        touch /oem/.extended-recover
+        sync
+        /sbin/reboot
+        exit 0
+    fi
+
+    if [ -f /mnt/udisk/extended-recover.txt ] || [ -f /mnt/udisk/extended-recover.txt.txt ] || [ -f /oem/.extended-recover ]; then
         # Move existing extended config to a backup location
         # find the next available backup number
         if [ -d "$EXTENDED_DIR" ]; then
@@ -14,7 +31,7 @@ start() {
             done
             mv "$EXTENDED_DIR" "$EXTENDED_DIR.backup.$BACKUP_NUM"
         fi
-        rm -f /mnt/udisk/extended-recover.txt /oem/.extended-recover
+        rm -f /mnt/udisk/extended-recover.txt /mnt/udisk/extended-recover.txt.txt /oem/.extended-recover
     fi
 
     mkdir -p "$EXTENDED_DIR"

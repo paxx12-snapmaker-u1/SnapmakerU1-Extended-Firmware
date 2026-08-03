@@ -1,0 +1,17 @@
+# Map the QEMU virtio multitouch device to the U1 480x320 panel range.
+#
+# NOTE: this only rewrites the *reported* axis range (absinfo). QEMU still
+# emits raw values in 0..32767, so a consumer that scales by the reported
+# max will misplace touches unless the values are also rescaled (e.g. a
+# uinput shim, or inject already-scaled values over QMP). Use this when the
+# consumer expects the chsc6540-style 0..479 / 0..319 range and you pair it
+# with value scaling.
+#
+# ABS codes: 00=ABS_X 01=ABS_Y 35=ABS_MT_POSITION_X 36=ABS_MT_POSITION_Y
+# Value format: <min>:<max>:<res>:<fuzz>:<flat>
+
+evdev:name:QEMU Virtio MultiTouch:*
+ EVDEV_ABS_00=0:479
+ EVDEV_ABS_01=0:319
+ EVDEV_ABS_35=0:479
+ EVDEV_ABS_36=0:319

@@ -43,8 +43,10 @@ Toggle settings directly from the web interface:
 | Frontend | Fluidd, Mainsail | Switch between web interfaces |
 | Require Login (Fluidd only) | Enabled, Disabled | Require login for Moonraker API access |
 | Internal Camera | Paxx12, Snapmaker, Disabled | Select camera service |
+| Internal Camera Resolution | 1080p30, 1080p25, 1080p15, 1080p5 | Framerate for the internal camera (paxx12 service only; resolution is fixed at 1080p for AI detection) |
 | Camera RTSP Stream | Enabled, Disabled | Enable RTSP streaming |
 | USB Camera | Enabled, Disabled | Enable USB camera support |
+| USB Camera Resolution | 1080p30, 1080p25, 1080p5, 720p30, 720p25, 720p5, 360p30, 360p25, 360p5 | Resolution and framerate for the USB camera (paxx12 service only) |
 | Remote Screen | Enabled, Disabled | Enable remote screen access |
 | Klipper Metrics Exporter | Enabled, Disabled | Enable Prometheus metrics |
 | VPN Provider | None, Tailscale | Enable VPN remote access (Experimental) |
@@ -52,7 +54,7 @@ Toggle settings directly from the web interface:
 | Tweaks | TMC AutoTune, TMC Reduced Current, Object Processing, AFC Stub | Experimental Klipper tweaks ([tweaks](tweaks.md)) |
 | Snapmaker Components | AFC Lite, Panda Breath, Anycubic ACE | Optional Klipper integrations for filament management and chamber hardware |
 | Troubleshooting | Faulty Toolhead Bypass | Temporary toolhead thermistor bypass so the remaining toolheads can still be used ([faulty_toolhead](faulty_toolhead.md)) |
-| RFID Detection System | RFID Hardware: Snapmaker, External, ACE \| RFID Software: Snapmaker, OpenRFID, OpenRFID (force generic vendor), ACE | Set RFID reader hardware and tag processing software ([rfid_support](rfid_support.md)) |
+| RFID Detection System | RFID Hardware: Snapmaker, External, ACE \| RFID Software: Snapmaker, OpenRFID, OpenRFID (force generic vendor), ACE | Set RFID reader hardware and tag processing software ([RFID Format & Reader Design](design/rfid.md)) |
 
 Changes are applied immediately and relevant services are restarted.
 
@@ -145,9 +147,15 @@ Note: Remote screen requires additional Moonraker configuration. See [Remote Scr
 - `snapmaker` - Native Snapmaker camera service
 - `none` - Disable internal camera
 
+**internal_resolution** - Internal camera framerate (paxx12 service only; resolution is fixed at 1080p for AI detection)
+- `1080p30`, `1080p25` (default), `1080p15`, `1080p5`
+
 **usb** - USB camera service selection
 - `paxx12` - Enable USB camera with paxx12 service at `http://<printer-ip>/webcam2/`
 - `none` (default) - USB camera disabled
+
+**usb_resolution** - USB camera resolution and framerate (paxx12 service only)
+- `1080p30`, `1080p25` (default), `1080p5`, `720p30`, `720p25`, `720p5`, `360p30`, `360p25`, `360p5`
 
 **rtsp** - Enable RTSP streaming support (paxx12 service only)
 - `true` - Enable RTSP streaming at `rtsp://<printer-ip>:8554/stream` (internal) and `rtsp://<printer-ip>:8555/stream` (USB)
@@ -169,7 +177,7 @@ Note: Remote screen requires additional Moonraker configuration. See [Remote Scr
 - `openrfid-generic` - Same as openrfid, labels all spool vendors as generic
 - `ace` - ACE-format tag decoder via Anycubic ACE
 
-See [Alternative Filament Detection](rfid_support.md#alternative-detection-systems) for setup instructions.
+See [Alternative Filament Detection](design/rfid.md#enabling-openrfid) for setup instructions.
 
 Anycubic ACE is configured through the Firmware Config web
 interface and installs `extended/klipper/ace.cfg` when enabled. See
@@ -216,8 +224,12 @@ remote_screen: false
 [camera]
 # Internal (Case) camera options: paxx12, snapmaker, none
 internal: paxx12
+# Internal (Case) camera resolution/framerate preset, resolution is always 1080p: 1080p30, 1080p25, 1080p15, 1080p5
+# internal_resolution: 1080p25
 # External (USB) camera options: paxx12, none
 usb: none
+# External (USB) camera resolution/framerate preset: 1080p30, 1080p25, 1080p5, 720p30, 720p25, 720p5, 360p30, 360p25, 360p5
+# usb_resolution: 1080p25
 # Enable RTSP streaming server: true, false
 rtsp: false
 
@@ -292,6 +304,47 @@ If an invalid configuration breaks Moonraker (printer won't connect to WiFi):
 3. Restart the printer
 4. The extended configuration will be backed up to `extended.backup.N` and reset to defaults
 5. Remove the USB drive (the recovery file will be automatically deleted)
+
+On Windows with "Hide extensions for known file types" enabled, the file may be
+saved as `extended-recover.txt.txt`. Both names are recognised.
+
+### Full Recovery
+
+If the extended reset above is not enough — for example a persisted change or
+`/oem/.debug` flag keeps a broken state across reboots — use full recovery. In
+addition to resetting the extended configuration, it removes `/oem/.printer_data`
+and `/oem/.debug`, then reboots so the overlay (`S01aoverlayfs`) and printer data
+(`S48setup-lava-env`) are rebuilt from defaults on the next boot.
+
+1. Create an empty file named `full-recover.txt` on a USB drive
+   (`full-recover.txt.txt` is also recognised)
+2. Insert the USB drive into the printer
+3. Restart the printer
+4. The printer removes the recovery file, clears the persistence and debug flags,
+   flags the extended configuration for reset, and reboots
+5. Remove the USB drive
+
+**Important:** Full recovery resets ALL extended configuration and clears
+persisted changes and printer data. Use it only when a normal
+`extended-recover.txt` reset does not resolve the issue.
+
+### Custom Extensions Installed via SSH
+
+The recovery methods above only reset changes made through the supported extended
+configuration. Installing third-party extensions or modifications over SSH (for
+example [helixscreen](https://github.com/prestonbrown/helixscreen)) writes files
+outside that mechanism, so neither `extended-recover.txt` nor `full-recover.txt`
+is guaranteed to undo them. Such changes can break the system, and in some cases
+make it very hard to recover.
+
+Only install custom extensions over SSH if you understand the risks and know how
+to restore the printer. If something breaks, try recovery in this order:
+
+1. `extended-recover.txt` — resets the extended configuration only
+2. `full-recover.txt` — also clears persisted changes, printer data and the debug
+   flag, then reboots
+3. Reflash stock or extended firmware (see [Installation Guide](install.md)) if
+   neither recovery method fixes the problem
 
 ## Related Documentation
 

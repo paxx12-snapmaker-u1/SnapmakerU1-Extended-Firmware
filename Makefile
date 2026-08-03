@@ -8,23 +8,27 @@ OUTPUT_FILE := firmware/firmware.bin
 BUILD_DIR ?= tmp/firmware
 
 ifneq (,$(PROFILE))
-PROFILE_MAIN := $(patsubst %-devel,%,$(PROFILE))
+PROFILE_PARTS := $(subst -, ,$(PROFILE))
+FIRMWARE_NAME := $(firstword $(PROFILE_PARTS))
+MOD_NAMES := $(wordlist 2,$(words $(PROFILE_PARTS)),$(PROFILE_PARTS))
 OVERLAYS += $(wildcard overlays/common/*/)
-OVERLAYS += $(wildcard overlays/firmware-$(PROFILE_MAIN)/*/)
-ifneq ($(filter %-devel,$(PROFILE)),)
-OVERLAYS += $(wildcard overlays/devel/*/)
-endif
+OVERLAYS += $(wildcard overlays/firmware-$(FIRMWARE_NAME)/*/)
+OVERLAYS += $(foreach p,$(MOD_NAMES),$(wildcard overlays/mods/$(p)/*/))
 endif
 
-PROFILES := $(patsubst overlays/firmware-%,%,$(wildcard overlays/firmware-*))
-PROFILES += $(patsubst overlays/firmware-%,%-devel,$(wildcard overlays/firmware-*))
+FIRMWARES := $(patsubst overlays/firmware-%,%,$(wildcard overlays/firmware-*))
+MOD_LIST := $(patsubst overlays/mods/%/,%,$(wildcard overlays/mods/*/))
+INVALID_MOD_NAMES := $(filter-out $(MOD_LIST),$(MOD_NAMES))
 
 $(OUTPUT_FILE): firmware/$(FIRMWARE_FILE) tools
 ifeq (,$(PROFILE))
-	@echo "Please specify a profile using 'make PROFILE=<profile_name>'. Available profiles are: $(PROFILES)."
+	@echo "Please specify a firmware using 'make PROFILE=<firmware>[-<mod>]*'. Available firmwares are: $(FIRMWARES). Available mods are: $(MOD_LIST)."
 	@exit 1
-else ifeq (,$(filter $(PROFILE_MAIN),$(PROFILES)))
-	@echo "Invalid profile '$(PROFILE_MAIN)'. Available profiles are: $(PROFILES)."
+else ifeq (,$(filter $(FIRMWARE_NAME),$(FIRMWARES)))
+	@echo "Invalid firmware '$(FIRMWARE_NAME)'. Available firmwares are: $(FIRMWARES)."
+	@exit 1
+else ifneq (,$(INVALID_MOD_NAMES))
+	@echo "Invalid mod(s) '$(INVALID_MOD_NAMES)'. Available mods are: $(MOD_LIST)."
 	@exit 1
 endif
 	./scripts/create_firmware.sh $< $(BUILD_DIR) $@ $(OVERLAYS)
@@ -32,7 +36,7 @@ endif
 .PHONY: build
 build: $(OUTPUT_FILE)
 
-EXTRACT_DIR := tmp/extracted
+EXTRACT_DIR := tmp/extracted-$(FIRMWARE_VERSION)
 
 .PHONY: extract
 extract: firmware/$(FIRMWARE_FILE) tools
@@ -42,9 +46,10 @@ extract: firmware/$(FIRMWARE_FILE) tools
 overlays:
 	@echo $(OVERLAYS)
 
-.PHONY: profiles
-profiles:
-	@echo "Available profiles: $(PROFILES)"
+.PHONY: mods
+mods:
+	@echo "Available firmwares: $(FIRMWARES)"
+	@echo "Available mods: $(MOD_LIST)"
 
 # ================= Tools =================
 

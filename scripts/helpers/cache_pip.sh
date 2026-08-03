@@ -13,9 +13,9 @@ chroot_cmd() {
 }
 
 chroot_cmd bash -c '
-  pip3 install --no-index --find-links=/root/pip "$@" ||
+  pip3 install --no-index --find-links=/cache/pip "$@" ||
   (
-    pip3 download -d /root/pip "$@" &&
-    pip3 install --no-index --find-links=/root/pip "$@"
+    pip3 download -d /cache/pip "$@" &&
+    pip3 install --no-index --find-links=/cache/pip "$@"
   )
 ' -- "$@"

@@ -72,7 +72,7 @@ settings:
 
                 echo ""
                 echo ">> Binding Panda Breath at ${PANDA_BREATH_IP} to printer at ${PRINTER_IP}..."
-                /usr/local/bin/panda_breath_cli.py --host "${PANDA_BREATH_IP}" bind-klipper --printer-ip "${PRINTER_IP}" --version "V1.0.3"
+                /usr/local/bin/panda_breath_cli.py --host "${PANDA_BREATH_IP}" bind-klipper --printer-ip "${PRINTER_IP}"
 
                 echo ""
                 echo ">> Writing configuration..."
@@ -121,7 +121,7 @@ settings:
 
                 echo ""
                 echo ">> Binding Panda Breath at ${PANDA_BREATH_IP} to printer at ${PRINTER_IP}..."
-                /usr/local/bin/panda_breath_cli.py --host "${PANDA_BREATH_IP}" bind-klipper --printer-ip "${PRINTER_IP}" --version "V1.0.3"
+                /usr/local/bin/panda_breath_cli.py --host "${PANDA_BREATH_IP}" bind-klipper --printer-ip "${PRINTER_IP}"
 
                 echo ""
                 echo ">> Writing configuration..."

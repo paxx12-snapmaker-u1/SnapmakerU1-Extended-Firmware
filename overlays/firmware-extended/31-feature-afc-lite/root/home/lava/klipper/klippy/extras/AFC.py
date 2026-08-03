@@ -10,6 +10,7 @@ class AFC:
         self.printer = config.get_printer()
         config.get("enabled", "True")
         self.gcode = self.printer.lookup_object("gcode")
+        self.webhooks = self.printer.lookup_object('webhooks')
 
         self.units = {}
         self.lanes = {}
@@ -44,7 +45,7 @@ class AFC:
         str['current_state'] = AFCState.IDLE
         str["current_toolchange"] = 0
         str["number_of_toolchanges"] = 0
-        str['spoolman'] = True
+        str['spoolman'] = self.webhooks.has_remote_method('spoolman_set_active_spool')
         str["td1_present"] = False
         str["lane_data_enabled"] = False
         str['error_state'] = False

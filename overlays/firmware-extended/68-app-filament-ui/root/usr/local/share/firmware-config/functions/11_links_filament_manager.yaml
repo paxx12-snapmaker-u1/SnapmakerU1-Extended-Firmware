@@ -1,0 +1,6 @@
+links:
+  filament-manager:
+    url: /filament/
+    icon: "🏷️"
+    label: Filament Manager
+    condition: null

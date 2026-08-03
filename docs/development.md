@@ -74,36 +74,47 @@ Open a shell in the development environment:
 ./dev.sh bash
 ```
 
-## Profiles
+## Mods
 
-The build system supports the `extended` profile with extensive modifications to the firmware.
+The `PROFILE` argument is parsed as `<firmware>[-<mod>]*`: a single required
+firmware name, followed by zero or more optional mod names, each joined
+with a `-`. The firmware name selects overlays from `overlays/firmware-<firmware>/`,
+and each mod name adds overlays from `overlays/mods/<mod>/`. Mods
+can be freely combined, e.g. `extended-devel`, `extended-qemu`, or
+`extended-devel-qemu`.
+
+Run `make mods` to list the firmwares and mods currently available.
+
+See [Mods](mods.md) for naming conventions and the rules around
+contributing your own mod.
 
 ## Overlays
 
-Overlays are organized into categories based on their scope and build profile. Each overlay is numbered to indicate its application order within its category.
+Overlays are organized into categories based on their scope and build mods. Each overlay is numbered to indicate its application order within its category.
 
 ### Overlay Categories
 
-- **common/** - Core modifications applied to all firmware profiles
-- **firmware-extended/** - Modifications specific to the extended firmware profile
-- **devel/** - Development tools and utilities (only included with DEVEL=1 flag)
-- **staging/** - Disabled overlays kept for potential future use
+- **common/** - Core modifications applied to all firmware builds
+- **firmware-\<name\>/** - Modifications specific to a firmware, e.g. `firmware-extended/`
+- **mods/\<name\>/** - Optional, composable overlays enabled by adding `-<name>` to `PROFILE`, e.g. `mods/devel/`
 
 ## Build Options
 
-- `extended-devel` - Add development overlays from `overlays/devel/`
-  - e.g. `./dev.sh make build PROFILE=extended DEVEL=1`
+- `extended-devel` - Add the `devel` mod overlays from `overlays/mods/devel/`
+  - e.g. `./dev.sh make build PROFILE=extended-devel`
+- `extended-qemu` - Add the `qemu` mod overlays from `overlays/mods/qemu/` (eth0 hotplug and virtio-touch hwdb mapping for the QEMU dev environment)
+  - e.g. `./dev.sh make build PROFILE=extended-qemu`
 
-### Devel Profile Features
+### Devel Mod Features
 
-When running firmware built with the `-devel` profile, additional development tools are available:
+When running firmware built with the `devel` mod, additional development tools are available:
 
 **Entware Package Manager**
 
 > The Entware is considered highly untrusted component,
 > and might be removed at any point in the future without notice.
 
-The devel profile includes Entware support for installing additional packages. After booting the devel firmware, initialize Entware:
+The devel mod includes Entware support for installing additional packages. After booting the devel firmware, initialize Entware:
 
 ```bash
 entware-ctrl init
@@ -122,9 +133,9 @@ Once initialized, use `opkg` to install packages from the Entware repository.
 ### Directory Structure
 
 ```text
-├── common/                          Core overlays applied to all profiles
-├── devel/                           Devel overlays applied to all profiles when `-devel`
-└── firmware-${profile}/             Profile-specific firmware overlays
+├── common/                          Core overlays applied to all builds
+├── firmware-${firmware}/            Firmware-specific overlays
+└── mods/${mod}/                     Optional overlays enabled by `-${mod}` in PROFILE
 ```
 
 ### Overlay Structure
@@ -141,7 +152,8 @@ Each overlay directory can contain:
 Overlays are applied in the following order:
 
 1. All overlays from `common/` (in numeric order)
-1. Profile-specific overlays from `firmware-${profile}/` (in numeric order)
+1. Firmware-specific overlays from `firmware-${firmware}/` (in numeric order)
+1. Mod-specific overlays from `mods/${mod}/` (in numeric order), for each `-${mod}` in `PROFILE`, in the order given
 
 ### Integrating Upstream Klipper Patches
 
@@ -177,10 +189,10 @@ The `20-klipper-patches` overlay in `firmware-extended/` backports upstream Klip
 ```text
 .
 ├── .github/                     Automated release builds
-├── overlays/                    Profile overlay directories
-│   ├── common/                  Core overlays for all profiles
-│   ├── devel/                   Devel overlays for all profiles
-│   └── firmware-${profile}/     Profile-specific firmware overlays
+├── overlays/                    Overlay directories
+│   ├── common/                  Core overlays for all builds
+│   ├── firmware-${firmware}/    Firmware-specific overlays
+│   └── mods/${mod}/             Optional overlays enabled by `-${mod}` in PROFILE
 ├── firmware/                    Downloaded and generated firmware files
 ├── scripts/                     Build and modification scripts
 ├── tmp/                         Temporary build artifacts
@@ -203,7 +215,7 @@ To extract and examine the base firmware:
 ./dev.sh make extract
 ```
 
-Output: `tmp/extracted/`
+Output: `tmp/extracted-<version>/` (the `FIRMWARE_VERSION` from `vars.mk`)
 
 ## Upgrade Firmware
 

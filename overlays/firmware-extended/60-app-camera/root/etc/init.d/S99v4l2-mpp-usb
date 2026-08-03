@@ -11,7 +11,21 @@ if [ "$CAMERA_LOGS" = "syslog" ]; then
 fi
 RTSP_ENABLED=$(/usr/local/bin/extended-config.py get "$EXTENDED_CFG" camera rtsp false)
 
-CMD_CAPTURE="/usr/local/bin/capture-v4l2-jpeg-mpp --device /dev/video18 --jpeg-sock /tmp/capture-usb-jpeg.sock --mjpeg-sock /tmp/capture-usb-mjpeg.sock --h264-sock /tmp/capture-usb-h264.sock"
+USB_RESOLUTION=$(/usr/local/bin/extended-config.py get "$EXTENDED_CFG" camera usb_resolution 1080p25)
+case "$USB_RESOLUTION" in
+    1080p30) USB_WIDTH=1920; USB_HEIGHT=1080; USB_FPS=30 ;;
+    1080p25) USB_WIDTH=1920; USB_HEIGHT=1080; USB_FPS=25 ;;
+    1080p5)  USB_WIDTH=1920; USB_HEIGHT=1080; USB_FPS=5  ;;
+    720p30)  USB_WIDTH=1280; USB_HEIGHT=720;  USB_FPS=30 ;;
+    720p25)  USB_WIDTH=1280; USB_HEIGHT=720;  USB_FPS=25 ;;
+    720p5)   USB_WIDTH=1280; USB_HEIGHT=720;  USB_FPS=5  ;;
+    360p30)  USB_WIDTH=640;  USB_HEIGHT=360;  USB_FPS=30 ;;
+    360p25)  USB_WIDTH=640;  USB_HEIGHT=360;  USB_FPS=25 ;;
+    360p5)   USB_WIDTH=640;  USB_HEIGHT=360;  USB_FPS=5  ;;
+    *)       USB_WIDTH=1920; USB_HEIGHT=1080; USB_FPS=25 ;;
+esac
+
+CMD_CAPTURE="/usr/local/bin/capture-v4l2-jpeg-mpp --device /dev/video18 --width $USB_WIDTH --height $USB_HEIGHT --fps $USB_FPS --buffers 2 --jpeg-sock /tmp/capture-usb-jpeg.sock --mjpeg-sock /tmp/capture-usb-mjpeg.sock --h264-sock /tmp/capture-usb-h264.sock"
 
 CMD_WEBRTC="/usr/local/bin/stream-webrtc --h264-sock /tmp/capture-usb-h264.sock --webrtc-sock /tmp/capture-usb-webrtc.sock"
 

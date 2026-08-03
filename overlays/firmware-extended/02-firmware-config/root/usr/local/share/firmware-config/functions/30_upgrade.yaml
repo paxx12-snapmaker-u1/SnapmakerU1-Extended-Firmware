@@ -8,12 +8,6 @@ upgrade_url:
         echo "Please download the artifact manually."
         exit 1
         ;;
-      *.bin) ;;
-      *)
-        echo "WARNING: URL does not end with .bin - firmware files should be .bin files."
-        echo "Continuing in 5 seconds..."
-        sleep 5
-        ;;
     esac
 
     echo "Downloading upgrade..."
@@ -22,12 +16,91 @@ upgrade_url:
       exit 1
     fi
 
-    echo "Download complete. Starting upgrade..."
+    unpack_firmware() {
+      file="$1"
+      magic=$(head -c 2 "$file" 2>/dev/null || true)
+
+      case "$magic" in
+        PK)
+          echo "Detected .zip archive, extracting..."
+          tmpdir=/userdata/.tmp_upgrade/zip_unpack
+          rm -rf "$tmpdir"
+          mkdir -p "$tmpdir"
+          if ! unzip -o "$file" -d "$tmpdir" > /dev/null 2>&1; then
+            echo "ERROR: Failed to unzip firmware file."
+            rm -rf "$tmpdir" "$file"
+            exit 1
+          fi
+          binfile=$(find "$tmpdir" -type f | grep -i '\.bin$' | head -1)
+          if [ -z "$binfile" ]; then
+            echo "ERROR: No .bin file found in the zip archive."
+            rm -rf "$tmpdir" "$file"
+            exit 1
+          fi
+          mv "$binfile" "$file"
+          rm -rf "$tmpdir"
+          echo "Extracted firmware from archive."
+          ;;
+      esac
+    }
+
+    unpack_firmware /userdata/url_upgrade.bin
+
+    size=$(stat -c%s /userdata/url_upgrade.bin 2>/dev/null || wc -c < /userdata/url_upgrade.bin)
+    min_size=$((50 * 1024 * 1024))
+    if [ "$size" -lt "$min_size" ]; then
+      echo "ERROR: Downloaded file is only $(($size / 1024)) KB — expected at least 50 MB for a firmware file."
+      echo "The URL may have returned an error page instead of a valid firmware file."
+      rm -f /userdata/url_upgrade.bin
+      exit 1
+    fi
+
+    echo "Starting upgrade ($(($size / 1024 / 1024)) MB)..."
     /home/lava/bin/systemUpgrade.sh upgrade all /userdata/url_upgrade.bin
   stop_token: "upgrade soc finish, prepare to reboot"
 
 upgrade_upload:
   title: Firmware Upgrade (Upload)
   upload_path: /userdata/web_upgrade.bin
-  shell: /home/lava/bin/systemUpgrade.sh upgrade all "$1"
+  shell: |
+    unpack_firmware() {
+      file="$1"
+      magic=$(head -c 2 "$file" 2>/dev/null || true)
+
+      case "$magic" in
+        PK)
+          echo "Detected .zip archive, extracting..."
+          tmpdir=/userdata/.tmp_upgrade/zip_unpack
+          rm -rf "$tmpdir"
+          mkdir -p "$tmpdir"
+          if ! unzip -o "$file" -d "$tmpdir" > /dev/null 2>&1; then
+            echo "ERROR: Failed to unzip firmware file."
+            rm -rf "$tmpdir" "$file"
+            exit 1
+          fi
+          binfile=$(find "$tmpdir" -type f | grep -i '\.bin$' | head -1)
+          if [ -z "$binfile" ]; then
+            echo "ERROR: No .bin file found in the zip archive."
+            rm -rf "$tmpdir" "$file"
+            exit 1
+          fi
+          mv "$binfile" "$file"
+          rm -rf "$tmpdir"
+          echo "Extracted firmware from archive."
+          ;;
+      esac
+    }
+
+    unpack_firmware "$1"
+
+    size=$(stat -c%s "$1" 2>/dev/null || wc -c < "$1")
+    min_size=$((50 * 1024 * 1024))
+    if [ "$size" -lt "$min_size" ]; then
+      echo "ERROR: Uploaded file is only $(($size / 1024)) KB — expected at least 50 MB for a firmware file."
+      rm -f "$1"
+      exit 1
+    fi
+
+    echo "Starting upgrade ($(($size / 1024 / 1024)) MB)..."
+    /home/lava/bin/systemUpgrade.sh upgrade all "$1"
   stop_token: "upgrade soc finish, prepare to reboot"

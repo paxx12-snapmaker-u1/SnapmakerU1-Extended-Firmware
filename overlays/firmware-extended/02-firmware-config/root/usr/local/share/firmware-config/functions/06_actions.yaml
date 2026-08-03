@@ -1,3 +1,7 @@
+quick_actions:
+  upgrades:
+    label: Upgrades
+
 actions:
   troubleshooting:
     label: Troubleshooting

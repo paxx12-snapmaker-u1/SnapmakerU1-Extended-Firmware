@@ -21,6 +21,7 @@ APPEND="console=ttyAMA0,115200 earlycon=pl011,mmio32,0x09000000"
 APPEND="$APPEND systemd.volatile=overlay ro rootwait rootfstype=squashfs root=/dev/vda"
 APPEND="$APPEND storagemedia=emmc androidboot.storagemedia=emmc androidboot.mode=normal androidboot.verifiedbootstate=orange android_slotsufix=_a vertype=rel"
 APPEND="$APPEND androidboot.fwver=ddr-v1.07-6e9ae14bbb,bl31-v1.21,bl32-v1.07,uboot-3ed3e17641-12/30/2025"
+APPEND="$APPEND video=Virtual-1:480x320 net.ifnames=0"
 
 set -e
 
@@ -61,6 +62,9 @@ qemu-system-aarch64 \
   -m 1024 \
   -serial mon:stdio \
   -display none \
+  -global virtio-mmio.force-legacy=false \
+  -device virtio-gpu-device,xres=480,yres=320 \
+  -device virtio-multitouch-device \
   -kernel "$KERNEL_FILE" \
   -append "$APPEND initcall_blacklist=rockchip_drm_init" \
   -netdev user,id=net0,hostfwd=tcp::2222-:22,hostfwd=tcp::2280-:80,hostfwd=tcp::2443-:443 \

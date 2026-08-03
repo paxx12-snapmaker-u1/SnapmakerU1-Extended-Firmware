@@ -19,4 +19,10 @@ echo ">> Unpacking firmware..."
 echo ">> Extracting squashfs from rootfs.img..."
 unsquashfs -d "$OUT_DIR/rootfs" "$OUT_DIR/rk-unpacked/rootfs.img"
 
+# Drop the repacked images now that rootfs is unpacked. rootfs.img is kept as
+# the pristine reference that scripts/dev/save-patch.sh diffs against.
+echo ">> Pruning images not needed for inspection..."
+rm -f "$OUT_DIR/rk-rom.img" "$OUT_DIR/update.img"
+find "$OUT_DIR/rk-unpacked" -type f -name '*.img' ! -name rootfs.img -delete
+
 echo ">> Done. Extracted rootfs is in $OUT_DIR/rootfs/."

@@ -28,7 +28,7 @@ Quick steps:
 
 ## Troubleshooting
 
-- **Klipper failed to start**: Open Firmware Config at `http://IP/firmware-config`, go to `Recovery` and select `Reset Extended to Defaults`. This will reset all extended settings and reboot the printer.
+- **Custom extensions installed via SSH**: Installing third-party extensions or modifications over SSH (for example [helixscreen](https://github.com/prestonbrown/helixscreen)) can break the system. Because such changes are made outside the supported extended configuration, the built-in recovery may not undo them, and in some cases the system becomes very hard to recover. Do this only if you understand the risks and know how to restore the printer. If something breaks, try recovery in order: first `extended-recover.txt` (resets extended configuration), then `full-recover.txt` (also clears persisted changes, printer data and the debug flag), and only if neither works, reflash stock firmware via the [Snapmaker U1 Wiki](https://wiki.snapmaker.com/en/snapmaker_u1/firmware/release_notes).
 
 ## Revert
 

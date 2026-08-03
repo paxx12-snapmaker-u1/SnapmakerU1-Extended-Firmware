@@ -1,11 +1,14 @@
 --- rootfs.original/home/lava/fluidd/index.html	2025-12-30 06:37:02.000000000 +0100
 +++ rootfs/home/lava/fluidd/index.html	2026-01-06 11:33:24.149758980 +0100
-@@ -55,3 +55,8 @@
+@@ -55,3 +55,11 @@
      <!-- built files will be auto injected -->
    </body>
  </html>
 +<style>
 +  iframe.camera-image[src$="/screen/"] {
++    pointer-events: auto;
++  }
++  iframe.camera-image[src$="/filament/"] {
 +    pointer-events: auto;
 +  }
 +</style>

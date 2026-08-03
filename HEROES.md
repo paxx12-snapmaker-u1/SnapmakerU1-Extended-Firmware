@@ -20,6 +20,19 @@ You can thank them here:
 | [@suchmememanyskill](https://github.com/suchmememanyskill) | `@Sims` | OpenRFID | [![Ko-Fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/suchmememanyskill) |
 | [@morgendagen](https://github.com/morgendagen) | | OpenSpool `subtype` field for material specification | |
 | [@BlackFrogKok](https://github.com/BlackFrogKok), [@DnG-Crafts](https://github.com/DnG-Crafts), [@hakimio](https://github.com/hakimio) | | Upstream Anycubic ACE Pro / ACE 2 Pro integration references | |
+| [@Tareku99](https://github.com/Tareku99) | | `.zip` firmware upload support in `firmware-config` | |
+| [@plastikman](https://github.com/plastikman) | | Panda Breath firmware `V1.0.4` support | |
+| [@djgringoboy2003](https://github.com/djgringoboy2003) | | Root-caused the `cavity_led` PWM camera flicker | |
+
+---
+
+## v1.5.2-paxx12-21
+
+| Contributor | Contribution | PR |
+|---|---|---|
+| [@Tareku99](https://github.com/Tareku99) | Allow firmware upgrades from a `.zip` archive | [#585](https://github.com/paxx12/SnapmakerU1-Extended-Firmware/pull/585) |
+| [@plastikman](https://github.com/plastikman) | Accept Panda Breath stock firmware `V1.0.4` when binding | [#594](https://github.com/paxx12/SnapmakerU1-Extended-Firmware/pull/594) |
+| [@djgringoboy2003](https://github.com/djgringoboy2003) | Investigated and root-caused the `cavity_led` PWM camera flicker | [#575](https://github.com/paxx12/SnapmakerU1-Extended-Firmware/pull/575) |
 
 ---
 

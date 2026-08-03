@@ -1,5 +1,7 @@
 firmware/
 tmp/
+*.o
+*.so
 tools/upfile/upfile
 tools/rk2918_tools/afptool
 tools/rk2918_tools/img_maker

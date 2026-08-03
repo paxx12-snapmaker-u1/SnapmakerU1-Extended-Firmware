@@ -32,7 +32,7 @@ settings:
               - |
                 /usr/local/bin/extended-config.py add /home/lava/printer_data/config/extended/extended2.cfg remote_access vpn none
                 /etc/init.d/S99vpn stop
-                /usr/local/bin/tailscale-pkg clean
+                /usr/local/bin/extended-pkg tailscale clean
                 rm -rf /home/lava/printer_data/tailscale
           tailscale:
             label: Tailscale
@@ -41,7 +41,7 @@ settings:
               - -xec
               - |
                 echo "WARNING: VPN is experimental. Higher resource usage may affect print quality."
-                /usr/local/bin/tailscale-pkg download
+                /usr/local/bin/extended-pkg tailscale download
                 /usr/local/bin/extended-config.py add /home/lava/printer_data/config/extended/extended2.cfg remote_access vpn tailscale
                 /etc/init.d/S99vpn restart
                 /usr/local/bin/tailscale up --timeout=60s
