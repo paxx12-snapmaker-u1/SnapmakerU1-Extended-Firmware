@@ -1,10 +1,34 @@
 # No-USB Panda → DragonBreath migration (paxx 1.6.0) — design
 
-Status: **Draft / design (local — do not push until bench-tested).** paxx 1.6.0 removes
+Status: **Bench-validated end-to-end; submitted upstream.** paxx 1.6.0 removes
 the stock-Panda chamber-heater path and converts everyone to DragonBreath. Any user
 still on **stock Panda firmware** with the old `panda_breath.cfg` gets a dead heater on
 update unless we convert them — **over the network, no USB.** This overlay is where the
 conversion lives; it builds on PR 604's structure.
+
+## Walkthrough — the conversion in action
+
+Captured on a real U1 + Panda Breath bench (stock Panda → DragonBreath, no USB, no
+internet). Validated from **both stock 1.0.3 and 1.0.4** Panda firmware — the stock
+`/ota` handler is byte-identical on both (and paxx 1.5.2 now supports 1.0.4 Pandas).
+
+**1. Before** — the stock Panda Breath chamber-heater integration (paxx ≤ 1.5.x).
+![before](docs/conversion/1-before-panda-auto.png)
+
+**2. Convert action appears** — after updating, a `if_cmd`-gated "Convert to DragonBreath"
+button shows for a user still on stock Panda.
+![convert action](docs/conversion/2-convert-action.png)
+
+**3. Consent** — Accept/Deny modal explaining the over-Wi-Fi conversion + the safety notes.
+![consent modal](docs/conversion/3-consent-modal.png)
+
+**4. Live conversion** — flashes the bundled image over Wi-Fi (`/ota` → HTTP 200), reboots
+into DragonBreath v1.0.2, the shim carries Wi-Fi + Moonraker, the Klipper config swaps, and
+klippy restarts. All streamed to the UI.
+![conversion log](docs/conversion/4-conversion-log.png)
+
+**5. After** — the chamber heater is now DragonBreath.
+![after](docs/conversion/5-after-dragonbreath.png)
 
 ## Already done (the hard half)
 - **DragonBreath firmware v1.0.2** ships a first-boot NVS carry-over shim: after an
@@ -87,9 +111,9 @@ not a probe of the device.
   `confirm` modal (Confirm/Cancel). Its `cmd` is the orchestrator (read host from the Panda
   cfg → `dragonbreath_migrate.py migrate` → cfg-swap `panda_breath*`→`dragonbreath.cfg`
   carrying the host → clear pending+flag → restart klippy; fails loud, leaves cfg intact on
-  flash failure). **Validated end-to-end on real hardware (2026-07-31):** stock Panda 1.0.3 →
-  clicked the button → flashed DragonBreath v1.0.2 over LAN → shim carried WiFi+Moonraker →
-  `[dragonbreath]` live (`connected:true`, 36 °C).
+  flash failure). **Validated end-to-end on real hardware (2026-07-31):** stock Panda
+  **1.0.3 and 1.0.4** → clicked the button → flashed DragonBreath v1.0.2 over LAN → shim
+  carried WiFi+Moonraker → `[dragonbreath]` live (`connected:true`, 36 °C).
 - ✅ **`root/etc/init.d/S58chamber-migration-guard`** (new) — runs **before** S60klipper;
   renames a lingering `panda_breath.cfg`→`.pending-migration` + drops `.needs-migration` so
   klippy starts clean (1.6.0 deleted the `panda_breath.py` module) and the dropdown shows
