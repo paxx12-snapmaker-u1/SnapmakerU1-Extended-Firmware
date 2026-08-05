@@ -10,6 +10,12 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Change this one value when building a mod profile. Keep `extended` for the
+# normal unmodded firmware; compose mods as `extended-<mod1>-<mod2>`.
+# Profile naming rules: docs/mods.md#adding-a-mod
+env:
+  BUILD_PROFILE: extended
+
 jobs:
   custom-firmware-build:
     runs-on: ubuntu-24.04-arm
@@ -91,24 +97,23 @@ jobs:
         nextVer=$(./scripts/next_version.sh paxx12 test-pr-${{ github.event.pull_request.number }})
         echo "GIT_VERSION=${nextVer//v/}" | tee -a $GITHUB_ENV
 
+    - name: Set GIT_VERSION (for manual workflow)
+      shell: bash
+      if: github.event_name == 'workflow_dispatch'
+      run: |
+        nextVer=$(./scripts/next_version.sh paxx12 test-manual-${{ github.ref_name }})
+        echo "GIT_VERSION=${nextVer//v/}" | tee -a $GITHUB_ENV
+
     - name: Download firmware
       run: ./dev.sh make firmware
 
-    - name: Build with Extended Fluidd firmware
-      run: ./dev.sh make build PROFILE=extended OUTPUT_FILE=U1_extended_${{ env.GIT_VERSION }}_upgrade.bin
+    - name: Build selected firmware profile
+      run: ./dev.sh make build PROFILE=${{ env.BUILD_PROFILE }} OUTPUT_FILE=U1_${{ env.BUILD_PROFILE }}_${{ env.GIT_VERSION }}_upgrade.bin
 
     - uses: actions/upload-artifact@v4
       with:
-        name: extended-build
-        path: U1_extended_${{ env.GIT_VERSION }}_upgrade.bin
-
-    - name: Build experimental Anycubic ACE profile
-      run: ./dev.sh make build PROFILE=extended-tareku99 OUTPUT_FILE=U1_extended_tareku99_${{ env.GIT_VERSION }}_upgrade.bin
-
-    - uses: actions/upload-artifact@v4
-      with:
-        name: extended-tareku99-build
-        path: U1_extended_tareku99_${{ env.GIT_VERSION }}_upgrade.bin
+        name: ${{ env.BUILD_PROFILE }}-build
+        path: U1_${{ env.BUILD_PROFILE }}_${{ env.GIT_VERSION }}_upgrade.bin
 
     - name: Save PR info
       if: github.event_name == 'pull_request'
@@ -121,8 +126,7 @@ jobs:
         echo "${{ env.GIT_VERSION }}" > pr-info/version
         echo "${{ env.JOB_START }}" > pr-info/job_start
         echo "$(date +%s)" > pr-info/job_end
-        echo extended-build >> pr-info/artifacts
-        echo extended-tareku99-build >> pr-info/artifacts
+        echo "${{ env.BUILD_PROFILE }}-build" > pr-info/artifacts
 
     - name: Upload PR info
       if: github.event_name == 'pull_request'
