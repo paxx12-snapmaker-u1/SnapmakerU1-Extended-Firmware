@@ -2,7 +2,8 @@
   "_meta": {
     "language": "en",
     "name": "English",
-    "fallback": null
+    "fallback": null,
+    "source": "firmware-overlay"
   },
   "ui": {
     "header": {

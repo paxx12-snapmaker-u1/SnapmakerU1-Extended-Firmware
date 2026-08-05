@@ -85,7 +85,7 @@ The active include is:
 /oem/printer_data/config/extended/klipper/ace.cfg
 ~~~
 
-The persistent MultiACE state is bundled at:
+On first activation, the firmware seeds the persistent MultiACE state at:
 
 ~~~text
 /home/lava/printer_data/config/extended/multiace/ace_vars.cfg

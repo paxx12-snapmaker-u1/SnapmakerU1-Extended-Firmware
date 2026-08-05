@@ -4,7 +4,10 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 HOME_DIR="/home/lava"
 EXTRAS_DIR="${HOME_DIR}/klipper/klippy/extras"
 KINEMATICS_DIR="${HOME_DIR}/klipper/klippy/kinematics"
-VARS_FILE="${SCRIPT_DIR}/ace_vars.cfg"
+STATE_DIR="${HOME_DIR}/printer_data/config/extended/multiace"
+BUNDLE_DIR="/usr/local/share/firmware-config/tweaks/klipper/multiace"
+SEED_DIR="$BUNDLE_DIR"
+VARS_FILE="${STATE_DIR}/ace_vars.cfg"
 LOGDIR="${HOME_DIR}/printer_data/logs"
 LOGFILE="${LOGDIR}/ace_mode_switch.log"
 mkdir -p "$LOGDIR" 2>/dev/null || true
@@ -22,6 +25,20 @@ log() {
 if [ "$MODE" != "ace" ] && [ "$MODE" != "normal" ]; then
     echo "Usage: $0 [ace|normal]"
     exit 1
+fi
+if [ ! -f "$SEED_DIR/ace_vars.cfg" ]; then
+    SEED_DIR="$SCRIPT_DIR"
+fi
+mkdir -p "$STATE_DIR/i18n"
+if [ ! -f "$VARS_FILE" ]; then
+    cp "$SEED_DIR/ace_vars.cfg" "$VARS_FILE"
+fi
+if [ ! -f "$STATE_DIR/i18n/en.json" ]; then
+    cp "$SEED_DIR/i18n/en.json" "$STATE_DIR/i18n/en.json"
+fi
+if [ "$SCRIPT_DIR" != "$STATE_DIR" ]; then
+    cp "$SCRIPT_DIR/ace_mode_switch.sh" "$STATE_DIR/ace_mode_switch.sh"
+    chmod 0755 "$STATE_DIR/ace_mode_switch.sh"
 fi
 log "=== Mode switch to: $MODE ==="
 log "EXTRAS_DIR=$EXTRAS_DIR"

@@ -32,7 +32,7 @@ settings:
                   echo "ERROR: No compatible ACE serial device detected."
                   exit 1
                 fi
-                ace_mode=/home/lava/printer_data/config/extended/multiace/ace_mode_switch.sh
+                ace_mode=/usr/local/share/firmware-config/tweaks/klipper/multiace/ace_mode_switch.sh
                 if [ ! -f "$ace_mode" ]; then
                   echo "ERROR: MultiACE runtime files are missing from this firmware."
                   exit 1
@@ -48,7 +48,7 @@ settings:
               - bash
               - -ec
               - |
-                ace_mode=/home/lava/printer_data/config/extended/multiace/ace_mode_switch.sh
+                ace_mode=/usr/local/share/firmware-config/tweaks/klipper/multiace/ace_mode_switch.sh
                 stock_feed=/home/lava/klipper/klippy/extras/filament_feed_pre_multiace.py
                 if [ -f "$ace_mode" ] && [ -f "$stock_feed" ]; then
                   bash "$ace_mode" normal
