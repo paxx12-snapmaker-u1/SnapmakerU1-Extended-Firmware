@@ -4,57 +4,106 @@ title: Anycubic ACE Wiring and Test Guide
 
 # Anycubic ACE Pro / ACE 2 Pro
 
-This guide covers the cable connections and first-test procedure for the
-experimental single-ACE mod on a Snapmaker U1.
+This guide covers the experimental MultiACE-derived integration for one to
+four Anycubic ACE units on a Snapmaker U1. It supports the original ACE Pro
+(also called ACE 1 Pro) and ACE 2 Pro through their different host protocols:
 
-The original Anycubic ACE Pro is sometimes called the ACE 1 Pro. It uses a
-different host connection from the ACE 2 Pro:
+- ACE Pro: direct USB serial and the V1 JSON protocol.
+- ACE 2 Pro: USB-to-RS485 serial adapter and the V2 protobuf protocol.
 
-- ACE Pro: direct USB data connection.
-- ACE 2 Pro: USB-to-RS485 adapter connection.
+The firmware-side implementation is disabled until it is enabled in Firmware
+Config. It has not been hardware-validated in this branch. The procedures
+below are the test plan, not a report of successful hardware results.
 
-This feature is experimental and has not yet been hardware-validated in the
-current mod. It does not include RFID integration or Multi-ACE support.
+## Implementation basis and attribution
 
-> **Safety:** Verify the connector orientation and wiring with a multimeter.
-> Leave every 5V/VCC wire disconnected. Connecting 5V can damage the ACE,
-> adapter, printer, or host USB port.
+The runtime is adapted from [decay71/multiACE](https://github.com/decay71/multiACE),
+pinned for this draft to commit
+[c9c22e391cee89bc7d7894ce4a25876a59565cbc](https://github.com/decay71/multiACE/tree/c9c22e391cee89bc7d7894ce4a25876a59565cbc).
+The repository is GPLv3, matching this firmware project. The overlay keeps
+MultiACE's protocol split, per-device state, stable device ordering, feed
+assist, retry, RFID, and head-source mapping, while using Firmware Config to
+activate and restore the Klipper modules.
+
+The following projects and contributors informed the surrounding research and
+hardware work:
+
+- [paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware](https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware)
+  is the extended U1 firmware project this mod targets.
+- [printers-for-people/ACEResearch](https://github.com/printers-for-people/ACEResearch)
+  provides ACE raw data research by Jookia.
+- [utkabobr/DuckACE](https://github.com/utkabobr/DuckACE) provides ACE keep-alive
+  and response-handling research by utkabobr.
+- [BlackFrogKok/SnapAce](https://github.com/BlackFrogKok/SnapAce) documents the
+  feeder bypass locations by BlackFrogKok.
+- [hakimio/U1-Ace](https://github.com/hakimio/U1-Ace) and
+  [DnG-Crafts/U1-Ace](https://github.com/DnG-Crafts/U1-Ace) are additional
+  U1/ACE integration references.
+
+The runtime code in this overlay is based on MultiACE; the other repositories
+are references and attribution, not runtime dependencies.
 
 ## Build and enablement
 
-The ACE mod is not part of the normal `extended` profile. Build an image with
-the personal mod included:
+The mod is not included in the normal `extended` profile. Build an image with:
 
 ~~~bash
 ./dev.sh make build PROFILE=extended-tareku99
 ~~~
 
-After flashing that image:
+The pull request workflow also produces a separate `extended-tareku99-build`
+artifact. No hardware test is performed by the workflow.
 
-1. Connect one ACE to the U1 by USB.
+After flashing:
+
+1. Connect the ACE hardware and power it from its own supply.
 2. Enable **Advanced Mode** on the printer.
 3. Open `http://<printer-ip>/firmware-config/`.
 4. Select **Settings > Snapmaker Components**.
 5. Set **Anycubic ACE (experimental)** to **Enabled**.
 
-The setting checks for a compatible serial device, creates the active Klipper
-configuration link, and restarts Klipper. The built-in driver detects the ACE
-model and serial settings automatically.
+When enabled, Firmware Config:
 
-The template is installed at:
+- verifies that an ACE serial device is visible;
+- switches the MultiACE-derived `*_ace.py` modules into the active Klipper
+  paths;
+- links the ACE include;
+- restarts Klipper.
+
+When disabled, it restores the stock U1 modules, removes the ACE include, and
+restarts Klipper. This makes the stock U1 path the default and recovery path.
+
+The main configuration template is installed at:
 
 ~~~text
 /usr/local/share/firmware-config/tweaks/klipper/ace.cfg
 ~~~
 
-When enabled, the active configuration is:
+The active include is:
 
 ~~~text
 /oem/printer_data/config/extended/klipper/ace.cfg
 ~~~
 
-Review the active configuration before loading filament. The four
-`load_length_slotN` values must match the installed tube routing.
+The persistent MultiACE state is bundled at:
+
+~~~text
+/home/lava/printer_data/config/extended/multiace/ace_vars.cfg
+~~~
+
+The default configuration expects one ACE:
+
+~~~ini
+[ace]
+ace_device_count: 1
+enable_ace_v2: true
+~~~
+
+Set `ace_device_count: 2`, `3`, or `4` before enabling the feature when
+using multiple units. Keep the default until the first device-ordering and
+tube-routing checks are complete. The V2 adapter allow-list is intentionally
+strict by default; add `v2_extra_usb_ids: 1a86:7523` only when a generic
+CH340/CH341 adapter is known to be the intended ACE connection.
 
 ## ACE signal connector
 
@@ -88,7 +137,7 @@ Micro-Fit 3.0 2x3P pigtail
 ACE Pro signal port
 ~~~
 
-Connect only these wires:
+Connect only:
 
 | USB signal | ACE Pro connector |
 |---|---|
@@ -98,12 +147,12 @@ Connect only these wires:
 | USB 5V | Leave disconnected |
 
 Typical USB 2.0 colors are white for D-, green for D+, and black for GND, but
-verify the actual cable rather than relying on colors.
+verify the actual cable instead of relying on colors.
 
 ## ACE 2 Pro wiring
 
-The ACE 2 Pro requires an RS485 adapter. Do not connect it directly to a USB
-data cable.
+The ACE 2 Pro uses an RS485 adapter. Do not connect it directly to USB data
+lines.
 
 ~~~text
 U1 USB port
@@ -124,26 +173,26 @@ Connect the adapter as follows:
 | Adapter signal | ACE 2 Pro connector | Notes |
 |---|---|---|
 | GND | GND | Always connect |
-| A, 485+, or D+ | Try D+ or D- | Swap with B if commands time out |
-| B, 485-, or D- | Try D- or D+ | Swap with A if commands time out |
+| A, 485+, or D+ | D+ or D- | Swap with B if commands time out |
+| B, 485-, or D- | D- or D+ | Swap with A if commands time out |
 | VCC | Leave disconnected | Do not connect 5V |
 
-RS485 adapter labels are not standardized. If the adapter enumerates but ACE
-commands time out, keep GND connected and swap only the A/B pair.
+RS485 labels are not standardized. If the adapter enumerates but the ACE does
+not answer, keep GND connected and swap only the A/B pair.
 
 CH343 adapters are preferred because they are closest to the original Anycubic
-USB-to-RS485 path. CH340/CH341 adapters may also work and commonly enumerate
-as USB ID `1a86:7523`.
+host path. Common CH340/CH341 adapters may be enabled with the
+`v2_extra_usb_ids` setting described above.
 
 ## USB detection
 
-With the ACE connected, inspect the serial devices:
+Inspect serial devices over SSH:
 
 ~~~bash
 ls -l /dev/serial/by-id/
 ~~~
 
-The current driver looks for:
+The MultiACE-derived runtime recognizes:
 
 ~~~text
 ACE Pro:
@@ -154,70 +203,57 @@ ACE 2 Pro:
 /dev/serial/by-id/usb-1a86_USB_Serial*
 ~~~
 
-The mod includes a permission rule for CH340/CH341 devices with USB ID
-`1a86:7523`. Reconnect the adapter or reboot the printer if the serial
-device is not accessible.
+The mod includes a udev permission rule for USB ID `1a86:7523`. Reconnect
+the adapter or reboot if the serial node is not accessible.
 
-## First connection test
+## Commands
 
-After enabling the feature, run these commands from the printer console:
+After enabling the feature, the first read-only checks are:
 
 ~~~gcode
-ACE_GET_STATUS
-ACE_GET_TEMP
-ACE_DRYING_ON
-ACE_GET_STATUS
-ACE_GET_TEMP
-ACE_DRYING_OFF
+ACE_LIST
+ACE_HEAD_STATUS
+A_INFO ACE=0
+A_STATUS ACE=0
+A_TEMP ACE=0
 ~~~
 
-A successful connection should report the detected model, the corresponding
-protocol and baud rate, connected status, and four gate states. ACE 2 Pro
-should also report temperature, humidity, and dryer state.
+Useful management commands include:
 
-The convenience macros are:
+- `ACE_SWITCH TARGET=0` — select the active ACE.
+- `ACE_LOAD_HEAD HEAD=0` — load a head from the active ACE.
+- `ACE_UNLOAD_HEAD HEAD=0` — unload a head back to its mapped ACE.
+- `ACE_UNLOAD_ALL_HEADS` — unload all heads with recorded ACE sources.
+- `ACE_DRY ACE=0 TEMP=55 DURATION=240` — start drying on one ACE.
+- `ACE_STOP_DRYING` — stop drying on the active ACE.
+- `ACEG__Status` — convenience macro for head/device status.
+- `ACEG__List` — convenience macro for the device list.
+- `ACEF__Mode_Normal` and `ACEF__Mode_Multi` — switch between stock and
+  MultiACE operation; Klipper requires a restart after a module switch.
 
-- `ACE_STATUS`
-- `ACE_TEMP`
-- `ACE_DRYING_ON`
-- `ACE_DRYING_OFF`
-- `ACE_REFRESH_CONNECTION`
+The optional MultiACE web service and online updater are not bundled in this
+firmware overlay. Fluidd/Mainsail console commands and Firmware Config remain
+the supported control path for this draft.
 
-If the ACE is unplugged and reconnected after Klipper starts, run
-`ACE_REFRESH_CONNECTION` or use the Firmware Config refresh action.
+## First hardware test plan
 
-## First filament-load test
+This is intentionally left for a real U1 and ACE setup:
 
-Start with status and temperature tests, then test one slot at a time. Tune the
-active configuration values for the actual tube lengths:
+1. Enable the feature with one ACE connected.
+2. Run `ACE_LIST`, `ACE_HEAD_STATUS`, `A_INFO ACE=0`, and `A_STATUS ACE=0`.
+3. Confirm all four slot states and temperature/RFID responses.
+4. Test one loaded slot at a time with `ACE_LOAD_HEAD`, then
+   `ACE_UNLOAD_HEAD`.
+5. Confirm the U1 runout sensor stops feeding and that a no-filament gate
+   produces a recoverable error.
+6. Test RFID metadata and manual/no-RFID spool handling.
+7. Only then set `ace_device_count` above one and verify stable ACE ordering,
+   `ACE_SWITCH`, per-ACE drying, cross-ACE unload, and retry/recovery.
+8. Disable the feature and confirm the stock U1 modules are restored.
 
-~~~ini
-load_length_slot1: 2100
-load_length_slot2: 2100
-load_length_slot3: 2100
-load_length_slot4: 2100
-~~~
+Do not treat a successful build or static Python check as hardware validation.
 
-These are starting values in the current mod, not universal measurements.
-
-The intended load sequence is:
-
-1. The normal U1 load flow selects a slot.
-2. The ACE feeds that slot.
-3. The physical U1 filament sensor stops the ACE feed.
-4. The normal U1 heat, extrude, and flush steps continue.
-
-Stock U1 runout/UI gating can still prevent a load from starting before the ACE
-has moved filament far enough. Unload behavior is not hardware-validated in
-this first pass.
-
-## Disabling the feature
-
-Set **Anycubic ACE (experimental)** back to **Disabled** in Firmware Config.
-The active ACE configuration link is removed and Klipper restarts, returning
-filament loading to the stock U1 path.
-
-## Wiring checklist
+## Safety checklist
 
 - Power down before changing connector wiring.
 - Verify the six-pin connector orientation before inserting the pigtail.
@@ -226,3 +262,4 @@ filament loading to the stock U1 path.
 - Do not connect ACE 2 Pro directly to USB data lines.
 - If ACE 2 Pro enumerates but does not answer, swap only RS485 A and B.
 - Test status and temperature before attempting a filament load.
+- Keep this pull request in draft until the complete test plan has been run.

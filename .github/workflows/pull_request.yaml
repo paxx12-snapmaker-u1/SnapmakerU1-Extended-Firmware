@@ -100,7 +100,15 @@ jobs:
     - uses: actions/upload-artifact@v4
       with:
         name: extended-build
-        path: U1_extended_*_upgrade.bin
+        path: U1_extended_${{ env.GIT_VERSION }}_upgrade.bin
+
+    - name: Build experimental Anycubic ACE profile
+      run: ./dev.sh make build PROFILE=extended-tareku99 OUTPUT_FILE=U1_extended_tareku99_${{ env.GIT_VERSION }}_upgrade.bin
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: extended-tareku99-build
+        path: U1_extended_tareku99_${{ env.GIT_VERSION }}_upgrade.bin
 
     - name: Save PR info
       if: github.event_name == 'pull_request'
@@ -114,6 +122,7 @@ jobs:
         echo "${{ env.JOB_START }}" > pr-info/job_start
         echo "$(date +%s)" > pr-info/job_end
         echo extended-build >> pr-info/artifacts
+        echo extended-tareku99-build >> pr-info/artifacts
 
     - name: Upload PR info
       if: github.event_name == 'pull_request'

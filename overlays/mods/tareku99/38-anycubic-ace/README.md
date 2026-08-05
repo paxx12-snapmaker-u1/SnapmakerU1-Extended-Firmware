@@ -1,34 +1,42 @@
-# Experimental Anycubic ACE mod
+# Experimental MultiACE-derived Anycubic ACE integration
 
-This personal mod is an intentionally small hardware-test path for one Anycubic
-ACE Pro or ACE 2 Pro connected to a Snapmaker U1.
+This personal mod adds an experimental Anycubic ACE Pro / ACE 2 Pro path to a
+Snapmaker U1. It uses the protocol, device-management, retry, RFID, and
+load/unload integration patterns from [multiACE](https://github.com/decay71/multiACE)
+and keeps the implementation disabled until it is selected in Firmware Config.
 
-It is disabled by default. Build it with:
+Build it with:
 
 ```bash
 ./dev.sh make build PROFILE=extended-tareku99
 ```
 
-After installing that firmware, connect the ACE and enable **Anycubic ACE
-(experimental)** in Firmware Config. The setting creates the live Klipper
-include, then restarts Klipper. The ACE model and serial settings are detected
-automatically.
+After flashing the image:
 
-For connector pinouts, ACE Pro USB wiring, ACE 2 Pro RS485 wiring, and the
-first-test procedure, see the [Anycubic ACE wiring and test guide](../../../../docs/anycubic_ace.md).
+1. Connect one to four ACE units to the U1.
+2. Enable Advanced Mode.
+3. Open `http://<printer-ip>/firmware-config/`.
+4. Under **Settings > Snapmaker Components**, enable **Anycubic ACE
+   (experimental)**.
 
-The load path remains the U1's normal filament-loading flow:
+Firmware Config switches the MultiACE-derived Klipper modules into place,
+installs the ACE include, and restarts Klipper. Disabling the setting restores
+the stock U1 modules before restarting. The stock path therefore remains the
+fallback while this integration is being validated.
 
-1. The U1 requests a slot load.
-2. The ACE feeds the selected slot.
-3. The U1 physical filament/runout sensor ends the ACE feed.
-4. The existing U1 load, heat, extrude, and flush steps continue.
+The runtime supports ACE Pro (JSON/V1) and ACE 2 Pro (protobuf/V2), one to four
+devices, stable device ordering, per-device slot state, RFID metadata, feed
+assist, load/unload retries, and head-to-ACE/slot mapping. The optional
+MultiACE web service and online updater are deliberately not bundled in this
+firmware overlay; activation is managed by Firmware Config instead.
 
-The four load_length_slotN values in ace.cfg are deliberately exposed for
-tube-length tuning. Start with status and temperature commands, then test one
-slot at a time. This first pass delegates the active load feed; unload behavior
-is not hardware-validated yet. If the ACE path is not usable, disable the
-setting and the stock feeder path is restored after the Klipper restart.
+Set `ace_device_count` in the installed `ace.cfg` before enabling the feature
+when using more than one ACE. Start with the default of `1` until device
+ordering and the physical tube splitters have been verified.
 
-This mod is not hardware-validated yet. Keep it as a draft experiment until
-the first complete load test is confirmed on a real U1 and ACE.
+For connector pinouts, wiring, commands, attribution, and the first hardware
+test checklist, see the [Anycubic ACE wiring and test guide](../../../../docs/anycubic_ace.md).
+
+This mod is not hardware-validated yet. Keep the pull request as a draft until
+the complete status, load, unload, RFID, and recovery paths have been tested
+on a real U1 with the intended ACE hardware.

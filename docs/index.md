@@ -59,7 +59,7 @@ Heavily expanded firmware with extensive features and customization:
 - [Klipper Print Hooks](klipper_hooks.md) - React to `PRINT_START`, `PRINT_END`, and `CANCEL_PRINT` without modifying stock macros
 - [Klipper Tweaks](tweaks.md) - Experimental [TMC driver optimizations](tweaks.md#tmc-autotune), [reduced current](tweaks.md#tmc-reduced-current), and [object processing for adaptive mesh](tweaks.md#object-processing-for-adaptive-mesh)
 - [AFC-Lite Stub](afc-lite.md) - Experimental AFC UI compatibility layer for Fluidd/Mainsail
-- [Anycubic ACE wiring and test guide](anycubic_ace.md) - Experimental single-ACE Pro / ACE 2 Pro connection and validation guide
+- [Anycubic ACE wiring and test guide](anycubic_ace.md) - Experimental MultiACE-derived ACE Pro / ACE 2 Pro connection and validation guide
 - [Panda Breath Chamber Heater](panda_breath.md) - BIQU Panda Breath 300 W chamber heater and air filter integration via Klipper `heater_generic`
 - [Faulty Toolhead Bypass](faulty_toolhead.md) - Temporary bypass for one failed toolhead thermistor so the other toolheads can still be used
 - [RFID Filament Tag Support](design/rfid.md) - NTAG213/215/216 support for [OpenSpool format](design/openspool.md)
