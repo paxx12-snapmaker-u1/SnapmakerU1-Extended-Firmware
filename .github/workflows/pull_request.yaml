@@ -8,7 +8,6 @@ on:
       - '*.md'
       - .github/workflows/*.yaml
   pull_request:
-  workflow_dispatch:
 
 # Change this one value when building a mod profile. Keep `extended` for the
 # normal unmodded firmware; compose mods as `extended-<mod1>-<mod2>`.
@@ -95,13 +94,6 @@ jobs:
       if: github.event_name == 'pull_request'
       run: |
         nextVer=$(./scripts/next_version.sh paxx12 test-pr-${{ github.event.pull_request.number }})
-        echo "GIT_VERSION=${nextVer//v/}" | tee -a $GITHUB_ENV
-
-    - name: Set GIT_VERSION (for manual workflow)
-      shell: bash
-      if: github.event_name == 'workflow_dispatch'
-      run: |
-        nextVer=$(./scripts/next_version.sh paxx12 test-manual-${{ github.ref_name }})
         echo "GIT_VERSION=${nextVer//v/}" | tee -a $GITHUB_ENV
 
     - name: Download firmware
