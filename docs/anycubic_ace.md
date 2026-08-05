@@ -61,6 +61,8 @@ Review the active configuration before loading filament. The four
 The following view is from the front/mating side of the ACE signal connector,
 with the clip or latch at the top:
 
+![Anycubic ACE signal connector pinout](images/ace-signal-pinout.png)
+
 ~~~text
              clip/latch
                 ||
