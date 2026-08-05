@@ -14,6 +14,9 @@ After installing that firmware, connect the ACE and enable **Anycubic ACE
 include, then restarts Klipper. The ACE model and serial settings are detected
 automatically.
 
+For connector pinouts, ACE Pro USB wiring, ACE 2 Pro RS485 wiring, and the
+first-test procedure, see the [Anycubic ACE wiring and test guide](../../../../docs/anycubic_ace.md).
+
 The load path remains the U1's normal filament-loading flow:
 
 1. The U1 requests a slot load.
