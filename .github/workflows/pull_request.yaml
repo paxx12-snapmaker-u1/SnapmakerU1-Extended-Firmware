@@ -8,6 +8,7 @@ on:
       - '*.md'
       - .github/workflows/*.yaml
   pull_request:
+  workflow_dispatch:
 
 # Change this one value when building a mod profile. Keep `extended` for the
 # normal unmodded firmware; compose mods as `extended-<mod1>-<mod2>`.
