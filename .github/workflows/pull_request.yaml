@@ -24,8 +24,8 @@ jobs:
         python3 -m unittest scripts.test_check_line_endings
         python3 scripts/check_line_endings.py
 
-    - name: Test Filament Manager Spoolman helpers
-      run: node --test overlays/firmware-extended/68-app-filament-ui/test/spoolman-utils.test.js
+    - name: Test Filament Manager
+      run: node --test overlays/firmware-extended/68-app-filament-ui/test/*.test.js
 
   custom-firmware-build:
     runs-on: ubuntu-24.04-arm
