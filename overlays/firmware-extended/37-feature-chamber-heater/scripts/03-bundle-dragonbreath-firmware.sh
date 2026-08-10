@@ -18,10 +18,10 @@
 
 # Pinned DragonBreath release. Bump alongside the dragonbreath-klipper GIT_SHA pin in
 # 01-install-dragonbreath.sh when moving to a new release.
-DB_VERSION=v1.1.4
+DB_VERSION=v1.1.5
 DB_URL="https://github.com/plastikman/DragonBreath/releases/download/${DB_VERSION}/dragonbreath-${DB_VERSION}.bin"
-# sha256 of dragonbreath-v1.1.4.bin (from the release SHA256SUMS.txt).
-DB_SHA256=789befbfa92c2a088e585e5acda7a2bb9a6ae343273b983e657912052373ab69
+# sha256 of dragonbreath-v1.1.5.bin (from the release SHA256SUMS.txt).
+DB_SHA256=c08a39fc3ea49f1d732b8af695657c312b3953666efd07f6af08df5821be772d
 
 if [[ -z "$CREATE_FIRMWARE" ]]; then
   echo "Error: This script should be run within the create_firmware.sh environment."
