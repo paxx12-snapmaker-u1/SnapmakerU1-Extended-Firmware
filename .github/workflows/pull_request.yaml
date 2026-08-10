@@ -11,6 +11,17 @@ on:
   workflow_dispatch:
 
 jobs:
+  filament-ui-tests:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+
+    - name: Test Filament Manager Spoolman helpers
+      run: node --test overlays/firmware-extended/68-app-filament-ui/test/spoolman-utils.test.js
+
   custom-firmware-build:
     runs-on: ubuntu-24.04-arm
     permissions:

@@ -106,6 +106,103 @@
     </div>
 </div>
 
+<!-- Create Spoolman Spool Modal -->
+<div id="create-spool-modal" class="tag-edit-overlay" style="display:none">
+    <div class="tag-edit-dialog create-spool-dialog" role="dialog" aria-modal="true" aria-labelledby="create-spool-title">
+        <div class="tag-edit-header">
+            <h2 class="tag-edit-title" id="create-spool-title">Create Spoolman Spool</h2>
+            <button class="tag-edit-close" id="create-spool-close" type="button" aria-label="Close">&times;</button>
+        </div>
+        <div class="tag-edit-body">
+            <form id="create-spool-form">
+                <div class="create-spool-source" aria-label="RFID source">
+                    <div><span>Extruder</span><strong id="create-spool-channel">-</strong></div>
+                    <div><span>Card UID</span><strong id="create-spool-uid">-</strong></div>
+                </div>
+
+                <div id="create-spool-notice" class="create-spool-notice" style="display:none"></div>
+
+                <div id="create-spool-match-section" class="field-block" style="display:none">
+                    <label class="form-label">Matching Spoolman filament
+                        <select id="create-spool-filament" name="filament_id"></select>
+                    </label>
+                    <p class="form-help" id="create-spool-match-help"></p>
+                </div>
+
+                <div id="create-spool-filament-fields">
+                    <div class="form-row">
+                        <label class="form-label">Vendor *
+                            <input type="text" name="vendor" required autocomplete="off">
+                        </label>
+                        <label class="form-label">Material *
+                            <input type="text" name="material" required autocomplete="off">
+                        </label>
+                        <label class="form-label">Variant
+                            <input type="text" name="variant" autocomplete="off">
+                        </label>
+                    </div>
+                    <div class="form-row">
+                        <label class="form-label">Filament name *
+                            <input type="text" name="name" required autocomplete="off">
+                        </label>
+                        <label class="form-label">Colour (RRGGBB) *
+                            <input type="text" name="color" required maxlength="7" spellcheck="false" autocomplete="off">
+                        </label>
+                    </div>
+                    <div class="form-row">
+                        <label class="form-label">Diameter (mm) *
+                            <input type="number" name="diameter" required min="0.1" max="5" step="0.01">
+                        </label>
+                        <label class="form-label">Density (g/cm&sup3;) *
+                            <input type="number" name="density" required min="0.5" max="3" step="0.01">
+                        </label>
+                        <label class="form-label">Nozzle temperature (&deg;C)
+                            <input type="number" name="nozzle_temp" min="1" max="500" step="1">
+                        </label>
+                        <label class="form-label">Bed temperature (&deg;C)
+                            <input type="number" name="bed_temp" min="1" max="200" step="1">
+                        </label>
+                    </div>
+                </div>
+
+                <div class="create-spool-section-title">Spool mass</div>
+                <div class="form-row">
+                    <label class="form-label">Initial net filament (g) *
+                        <input type="number" name="net_weight" required min="1" step="1">
+                    </label>
+                    <label class="form-label">Empty spool / tare (g)
+                        <input type="number" name="tare_weight" min="0" step="1" placeholder="Optional">
+                    </label>
+                </div>
+                <p class="form-help">Initial and remaining filament are set to the same reviewed net mass. Tare is optional.</p>
+
+                <div class="modal-actions">
+                    <button type="button" id="create-spool-cancel" class="modal-btn-cancel">Cancel</button>
+                    <button type="submit" id="create-spool-submit" class="modal-btn-submit">Create and Assign</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- RFID assignment confirmation modal -->
+<div id="rfid-confirm-modal" class="tag-edit-overlay" style="display:none">
+    <div class="tag-edit-dialog confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="rfid-confirm-title">
+        <div class="tag-edit-header">
+            <h2 class="tag-edit-title" id="rfid-confirm-title">Confirm RFID Assignment</h2>
+            <button class="tag-edit-close" id="rfid-confirm-close" type="button" aria-label="Close">&times;</button>
+        </div>
+        <div class="tag-edit-body">
+            <div id="rfid-confirm-content" class="confirm-content"></div>
+            <div class="modal-actions">
+                <button type="button" id="rfid-confirm-cancel" class="modal-btn-cancel">Cancel</button>
+                <button type="button" id="rfid-confirm-accept" class="modal-btn-submit">Confirm</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="spoolman-utils.js"></script>
 <script src="script.js"></script>
 </body>
 </html>

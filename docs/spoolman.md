@@ -22,6 +22,60 @@ Enable via Fluidd/Mainsail settings under
 **Snapmaker Components > Spoolman Integration**, set the Spoolman host,
 and reboot. Set the same toggle to **Disabled** to turn it off.
 
+## Creating a Spool from a U1 Channel
+
+The U1 Filament Manager can create and assign a Spoolman spool directly from
+a metadata-bearing RFID tag:
+
+1. Open **Filament Manager** and select **Read spool tags**.
+2. On a channel whose detected UID is not already stored in Spoolman, select
+   **Create Spool**.
+3. Review the filament and mass values, then select **Create and Assign**.
+
+The button is shown only when the tag provides a valid UID, vendor, material,
+and six-digit colour. UID-only, empty, and malformed tags cannot provide enough
+metadata to create a spool. They can still be assigned to an existing spool by
+using **Spool**.
+
+Before writing anything, the dialog reloads the Spoolman spool, vendor, and
+filament records. It reuses a vendor case-insensitively. It also reuses an exact
+filament match based on vendor, material, variant, and colour; blank and
+`Basic` variants are treated as equivalent. If multiple exact filament matches
+exist, the user must select one. Otherwise the dialog creates the required
+vendor and filament before creating the spool.
+
+The initial and remaining filament values use the tag's reported net mass when
+it is valid, or a reviewed default of 1000 g. When an existing filament is
+reused, its empty-spool mass is inherited. For a new filament, empty-spool mass
+is optional. Diameter, density, temperatures, colour, name, and both mass
+values remain reviewable in the dialog.
+
+Creation stores only the SpoolLink fields documented below: `card_uids` on the
+spool and, when present, `variant` on a newly created filament. If a request
+fails after one or more records were created, those records are retained and
+their IDs are reported. Retrying is safe because the dialog rechecks UID
+ownership and exact filament matches before creating additional records.
+
+## Two RFID Tags on One Spool
+
+Use **Spool** on the channel reading the second physical tag, then select the
+same Spoolman spool. SpoolLink appends the UID to that spool's comma-separated
+`card_uids` value. The picker displays the number of stored RFID tags and uses
+the following safeguards:
+
+- Adding the first UID needs no additional confirmation beyond selecting the
+  spool.
+- Adding a second UID requires an explicit **Add Second RFID** confirmation.
+- Adding a third or later UID requires an explicit warning confirmation.
+- Moving a UID from another spool requires an explicit move confirmation.
+- A UID found on more than one spool is rejected until the duplicate ownership
+  is corrected in Spoolman.
+
+After `SET_SPOOL_ID`, the Filament Manager reloads Spoolman and verifies that
+the UID has exactly one owner and that all UIDs previously stored on the target
+spool remain present. Filament metadata alone is never used to pair two tags;
+identical spools can legitimately have the same metadata.
+
 ## Apps
 
 Community apps that support SpoolLink, so scanning a tag resolves its spool
@@ -111,6 +165,9 @@ SET_SPOOL_ID LANE=E0 SPOOL_ID=5
 ## Limitations
 
 - Spoolman must be reachable from the printer over HTTP.
+- Creation and RFID assignment require Spoolman's current v1 API through
+  Moonraker's version-2 Spoolman proxy response.
+- UID ownership checks use the same 1000-spool candidate limit as SpoolLink.
 - Variant defaults to `Basic` for Snapmaker-branded filaments when not
   set in Spoolman; empty for all other vendors.
 
