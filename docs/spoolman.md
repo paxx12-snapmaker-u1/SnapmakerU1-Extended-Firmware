@@ -58,10 +58,10 @@ ownership and exact filament matches before creating additional records.
 
 ## Two RFID Tags on One Spool
 
-Use **Spool** on the channel reading the second physical tag, then select the
-same Spoolman spool. SpoolLink appends the UID to that spool's comma-separated
-`card_uids` value. The picker displays the number of stored RFID tags and uses
-the following safeguards:
+When a channel is already assigned to a Spoolman spool and reads its unowned
+second physical tag, select **Add RFID**. For an unassigned channel, use
+**Spool** and select the intended spool. SpoolLink appends the UID to that
+spool's comma-separated `card_uids` value. The following safeguards apply:
 
 - Adding the first UID needs no additional confirmation beyond selecting the
   spool.

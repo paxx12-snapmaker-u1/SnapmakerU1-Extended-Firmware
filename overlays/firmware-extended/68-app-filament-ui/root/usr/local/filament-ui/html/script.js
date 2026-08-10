@@ -668,11 +668,19 @@ function createChannelCard(channel) {
         const owners = spoolmanInventoryLoaded
             ? SM.findUidOwners(spoolmanInventory, uid)
             : [];
-        if (!spoolmanInventoryLoaded || owners.length === 0) {
+        if (!spoolmanInventoryLoaded) {
             const createBtn = mkBtn('+ Create Spool', 'create-spool-btn', () => openCreateSpoolModal(channel.channel));
-            createBtn.disabled = !spoolmanInventoryLoaded;
-            if (createBtn.disabled) createBtn.title = 'Waiting for the Spoolman inventory';
+            createBtn.disabled = true;
+            createBtn.title = 'Waiting for the Spoolman inventory';
             actions.appendChild(createBtn);
+        } else if (owners.length === 0) {
+            const assignedSpool = spoolId != null ? spoolmanSpools.get(Number(spoolId)) : null;
+            if (assignedSpool) {
+                actions.appendChild(mkBtn('+ Add RFID', 'create-spool-btn', () =>
+                    assignSpoolToChannel(channel.channel, assignedSpool.id, false)));
+            } else {
+                actions.appendChild(mkBtn('+ Create Spool', 'create-spool-btn', () => openCreateSpoolModal(channel.channel)));
+            }
         }
     }
     if (spoolmanActive) actions.appendChild(mkBtn('⊕ Spool', '', () => openSpoolPicker(channel.channel)));
@@ -904,9 +912,13 @@ function renderSpoolList(filter) {
 }
 
 async function pickSpool(spoolId) {
-    if (spoolPickerChannel === null || spoolAssignmentBusy) return;
+    if (spoolPickerChannel === null) return;
+    await assignSpoolToChannel(spoolPickerChannel, spoolId, true);
+}
+
+async function assignSpoolToChannel(channel, spoolId, closePicker) {
+    if (spoolAssignmentBusy) return;
     spoolAssignmentBusy = true;
-    const channel = spoolPickerChannel;
     try {
         const uid = currentChannelUid(channel);
         const spools = await refreshSpoolmanInventory(false);
@@ -946,7 +958,7 @@ async function pickSpool(spoolId) {
             ensureChannelUid(channel, uid);
         }
 
-        closeModal('spoolman-modal');
+        if (closePicker) closeModal('spoolman-modal');
         showStatus('Assigning spool…', 'info');
         await executeSpoolAssignment(channel, target, uid, previousTargetUids);
         showStatus(`Spool #${spoolId} assigned to Extruder ${channel + 1}`, 'success');
