@@ -19,6 +19,11 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v3
 
+    - name: Test firmware line-ending guard
+      run: |
+        python3 -m unittest scripts.test_check_line_endings
+        python3 scripts/check_line_endings.py
+
     - name: Test Filament Manager Spoolman helpers
       run: node --test overlays/firmware-extended/68-app-filament-ui/test/spoolman-utils.test.js
 
