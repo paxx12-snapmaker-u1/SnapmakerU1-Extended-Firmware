@@ -25,6 +25,12 @@ jobs:
         fetch-depth: 0
         submodules: recursive
 
+    - name: Test SpoolLink
+      run: >-
+        python3 -m unittest discover
+        overlays/firmware-extended/38-feature-spoollink/test
+        -p 'test_*.py'
+
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
 
