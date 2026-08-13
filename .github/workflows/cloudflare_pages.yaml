@@ -10,6 +10,7 @@ on:
       - 'docs/**'
       - 'scripts/build_docs.sh'
       - '.github/workflows/cloudflare_pages.yaml'
+  workflow_dispatch:
 
 jobs:
   deploy:
