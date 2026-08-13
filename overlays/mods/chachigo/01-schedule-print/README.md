@@ -1,4 +1,4 @@
-# 34-feature-schedule-print
+# 01-schedule-print
 
 Adds a Moonraker component that starts a print job at a user-specified time.
 
