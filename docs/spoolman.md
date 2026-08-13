@@ -16,6 +16,14 @@ Automatic filament metadata sync and spool tracking via
 - Tracks the active spool in Moonraker so Spoolman can update remaining
   filament weight as you print.
 
+## Screenshots
+
+**Filament Manager** (`/filament/`) reconciles each channel across Official
+tag data, User-set filament, the active Spoolman spool, and the raw RFID
+tag:
+
+![Filament Manager](screenshots/filament-manager.png)
+
 ## Enabling
 
 Enable via Fluidd/Mainsail settings under

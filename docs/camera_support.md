@@ -132,6 +132,8 @@ aspect_ratio: 16:9
 - `mjpegstreamer-adaptive` - MJPEG streaming (best compatibility, most resource intensive)
   - No stream_url needed (uses snapshot_url only)
 
+<img src="images/usb_cam.png" alt="Fluidd USB camera settings" width="300"/>
+
 **Step 3:** Reboot the printer for changes to take effect.
 
 To disable USB camera, set `usb: none` in extended2.cfg.
