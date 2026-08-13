@@ -125,6 +125,27 @@
     .mapping-label { font-size: 0.85rem; color: #aaa; width: 2.2rem; flex-shrink: 0; }
     .mapping-select { flex: 1; padding: 0.35rem 0.5rem; font-size: 0.85rem; }
 
+    /* Calibrations */
+    .calib-list { display: flex; flex-direction: column; gap: 0.5rem; }
+    .calib-row {
+      display: flex;
+      align-items: center;
+      gap: 0.55rem;
+      font-size: 0.9rem;
+      color: #ddd;
+      text-transform: none;
+      letter-spacing: 0;
+      margin-bottom: 0;
+      cursor: pointer;
+    }
+    .calib-row input[type="checkbox"] {
+      width: 16px; height: 16px;
+      accent-color: #1976d2;
+      cursor: pointer;
+      flex: none;
+    }
+    .calib-row .hint { color: #777; font-size: 0.78rem; }
+
     /* Buttons */
     button {
       width: 100%;
@@ -199,6 +220,24 @@
     <div class="mapping-table" id="mapping-table"></div>
   </div>
 
+  <div class="field">
+    <label>Calibrations &amp; timelapse</label>
+    <div class="calib-list">
+      <label class="calib-row">
+        <input type="checkbox" id="chk-bed-level">
+        <span>Auto bed leveling</span>
+      </label>
+      <label class="calib-row">
+        <input type="checkbox" id="chk-flow-calibrate">
+        <span>Flow (extrusion) calibration</span>
+      </label>
+      <label class="calib-row">
+        <input type="checkbox" id="chk-timelapse">
+        <span>Timelapse</span>
+      </label>
+    </div>
+  </div>
+
   <div class="row" style="margin-bottom:1rem">
     <div class="field">
       <label for="inp-date">Date</label>
@@ -220,6 +259,9 @@
     <div class="status-row"><span class="lbl">In</span><span class="val" id="st-cd">—</span></div>
     <div class="status-row" id="st-map-row" style="display:none">
       <span class="lbl">Mapping</span><span class="val" id="st-map">—</span>
+    </div>
+    <div class="status-row" id="st-prefs-row" style="display:none">
+      <span class="lbl">Options</span><span class="val" id="st-prefs">—</span>
     </div>
     <button id="btn-cancel">Cancel scheduled print</button>
   </div>
@@ -529,6 +571,20 @@ async function loadStatus() {
     } else {
       mapRow.style.display = 'none';
     }
+    const prefsRow = document.getElementById('st-prefs-row');
+    const prefs = sc.preferences;
+    const enabled = [];
+    if (prefs) {
+      if (prefs.bed_level) enabled.push('Bed leveling');
+      if (prefs.flow_calibrate) enabled.push('Flow calibration');
+      if (prefs.timelapse) enabled.push('Timelapse');
+    }
+    if (enabled.length) {
+      document.getElementById('st-prefs').textContent = enabled.join(', ');
+      prefsRow.style.display = 'flex';
+    } else {
+      prefsRow.style.display = 'none';
+    }
     box.style.display = 'block';
   } catch {}
 }
@@ -547,6 +603,9 @@ async function schedule() {
       filename: selectedFile,
       time: toIso(dateStr, timeStr, tz),
       timezone: tz,
+      bed_level: document.getElementById('chk-bed-level').checked,
+      flow_calibrate: document.getElementById('chk-flow-calibrate').checked,
+      timelapse: document.getElementById('chk-timelapse').checked,
     };
     if (selectedExtruderMap.some(v => v !== null))
       body.extruder_map = selectedExtruderMap.map(v => v ?? null);

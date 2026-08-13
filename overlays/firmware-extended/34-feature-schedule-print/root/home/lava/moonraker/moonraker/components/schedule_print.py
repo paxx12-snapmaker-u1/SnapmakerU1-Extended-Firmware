@@ -82,8 +82,10 @@ class SchedulePrint:
             return
         filename = sched["filename"]
         extruder_map = sched.get("extruder_map")
+        preferences = sched.get("preferences")
         self._clear_state()
         kapis = self.server.lookup_component("klippy_apis")
+        await self._apply_preferences(kapis, preferences)
         if extruder_map:
             for logical_idx, physical_idx in enumerate(extruder_map):
                 if physical_idx is None:
@@ -106,6 +108,30 @@ class SchedulePrint:
         except Exception:
             logger.exception("schedule_print: failed to start print '%s'", filename)
 
+    async def _apply_preferences(self, kapis, preferences) -> None:
+        # Opt-in only: a preference is forced ON when set, never forced off.
+        # Runs while the printer is idle (before start_print), so
+        # SET_PRINT_PREFERENCES is allowed by the firmware.
+        if not preferences:
+            return
+        params = []
+        if preferences.get("bed_level"):
+            params.append("BED_LEVEL=1")
+        if preferences.get("flow_calibrate"):
+            params.append("FLOW_CALIBRATE=1")
+        if preferences.get("timelapse"):
+            params.append("TIME_LAPSE_CAMERA=1")
+        if not params:
+            return
+        command = "SET_PRINT_PREFERENCES " + " ".join(params)
+        try:
+            await kapis.run_gcode(command)
+            logger.info("schedule_print: applied preferences (%s)", " ".join(params))
+        except Exception:
+            logger.exception(
+                "schedule_print: SET_PRINT_PREFERENCES failed, proceeding anyway"
+            )
+
     def _on_klippy_ready(self) -> None:
         if self._scheduled:
             self._arm()
@@ -125,12 +151,14 @@ class SchedulePrint:
         timezone = web_request.get_str("timezone", default="UTC")
         extruder_map_str = web_request.get_str("extruder_map", default=None)
         extruder_map = json.loads(extruder_map_str) if extruder_map_str else None
+        preferences = self._parse_preferences(web_request)
         target_ts = self._parse_time(time_str)
         self._scheduled = {
             "filename": filename,
             "target_ts": target_ts,
             "timezone": timezone,
             "extruder_map": extruder_map,
+            "preferences": preferences,
         }
         self._save_state()
         self._arm()
@@ -145,10 +173,25 @@ class SchedulePrint:
                 "target_ts": self._scheduled["target_ts"],
                 "timezone": self._scheduled.get("timezone", "UTC"),
                 "extruder_map": self._scheduled.get("extruder_map"),
+                "preferences": self._scheduled.get("preferences"),
                 "seconds_remaining": int(
                     self._scheduled["target_ts"] - time.time()
                 ),
             }
+        }
+
+    def _parse_preferences(
+        self, web_request: WebRequest
+    ) -> Optional[Dict[str, bool]]:
+        bed_level = web_request.get_boolean("bed_level", default=None)
+        flow_calibrate = web_request.get_boolean("flow_calibrate", default=None)
+        timelapse = web_request.get_boolean("timelapse", default=None)
+        if bed_level is None and flow_calibrate is None and timelapse is None:
+            return None
+        return {
+            "bed_level": bool(bed_level),
+            "flow_calibrate": bool(flow_calibrate),
+            "timelapse": bool(timelapse),
         }
 
     def _parse_time(self, time_str: str) -> float:
