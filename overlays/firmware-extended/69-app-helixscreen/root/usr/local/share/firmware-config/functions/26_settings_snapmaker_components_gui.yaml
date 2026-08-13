@@ -1,0 +1,40 @@
+settings:
+  snapmaker_components:
+    items:
+      gui:
+        label: Touchscreen GUI
+        description: Select the interface shown on the printer's built-in touchscreen.
+        help_url: https://snapmakeru1-extended-firmware.pages.dev/helixscreen
+        get_cmd:
+          - /usr/local/bin/extended-config.py
+          - get
+          - /oem/printer_data/config/extended/extended2.cfg
+          - components
+          - gui
+          - snapmaker
+        options:
+          snapmaker:
+            label: Snapmaker
+            confirm: "Switch back to the stock Snapmaker touchscreen UI?\n\nThe downloaded HelixScreen files are removed, so switching back to HelixScreen later downloads them again.\n\nThe printer reboots to apply the change."
+            cmd:
+              - bash
+              - -xec
+              - |
+                /usr/local/bin/extended-config.py add /oem/printer_data/config/extended/extended2.cfg components gui snapmaker
+                /usr/local/bin/extended-pkg helixscreen clean
+                echo ""
+                echo ">> Stock Snapmaker UI selected. Rebooting..."
+                (sleep 3; /sbin/reboot) >/dev/null 2>&1 &
+          helixscreen:
+            label: HelixScreen
+            confirm: "Replace the stock Snapmaker touchscreen UI with HelixScreen?\n\nHelixScreen is a third-party Klipper touchscreen interface and is downloaded on demand (~46 MB). It manages WiFi itself, but reads and writes the same saved-network file as the stock UI, so an already-configured network carries over automatically.\n\nThe printer reboots to apply the change."
+            cmd:
+              - bash
+              - -xec
+              - |
+                /usr/local/bin/extended-pkg helixscreen download
+                /usr/local/bin/extended-config.py add /oem/printer_data/config/extended/extended2.cfg components gui helixscreen
+                echo ""
+                echo ">> HelixScreen selected. Rebooting..."
+                (sleep 3; /sbin/reboot) >/dev/null 2>&1 &
+        default: snapmaker
