@@ -1,5 +1,5 @@
 PKG_LABEL="HelixScreen"
-PKG_VERSION=0.99.92
+PKG_VERSION=0.99.111
 PKG_URL="https://github.com/prestonbrown/helixscreen/releases/download/v${PKG_VERSION}/helixscreen-snapmaker-u1-v${PKG_VERSION}.tar.gz"
-PKG_SHA256=687f149085b53a24ab63f13e223b9c2956ab170aab0b4e339189b19b994b04ad
+PKG_SHA256=b1173968ac1c8e06628436c30403c9ceea4218ec763eeb1c3fddd1e244b0a8d6
 PKG_BINARIES="bin/helix-screen"
