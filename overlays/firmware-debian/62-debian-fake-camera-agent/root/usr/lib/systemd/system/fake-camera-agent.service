@@ -1,0 +1,17 @@
+[Unit]
+Description=Fake Camera Agent MQTT Service
+After=capture-mipi-mpp.service mosquitto.service
+Requires=capture-mipi-mpp.service
+ConditionPathExists=/dev/video11
+
+[Service]
+Type=simple
+User=lava
+ExecStart=/opt/venv/bin/python /usr/local/bin/fake-camera-agent.py --jpeg-sock /tmp/capture-mipi-jpeg.sock --detect-sock /tmp/detect-bed-check.sock:item,nozzle,legend_text,light_spot --detect-sock /tmp/detect-print-check.sock:noodle,residue,clean_bed
+Restart=always
+RestartSec=5
+StartLimitBurst=3
+StartLimitIntervalSec=60
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,17 @@
+[Unit]
+Description=Lava GUI Application
+After=network.target init-printer-data.service
+ConditionPathExists=/dev/fb0
+ConditionPathExists=/dev/lava-io
+
+[Service]
+Type=simple
+Environment="LD_LIBRARY_PATH=/opt/lava/lib"
+ExecStart=/opt/lava/bin/gui -d
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

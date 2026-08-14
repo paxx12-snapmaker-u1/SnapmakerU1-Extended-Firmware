@@ -35,7 +35,7 @@ rm -rf "$EXTRACT_DIR"
 mkdir -p "$EXTRACT_DIR"
 
 case "$FILENAME" in
-  *.tar.gz)
+  *.tar.gz|*.tgz)
     echo ">> Extracting $FILENAME..."
     tar -xzf "$TARGET" -C "$EXTRACT_DIR"
     ;;

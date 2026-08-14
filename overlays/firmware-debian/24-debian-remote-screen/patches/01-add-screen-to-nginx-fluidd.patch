@@ -1,0 +1,32 @@
+--- a/etc/nginx/sites-available/fluidd
++++ b/etc/nginx/sites-available/fluidd
+@@ -98,4 +98,28 @@
+         error_log off;
+         proxy_pass http://mjpgstreamer4/;
+     }
++
++    # Remote screen access via fb-http-server
++    location = /screen {
++        return 301 /screen/;
++    }
++
++    location /screen/ {
++        alias /usr/local/share/fb-http-server/;
++        index index.html;
++    }
++
++    location /screen/snapshot {
++        auth_request /auth_check;
++        proxy_pass http://127.0.0.1:8092/snapshot;
++        proxy_http_version 1.1;
++        proxy_set_header Host $host;
++    }
++
++    location /screen/touch {
++        auth_request /auth_check;
++        proxy_pass http://127.0.0.1:8092/touch;
++        proxy_http_version 1.1;
++        proxy_set_header Host $host;
++    }
+ }
+

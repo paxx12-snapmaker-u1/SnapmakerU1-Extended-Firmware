@@ -1,0 +1,16 @@
+[Unit]
+Description=USB Camera Capture Service
+After=network.target
+ConditionPathExists=/dev/video18
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/local/bin/capture-v4l2-jpeg-mpp --device /dev/video18 --jpeg-sock /tmp/capture-usb-jpeg.sock --mjpeg-sock /tmp/capture-usb-mjpeg.sock --h264-sock /tmp/capture-usb-h264.sock
+Restart=always
+RestartSec=5
+StartLimitBurst=3
+StartLimitIntervalSec=60
+
+[Install]
+WantedBy=multi-user.target

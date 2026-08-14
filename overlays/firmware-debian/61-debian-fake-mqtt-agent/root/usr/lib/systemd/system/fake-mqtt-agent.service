@@ -1,0 +1,15 @@
+[Unit]
+Description=Fake MQTT Agent Service
+After=mosquitto.service
+
+[Service]
+Type=simple
+User=lava
+ExecStart=/opt/venv/bin/python /usr/local/bin/fake-mqtt-agent.py
+Restart=always
+RestartSec=5
+StartLimitBurst=3
+StartLimitIntervalSec=60
+
+[Install]
+WantedBy=multi-user.target

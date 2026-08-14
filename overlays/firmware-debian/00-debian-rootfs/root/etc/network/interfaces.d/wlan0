@@ -1,0 +1,6 @@
+# Use WiFi credentials configured by Lava GUI app
+
+allow-hotplug wlan0
+iface wlan0 inet dhcp
+  wpa-conf /oem/printer_data/gui/wpa_supplicant.conf
+  post-up iw dev wlan0 set power_save off

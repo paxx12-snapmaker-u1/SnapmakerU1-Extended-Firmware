@@ -1,0 +1,16 @@
+[Unit]
+Description=MIPI Camera Capture Service
+After=network.target lava-rkaiq.service
+ConditionPathExists=/dev/video11
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/local/bin/capture-v4l2-raw-mpp --device /dev/video11 --format nv12 --jpeg-quality 7 --jpeg-sock /tmp/capture-mipi-jpeg.sock --mjpeg-sock /tmp/capture-mipi-mjpeg.sock --h264-sock /tmp/capture-mipi-h264.sock --raw-frame-sock /tmp/capture-mipi-raw.sock --width 1920 --height 1080 --fps 30
+Restart=always
+RestartSec=5
+StartLimitBurst=3
+StartLimitIntervalSec=60
+
+[Install]
+WantedBy=multi-user.target

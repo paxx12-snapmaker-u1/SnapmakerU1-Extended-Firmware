@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <!-- Main body -->
+  <rect x="64" y="100" width="128" height="120" rx="8" fill="#f0f0f0" stroke="#333" stroke-width="4"/>
+  <!-- Front opening -->
+  <rect x="80" y="140" width="96" height="60" rx="4" fill="#1a1a1a" opacity="0.3"/>
+  <!-- Multi-head extruders on top - narrow and tall -->
+  <rect x="76" y="40" width="16" height="64" rx="2" fill="#666"/>
+  <rect x="104" y="40" width="16" height="64" rx="2" fill="#666"/>
+  <rect x="132" y="40" width="16" height="64" rx="2" fill="#666"/>
+  <rect x="160" y="40" width="16" height="64" rx="2" fill="#666"/>
+  <!-- Left spools (squircles, stacked) -->
+  <rect x="40" y="120" width="24" height="40" rx="6" fill="#f4a300"/>
+  <rect x="46" y="126" width="12" height="28" rx="3" fill="#333"/>
+  <rect x="40" y="164" width="24" height="40" rx="6" fill="#4a9eff"/>
+  <rect x="46" y="170" width="12" height="28" rx="3" fill="#333"/>
+  <!-- Right spools (squircles, stacked) -->
+  <rect x="192" y="120" width="24" height="40" rx="6" fill="#e83e3e"/>
+  <rect x="198" y="126" width="12" height="28" rx="3" fill="#333"/>
+  <rect x="192" y="164" width="24" height="40" rx="6" fill="#4caf50"/>
+  <rect x="198" y="170" width="12" height="28" rx="3" fill="#333"/>
+  <!-- Display screen -->
+  <rect x="164" y="116" width="20" height="12" rx="2" fill="#4a9eff"/>
+</svg>

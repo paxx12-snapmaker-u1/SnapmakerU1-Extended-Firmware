@@ -1,0 +1,14 @@
+[Unit]
+Description=Framebuffer HTTP Server (Remote Screen)
+After=network.target
+ConditionPathExists=/dev/fb0
+
+[Service]
+Type=simple
+User=root
+ExecStart=/opt/venv/bin/python3 /usr/local/bin/fb-http-server.py --bind 127.0.0.1 --port 8092 --fb /dev/fb0 --touch /dev/input/event0 --html /usr/local/share/fb-http-server/index.html
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

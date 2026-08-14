@@ -79,8 +79,17 @@ for overlay; do
   echo ">> Applying overlay $overlay..."
   if [[ -d "$overlay/pre-scripts/" ]]; then
     for scriptfile in "$overlay/pre-scripts/"*.sh; do
-      echo "[+] Running pre-script: $(basename "$scriptfile")"
-      ./"$scriptfile" "$ROOTFS_DIR"
+      # if file ends with .chroot.sh, run it in chroot
+      if [[ "$scriptfile" == *.chroot.sh ]]; then
+        scriptname="$(basename "$scriptfile")"
+        echo "[+] Running chroot pre-script: $scriptname"
+        cp -v "$scriptfile" "$ROOTFS_DIR/$scriptname"
+        chroot_firmware.sh "$ROOTFS_DIR" "/$scriptname"
+        rm -f "$ROOTFS_DIR/$scriptname"
+      else
+        echo "[+] Running pre-script: $(basename "$scriptfile")"
+        ./"$scriptfile" "$ROOTFS_DIR"
+      fi
     done
   fi
 
@@ -101,8 +110,17 @@ for overlay; do
 
   if [[ -d "$overlay/scripts/" ]]; then
     for scriptfile in "$overlay/scripts/"*.sh; do
-      echo "[+] Running script: $(basename "$scriptfile")"
-      ./"$scriptfile" "$ROOTFS_DIR"
+      # if file ends with .chroot.sh, run it in chroot
+      if [[ "$scriptfile" == *.chroot.sh ]]; then
+        scriptname="$(basename "$scriptfile")"
+        echo "[+] Running chroot script: $scriptname"
+        cp -v "$scriptfile" "$ROOTFS_DIR/$scriptname"
+        chroot_firmware.sh "$ROOTFS_DIR" "/$scriptname"
+        rm -f "$ROOTFS_DIR/$scriptname"
+      else
+        echo "[+] Running script: $(basename "$scriptfile")"
+        ./"$scriptfile" "$ROOTFS_DIR"
+      fi
     done
   fi
 done
@@ -121,7 +139,17 @@ if FILES=$(find "$ROOTFS_DIR" -type f -exec file {} + | grep "ELF" | grep -v "AR
 fi
 
 echo ">> Create squash filesystem..."
+rm -rf "$BUILD_DIR/rk-unpacked/rootfs-v2.img"
 mksquashfs "$ROOTFS_DIR" "$BUILD_DIR/rk-unpacked/rootfs-v2.img" -comp gzip
+
+echo ">> Checking image size..."
+IMAGE_SIZE=$(stat -c '%s' "$BUILD_DIR/rk-unpacked/rootfs-v2.img")
+MAX_SIZE=$((300 * 1024 * 1024))
+if [[ $IMAGE_SIZE -gt $MAX_SIZE ]]; then
+  echo "Error: Image size $(($IMAGE_SIZE / 1024 / 1024))MiB exceeds maximum of 300MiB"
+  exit 1
+fi
+echo "   Image size: $(($IMAGE_SIZE / 1024 / 1024))MiB (OK)"
 
 echo ">> Replace rootfs.img in firmware..."
 mv -v "$BUILD_DIR/rk-unpacked"/{rootfs-v2,rootfs}.img

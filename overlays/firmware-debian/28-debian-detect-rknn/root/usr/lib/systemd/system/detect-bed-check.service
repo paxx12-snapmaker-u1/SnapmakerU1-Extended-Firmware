@@ -1,0 +1,17 @@
+[Unit]
+Description=Bed Detection Service
+After=capture-mipi-mpp.service
+Requires=capture-mipi-mpp.service
+ConditionPathExists=/dev/video11
+
+[Service]
+Type=simple
+User=lava
+ExecStart=/opt/venv/bin/python3 /usr/local/bin/detect-rknn-yolo11.py --model /opt/lava/unisrv/camera_service/model/bed_check.fp.rknn --labels item,nozzle,legend_text,light_spot --sock /tmp/detect-bed-check.sock
+Restart=always
+RestartSec=5
+StartLimitBurst=3
+StartLimitIntervalSec=60
+
+[Install]
+WantedBy=multi-user.target

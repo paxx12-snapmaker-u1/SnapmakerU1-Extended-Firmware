@@ -1,0 +1,81 @@
+#!/bin/sh
+# early-init-overlay.sh
+
+echo "Starting early init overlay..."
+
+# mount kernel filesystems
+mount -t proc  proc  /proc
+mount -t sysfs sysfs /sys
+
+# loading kernel modules
+/usr/sbin/insmod /opt/lava/modules/io_manager.ko # IO manager (powers USB, etc.)
+/usr/sbin/insmod /opt/lava/modules/bcmdhd.ko     # WiFi/BT driver
+/usr/sbin/insmod /opt/lava/modules/chsc6540.ko   # Touchpanel driver
+
+# mounting persistent storage overlay
+if OEM_DISK=$(blkid -o device -t PARTLABEL=oem | head -n 1); then
+  # check and mount oem partition (in case of improper shutdown)
+  if ! fsck -y "$OEM_DISK"; then
+    echo "Filesystem check failed on $OEM_DISK"
+  fi
+
+  if mount -t ext4 "$OEM_DISK" /oem; then
+    echo "Mounted /oem partition from $OEM_DISK"
+    mkdir -p /oem/overlay-debian
+    mount --bind /oem/overlay-debian /overlay
+    umount /oem
+  fi
+fi
+
+# fallback to tmpfs overlay
+if ! mountpoint /overlay; then
+  echo "Failed to mount /oem partition!"
+  mount -t tmpfs tmpfs /overlay
+fi
+
+# remove extra files from previous overlay
+overlay_persist_files() {
+  # user specified persistent files
+  [ -e /overlay/upper/etc/sysupgrade.conf ] && echo --exclude-from=/overlay/upper/etc/sysupgrade.conf
+
+  # always persist custom sysupgrade version file
+  echo "--exclude=/etc/sysupgrade.conf"
+
+  # system files
+  echo "--exclude=/etc/machine-id"
+  echo "--exclude=/etc/ssh/ssh_host_*"
+  echo "--exclude=/var/lib/systemd/random-seed"
+  echo "--exclude=/var/lib/systemd/timesync"
+  echo "--exclude=/var/lib/dhcpcd"
+}
+
+# if overlay version mismatches, clean up previous overlay
+if [ -d /overlay/upper ] && ! diff -u /overlay/current_version /etc/CUSTOM_VERSION; then
+  echo "Cleaning up previous overlay..."
+  # misuse /rom as this is empty directory at this point
+  rsync -a --delete $(overlay_persist_files) /rom /overlay/upper
+  # write current version
+  cp -n /etc/CUSTOM_VERSION /overlay/first_version
+  cp /etc/CUSTOM_VERSION /overlay/current_version
+  sync
+fi
+
+# mount overlay rootfs
+mkdir -p /overlay/upper /overlay/work
+mount -t overlay overlay /overlay \
+  -o lowerdir=/,upperdir=/overlay/upper,workdir=/overlay/work
+
+# move kernel mounts into new root
+mount --move /proc /overlay/proc
+mount --move /sys  /overlay/sys
+mount --move /dev  /overlay/dev
+
+# pivot root: old root becomes /rom
+pivot_root /overlay /overlay/rom
+
+# move essential mounts to new root
+mount --move /rom/overlay /overlay
+
+# hand off to real init
+echo "Starting real init..."
+exec /lib/systemd/systemd

@@ -1,0 +1,17 @@
+[Unit]
+Description=MIPI Camera WebRTC Stream Service
+After=capture-mipi-mpp.service
+Requires=capture-mipi-mpp.service
+ConditionPathExists=/dev/video11
+
+[Service]
+Type=simple
+User=lava
+ExecStart=/usr/local/bin/stream-webrtc --h264-sock /tmp/capture-mipi-h264.sock --webrtc-sock /tmp/capture-mipi-webrtc.sock
+Restart=always
+RestartSec=5
+StartLimitBurst=3
+StartLimitIntervalSec=60
+
+[Install]
+WantedBy=multi-user.target

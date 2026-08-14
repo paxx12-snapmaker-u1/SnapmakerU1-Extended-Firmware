@@ -1,0 +1,24 @@
+# persistent internal storage links(Android style): /dev/block/by-name
+#
+# based on udev's 60-persistent-storage.rules
+
+ACTION=="remove", GOTO="persistent_storage_end"
+
+SUBSYSTEM!="block", GOTO="persistent_storage_end"
+
+# ignore removable devices
+ATTRS{removable}=="1", GOTO="persistent_storage_end"
+
+# ignore SD Cards
+ATTRS{TYPE}=="SD", GOTO="persistent_storage_end"
+
+# honor various types of names
+ENV{ID_PART_ENTRY_NAME}=="?*", \
+  SYMLINK+="block/by-name/$env{ID_PART_ENTRY_NAME}", GOTO="persistent_storage_end"
+ENV{PARTNAME}=="?*", SYMLINK+="block/by-name/$env{PARTNAME}", \
+  GOTO="persistent_storage_end"
+ENV{ID_FS_LABEL}=="?*", SYMLINK+="block/by-name/$env{ID_FS_LABEL}", \
+  GOTO="persistent_storage_end"
+KERNEL=="mtdblock*", TEST=="device/name", SYMLINK+="block/by-name/$attr{device/name}"
+
+LABEL="persistent_storage_end"

@@ -1,0 +1,18 @@
+[Unit]
+Description=Klipper MCU Firmware
+After=network.target
+Before=klipper.service
+ConditionPathExists=/dev/lava-io
+
+[Service]
+Type=simple
+User=root
+Group=root
+ExecStart=/opt/lava/firmware_mcu/klippy_mcu -r
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

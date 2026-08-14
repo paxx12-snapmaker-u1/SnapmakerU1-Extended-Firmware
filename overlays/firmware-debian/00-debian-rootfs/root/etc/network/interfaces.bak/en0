@@ -1,0 +1,2 @@
+allow-hotplug en*
+iface en* inet dhcp

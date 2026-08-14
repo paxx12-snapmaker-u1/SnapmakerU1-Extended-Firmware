@@ -1,0 +1,21 @@
+[Unit]
+Description=Klipper 3D Printer Firmware
+After=network.target init-printer-data.service mosquitto.service klippy-mcu.service
+
+[Service]
+Type=simple
+User=lava
+Group=lava
+WorkingDirectory=/opt/klipper
+Environment="PYTHONPATH=/opt/klipper"
+ExecStartPre=-/opt/lava/bin/lava_io set MAIN_MCU_POWER=0 HEAD_MCU_POWER=0
+ExecStartPre=-/bin/sleep 1
+ExecStartPre=-/opt/lava/bin/lava_io set MAIN_MCU_POWER=1 HEAD_MCU_POWER=1
+ExecStart=/opt/venv/bin/python /opt/klipper/klippy/klippy.py /home/lava/printer_data/config/printer.cfg -I /home/lava/printer_data/comms/klippy.serial -l /home/lava/printer_data/logs/klippy.log -a /home/lava/printer_data/comms/klippy.sock
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

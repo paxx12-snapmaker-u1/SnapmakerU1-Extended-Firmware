@@ -1,0 +1,12 @@
+[Unit]
+Description=Initialize printer data from /opt/lava/printer_data to /oem/printer_data
+After=local-fs.target
+Before=multi-user.target mosquitto.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/init-printer-data.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

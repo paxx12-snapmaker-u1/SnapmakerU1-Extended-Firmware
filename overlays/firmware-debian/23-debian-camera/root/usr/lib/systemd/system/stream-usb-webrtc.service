@@ -1,0 +1,17 @@
+[Unit]
+Description=USB Camera WebRTC Stream Service
+After=capture-usb-mpp.service
+Requires=capture-usb-mpp.service
+ConditionPathExists=/dev/video18
+
+[Service]
+Type=simple
+User=lava
+ExecStart=/usr/local/bin/stream-webrtc --h264-sock /tmp/capture-usb-h264.sock --webrtc-sock /tmp/capture-usb-webrtc.sock
+Restart=always
+RestartSec=5
+StartLimitBurst=3
+StartLimitIntervalSec=60
+
+[Install]
+WantedBy=multi-user.target

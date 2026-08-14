@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Snapmaker U1 Screen</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#1a1a1a">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="U1 Screen">
+<link rel="icon" type="image/svg+xml" href="icon.svg">
+<link rel="apple-touch-icon" href="icon.svg">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width: 100%; height: 100%; background: #1a1a1a; overflow: hidden; }
+#container { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; position: relative; }
+#screen { max-width: 100%; max-height: 100%; cursor: crosshair; touch-action: none; }
+#status { position: fixed; top: 8px; right: 8px; color: #888; font: 12px monospace; }
+.touch-ring {
+    position: fixed; pointer-events: none;
+    width: 40px; height: 40px; margin: -20px 0 0 -20px;
+    border: 3px solid rgba(255,100,100,0.8);
+    border-radius: 50%; opacity: 1;
+    animation: touch-fade 0.4s ease-out forwards;
+}
+@keyframes touch-fade {
+    0% { transform: scale(0.5); opacity: 1; }
+    100% { transform: scale(1.5); opacity: 0; }
+}
+</style>
+</head>
+<body>
+<div id="container">
+<img id="screen" src="snapshot">
+</div>
+<div id="status">--</div>
+<script src="auth.js"></script>
+<script>
+// Register service worker for PWA support
+if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+}
+
+// Check authentication on load
+(async function() {
+    const authenticated = await initAuth();
+    if (!authenticated) {
+        // Authentication failed and redirected
+        return;
+    }
+})();
+
+const img = document.getElementById('screen');
+const status = document.getElementById('status');
+const placeholderImg = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="800" height="480" viewBox="0 0 800 480"><rect fill="#222"/><text x="400" y="230" text-anchor="middle" fill="#c66" font-family="monospace" font-size="20">No Signal</text><text x="400" y="260" text-anchor="middle" fill="#a55" font-family="monospace" font-size="14">maybe not enabled?</text></svg>');
+let loading = false;
+let errorCount = 0;
+let etag = '';
+let frameCount = 0;
+let lastFpsTime = performance.now();
+
+async function updateImage() {
+    if (loading) return;
+    loading = true;
+    try {
+        const headers = getAuthHeaders();
+        if (etag) headers['If-None-Match'] = etag;
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 1000);
+        const resp = await fetch(`snapshot?ts=${Date.now()}`, { headers: headers, signal: controller.signal });
+        clearTimeout(timeout);
+        if (resp.status === 200) {
+            const newEtag = resp.headers.get('ETag');
+            if (newEtag) etag = newEtag;
+            const blob = await resp.blob();
+            const url = URL.createObjectURL(blob);
+            const oldUrl = img.src;
+            img.src = url;
+            if (oldUrl.startsWith('blob:')) URL.revokeObjectURL(oldUrl);
+            frameCount++;
+            errorCount = 0;
+        } else if (resp.status === 304) {
+            etag = resp.headers.get('ETag') || etag;
+            errorCount = 0;
+        } else {
+            errorCount++;
+        }
+    } catch (e) {
+        errorCount++;
+    }
+    if (errorCount >= 3) {
+        img.src = placeholderImg;
+    }
+    loading = false;
+    const now = performance.now();
+    if (now - lastFpsTime >= 1000) {
+        status.textContent = frameCount + ' fps';
+        frameCount = 0;
+        lastFpsTime = now;
+    }
+}
+
+setInterval(updateImage, 100);
+
+let dragging = false;
+let dragMoved = false;
+
+function showTouchRing(clientX, clientY) {
+    const ring = document.createElement('div');
+    ring.className = 'touch-ring';
+    ring.style.left = clientX + 'px';
+    ring.style.top = clientY + 'px';
+    document.body.appendChild(ring);
+    setTimeout(() => ring.remove(), 400);
+}
+
+function getImageCoords(clientX, clientY) {
+    const rect = img.getBoundingClientRect();
+    const scaleX = img.naturalWidth / rect.width;
+    const scaleY = img.naturalHeight / rect.height;
+    const x = Math.round((clientX - rect.left) * scaleX);
+    const y = Math.round((clientY - rect.top) * scaleY);
+    return { x: x, y: y };
+}
+
+function sendTouch(action, x, y) {
+    const headers = getAuthHeaders();
+    fetch('touch?a=' + action + '&x=' + x + '&y=' + y, { method: 'POST', headers: headers }).catch(() => {});
+}
+
+function onDown(clientX, clientY) {
+    dragging = true;
+    dragMoved = false;
+    showTouchRing(clientX, clientY);
+    const coords = getImageCoords(clientX, clientY);
+    sendTouch('down', coords.x, coords.y);
+}
+
+function onMove(clientX, clientY) {
+    if (!dragging) return;
+    dragMoved = true;
+    const coords = getImageCoords(clientX, clientY);
+    sendTouch('move', coords.x, coords.y);
+}
+
+function onUp(clientX, clientY) {
+    if (!dragging) return;
+    dragging = false;
+    const coords = getImageCoords(clientX, clientY);
+    sendTouch('up', coords.x, coords.y);
+}
+
+img.addEventListener('mousedown', function(e) {
+    e.preventDefault();
+    onDown(e.clientX, e.clientY);
+});
+
+document.addEventListener('mousemove', function(e) {
+    onMove(e.clientX, e.clientY);
+});
+
+document.addEventListener('mouseup', function(e) {
+    onUp(e.clientX, e.clientY);
+});
+
+img.addEventListener('touchstart', function(e) {
+    e.preventDefault();
+    if (e.touches.length > 0) {
+        onDown(e.touches[0].clientX, e.touches[0].clientY);
+    }
+});
+
+img.addEventListener('touchmove', function(e) {
+    e.preventDefault();
+    if (e.touches.length > 0) {
+        onMove(e.touches[0].clientX, e.touches[0].clientY);
+    }
+});
+
+img.addEventListener('touchend', function(e) {
+    e.preventDefault();
+    if (e.changedTouches.length > 0) {
+        onUp(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
+    }
+});
+</script>
+</body>
+</html>

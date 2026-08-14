@@ -1,0 +1,2 @@
+PARTLABEL=oem       /oem       ext4  rw,relatime  0 2
+PARTLABEL=userdata  /userdata  ext4  rw,relatime  0 2

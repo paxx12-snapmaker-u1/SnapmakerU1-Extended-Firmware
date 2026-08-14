@@ -1,0 +1,17 @@
+[Unit]
+Description=USB Camera HTTP Stream Service
+After=capture-usb-mpp.service
+Requires=capture-usb-mpp.service
+ConditionPathExists=/dev/video18
+
+[Service]
+Type=simple
+User=lava
+ExecStart=/usr/bin/python3 /usr/local/bin/stream-http.py --jpeg-sock /tmp/capture-usb-jpeg.sock --mjpeg-sock /tmp/capture-usb-mjpeg.sock --h264-sock /tmp/capture-usb-h264.sock --webrtc-sock /tmp/capture-usb-webrtc.sock --bind 127.0.0.1 --port 8081
+Restart=always
+RestartSec=5
+StartLimitBurst=3
+StartLimitIntervalSec=60
+
+[Install]
+WantedBy=multi-user.target

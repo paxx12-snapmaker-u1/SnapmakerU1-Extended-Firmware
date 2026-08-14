@@ -1,0 +1,17 @@
+[Unit]
+Description=MIPI Camera HTTP Stream Service
+After=capture-mipi-mpp.service
+Requires=capture-mipi-mpp.service
+ConditionPathExists=/dev/video11
+
+[Service]
+Type=simple
+User=lava
+ExecStart=/usr/bin/python3 /usr/local/bin/stream-http.py --jpeg-sock /tmp/capture-mipi-jpeg.sock --mjpeg-sock /tmp/capture-mipi-mjpeg.sock --h264-sock /tmp/capture-mipi-h264.sock --webrtc-sock /tmp/capture-mipi-webrtc.sock --bind 127.0.0.1
+Restart=always
+RestartSec=5
+StartLimitBurst=3
+StartLimitIntervalSec=60
+
+[Install]
+WantedBy=multi-user.target

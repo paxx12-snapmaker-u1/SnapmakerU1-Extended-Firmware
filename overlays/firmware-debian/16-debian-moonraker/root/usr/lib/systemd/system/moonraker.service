@@ -1,0 +1,18 @@
+[Unit]
+Description=Moonraker API Server
+After=network.target init-printer-data.service mosquitto.service
+
+[Service]
+Type=simple
+User=lava
+Group=lava
+WorkingDirectory=/opt/moonraker
+Environment="PYTHONPATH=/opt/moonraker"
+ExecStart=/opt/venv/bin/python /opt/moonraker/moonraker/moonraker.py -d /home/lava/printer_data -c /home/lava/printer_data/config/moonraker.conf
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

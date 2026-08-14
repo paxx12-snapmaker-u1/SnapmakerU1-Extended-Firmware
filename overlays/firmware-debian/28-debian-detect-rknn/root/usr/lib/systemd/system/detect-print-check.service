@@ -1,0 +1,17 @@
+[Unit]
+Description=Print Detection Service
+After=capture-mipi-mpp.service
+Requires=capture-mipi-mpp.service
+ConditionPathExists=/dev/video11
+
+[Service]
+Type=simple
+User=lava
+ExecStart=/opt/venv/bin/python3 /usr/local/bin/detect-rknn-yolo11.py --model /opt/lava/unisrv/camera_service/model/print_check.fp.rknn --labels noodle,residue,clean_bed --sock /tmp/detect-print-check.sock
+Restart=always
+RestartSec=5
+StartLimitBurst=3
+StartLimitIntervalSec=60
+
+[Install]
+WantedBy=multi-user.target

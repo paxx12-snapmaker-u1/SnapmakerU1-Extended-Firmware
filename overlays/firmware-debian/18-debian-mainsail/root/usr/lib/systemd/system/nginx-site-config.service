@@ -1,0 +1,12 @@
+[Unit]
+Description=Configure Nginx Site (Fluidd/Mainsail)
+Before=nginx.service
+DefaultDependencies=no
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/configure-nginx-site.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

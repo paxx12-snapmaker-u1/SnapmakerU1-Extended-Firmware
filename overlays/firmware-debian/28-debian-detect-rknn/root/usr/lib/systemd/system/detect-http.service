@@ -1,0 +1,16 @@
+[Unit]
+Description=AI Detection HTTP Visualization Service
+After=capture-mipi-mpp.service detect-bed-check.service detect-print-check.service
+Requires=capture-mipi-mpp.service
+ConditionPathExists=/dev/video11
+
+[Service]
+Type=simple
+User=lava
+ExecStart=/opt/venv/bin/python /usr/local/bin/detect-http.py --port 8091 --bind 0.0.0.0 --jpeg-sock /tmp/capture-mipi-jpeg.sock --detect-sock /tmp/detect-bed-check.sock --detect-sock /tmp/detect-print-check.sock
+Restart=always
+RestartSec=5
+StartLimitBurst=3
+StartLimitIntervalSec=60
+
+[Install]

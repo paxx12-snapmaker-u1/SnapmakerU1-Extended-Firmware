@@ -1,0 +1,17 @@
+[Unit]
+Description=Rockchip Auto Image Quality
+After=network.target
+ConditionPathExists=/dev/lava-io
+
+[Service]
+Type=simple
+Environment="LD_LIBRARY_PATH=/opt/lava/lib"
+ExecStart=/opt/lava/bin/rkaiq_3A_server
+ExecStartPost=-/bin/sleep 1
+Restart=always
+RestartSec=5
+StartLimitBurst=3
+StartLimitIntervalSec=60
+
+[Install]
+WantedBy=multi-user.target
