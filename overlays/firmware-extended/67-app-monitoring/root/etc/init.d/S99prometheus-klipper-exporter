@@ -4,7 +4,7 @@ EXTENDED_CFG="/home/lava/printer_data/config/extended/extended2.cfg"
 EXPORTER_ADDRESS=$(/usr/local/bin/extended-config.py get "$EXTENDED_CFG" monitoring klipper_exporter "")
 
 NAME="prometheus-klipper-exporter"
-DAEMON="/usr/local/bin/prometheus-klipper-exporter"
+DAEMON="/usr/local/bin/prometheus-klipper-exporter.py"
 PIDFILE="/var/run/$NAME.pid"
 
 start() {
@@ -18,7 +18,7 @@ start() {
         echo "already running"
         return 1
     fi
-	start-stop-daemon -S -m -q -b -c lava -p "$PIDFILE" -x $DAEMON -- -web.listen-address "$EXPORTER_ADDRESS"
+	start-stop-daemon -S -m -q -b -c lava -p "$PIDFILE" -x $DAEMON -- -web.listen-address "$EXPORTER_ADDRESS" -moonraker.mapping "/usr/local/share/prometheus-klipper-exporter/u1-mapping.json"
     echo "OK"
 }
 
