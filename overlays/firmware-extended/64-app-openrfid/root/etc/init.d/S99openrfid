@@ -34,6 +34,9 @@ start() {
         ADDITIONAL_CONFIG=""
     fi
 
+    . /usr/local/sbin/limits-helper.sh
+    limits_enter openrfid 48M
+
     printf "Starting OpenRFID: "
     start-stop-daemon -S -b -m \
         -p "$PIDFILE" \

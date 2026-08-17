@@ -50,6 +50,9 @@ start() {
         return
     fi
 
+    . /usr/local/sbin/limits-helper.sh
+    limits_enter camera-usb 64M
+
     printf "Starting capture-usb-mpp: "
     start-stop-daemon -S -b -q -m -p /var/run/capture-usb-mpp.pid -x $CMD_FAKE_SERVICE -- $CMD_FAKE_SERVICE_ARGS $CMD_CAPTURE
     echo "OK"

@@ -29,6 +29,10 @@ start() {
         echo "already running"
         return 1
     fi
+
+    . /usr/local/sbin/limits-helper.sh
+    limits_enter firmware-config 48M
+
     start-stop-daemon -S -b -m -p "$PIDFILE" -x /usr/bin/python3 -- \
         "$DAEMON" --bind "$BIND" --port "$PORT" \
         --html-dir "$SHAREDIR/html" \

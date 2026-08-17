@@ -28,6 +28,9 @@ start() {
         return
     fi
 
+    . /usr/local/sbin/limits-helper.sh
+    limits_enter camera-ai 320M
+
     printf "Starting detect-bed-check: "
     start-stop-daemon -S -b -q -m -p /var/run/detect-bed-check.pid -c lava -x $CMD_PYTHON3 -- \
         /usr/local/bin/detect-rknn-yolo11.py \

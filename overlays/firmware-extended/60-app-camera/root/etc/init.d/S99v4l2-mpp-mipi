@@ -45,6 +45,9 @@ start() {
         return
     fi
 
+    . /usr/local/sbin/limits-helper.sh
+    limits_enter camera-mipi 64M
+
     umask 0022
     mkdir -p /userdata/.tmp_timelapse
     chown -R lava:lava /userdata/.tmp_timelapse

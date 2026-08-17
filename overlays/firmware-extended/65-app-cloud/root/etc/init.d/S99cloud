@@ -18,6 +18,9 @@ start_octoeverywhere() {
         return 0
     fi
 
+    . /usr/local/sbin/limits-helper.sh
+    limits_enter octoeverywhere 80M
+
     printf "Starting moonraker_octoeverywhere: "
     mkdir -p "$OCTOEVERYWHERE_STATE_DIR"
     mv "$OCTOEVERYWHERE_LOGFILE" "$OCTOEVERYWHERE_LOGFILE.old"

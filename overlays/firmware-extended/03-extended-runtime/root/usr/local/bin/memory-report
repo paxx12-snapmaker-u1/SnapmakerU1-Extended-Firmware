@@ -1,0 +1,72 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-PackageHomePage: https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware
+# SPDX-FileCopyrightText: Copyright (c) 2026 @paxx12
+#
+# Report memory usage across the whole cgroup v2 hierarchy, not just
+# the ext/* service cgroups created by limits-helper.sh - top-level
+# groups (apps, ext, rt, ...) and any nested children are all walked
+# and printed indented by depth.
+#
+
+ROOT=${CGROUP_ROOT:-/sys/fs/cgroup}
+
+human() {
+    case "$1" in
+        max|-|"") echo "${1:--}" ;;
+        *) awk "BEGIN { printf \"%.1fM\", $1 / 1048576 }" ;;
+    esac
+}
+
+# report_cgroup <dir> <depth>
+#
+# Recursive, so every local must actually be `local` - ash/dash
+# variables aren't function-scoped by default, and without this a
+# child call clobbers its parent's _depth on return, cascading the
+# indentation of every subsequent sibling.
+report_cgroup() {
+    local _dir=$1
+    local _depth=$2
+    local _name=$(basename "$_dir")
+    local _cur _peak _max _swap _procs _indent _i _sub
+
+    if [ -f "$_dir/memory.current" ]; then
+        _cur=$(cat "$_dir/memory.current" 2>/dev/null)
+        _peak=$(cat "$_dir/memory.peak" 2>/dev/null)
+        _max=$(cat "$_dir/memory.max" 2>/dev/null)
+        _swap=$(cat "$_dir/memory.swap.current" 2>/dev/null || echo -)
+        _procs=$(wc -l < "$_dir/cgroup.procs" 2>/dev/null || echo -)
+
+        _indent=""
+        _i=0
+        while [ $_i -lt "$_depth" ]; do
+            _indent="  $_indent"
+            _i=$((_i + 1))
+        done
+
+        printf "%-22s %10s %10s %10s %10s %6s\n" \
+            "${_indent}${_name}" "$(human "$_cur")" "$(human "$_peak")" "$(human "$_max")" "$(human "$_swap")" "$_procs"
+    fi
+
+    for _sub in "$_dir"/*/; do
+        [ -d "$_sub" ] || continue
+        report_cgroup "${_sub%/}" $((_depth + 1))
+    done
+}
+
+if [ ! -d "$ROOT" ]; then
+    echo "No cgroup root found at $ROOT."
+    exit 1
+fi
+
+printf "%-22s %10s %10s %10s %10s %6s\n" "CGROUP" "CURRENT" "PEAK" "MAX" "SWAP" "PROCS"
+for top in "$ROOT"/*/; do
+    [ -d "$top" ] || continue
+    report_cgroup "${top%/}" 0
+done
+
+if [ -f /proc/swaps ]; then
+    echo
+    echo "System swap:"
+    cat /proc/swaps
+fi

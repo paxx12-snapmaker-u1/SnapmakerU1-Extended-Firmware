@@ -21,6 +21,10 @@ start() {
         echo "already running"
         return 1
     fi
+
+    . /usr/local/sbin/limits-helper.sh
+    limits_enter monitoring 32M
+
 	start-stop-daemon -S -m -q -b -c lava -p "$PIDFILE" -x $DAEMON -- -web.listen-address "$EXPORTER_ADDRESS"
     echo "OK"
 }
