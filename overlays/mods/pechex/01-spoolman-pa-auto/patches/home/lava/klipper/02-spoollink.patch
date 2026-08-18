@@ -1,0 +1,22 @@
+--- a/klippy/extras/spoollink.py
++++ b/klippy/extras/spoollink.py
+@@ -30,6 +30,19 @@
+             logging.info('[spoollink] ch%d: %s', channel, message)
+         ptc = self.printer.lookup_object('print_task_config')
+         ptc._rfid_filament_info_update_cb(channel, info, is_clear=True)
++
++        spoolman_pa = info.get('SPOOLMAN_PA')
++        spool_id = info.get('SPOOL_ID')
++        extruder_name = "extruder" if channel == 0 else f"extruder{channel}"
++
++        if spoolman_pa is not None and spoolman_pa > 0:
++            extruder = self.printer.lookup_object(extruder_name, None)
++            if extruder and hasattr(extruder, 'extruder_stepper'):
++                estepper = extruder.extruder_stepper
++                estepper._set_pressure_advance(spoolman_pa, estepper.config_smooth_time)
++                logging.info("[spoollink] ch%d (%s): applied pressure_advance %.5f from Spoolman spool #%s", channel, extruder_name, spoolman_pa, spool_id)
++                self.gcode.respond_raw(f"// [spoollink] ch{channel} ({extruder_name}): Applied Pressure Advance {spoolman_pa:.5f} from Spoolman spool #{spool_id}")
++
+         self.gcode.respond_raw('// %s' % message)
+         web_request.send({})
+ 
