@@ -1,0 +1,33 @@
+settings:
+  snapmaker_components:
+    items:
+      spoolman_auto_pa:
+        label: Spoolman Auto Pressure Advance on Load
+        description: Automatically run Pressure Advance calibration when loading a spool that does not have PA in Spoolman.
+        help_url: http://snapmakeru1-extended-firmware.pages.dev/spoolman
+        if_cmd:
+          - bash
+          - -c
+          - /usr/local/bin/extended-config.py get /oem/printer_data/config/extended/extended2.cfg spoolman host 2>/dev/null | grep -q .
+        get_cmd:
+          - bash
+          - -c
+          - /usr/local/bin/extended-config.py get /oem/printer_data/config/extended/extended2.cfg spoolman auto_pa 2>/dev/null | grep -q "^false$" && echo "disabled" || echo "enabled"
+        options:
+          enabled:
+            label: Enabled
+            cmd:
+              - bash
+              - -c
+              - |
+                /usr/local/bin/extended-config.py add /oem/printer_data/config/extended/extended2.cfg spoolman auto_pa "true"
+                /etc/init.d/S60klipper restart
+          disabled:
+            label: Disabled
+            cmd:
+              - bash
+              - -c
+              - |
+                /usr/local/bin/extended-config.py add /oem/printer_data/config/extended/extended2.cfg spoolman auto_pa "false"
+                /etc/init.d/S60klipper restart
+        default: enabled
