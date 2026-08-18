@@ -1,0 +1,90 @@
+--- a/moonraker/components/spoollink.py
++++ b/moonraker/components/spoollink.py
+@@ -61,6 +61,7 @@
+         self._active_spool_id: Optional[int] = None
+ 
+         self.server.register_remote_method(RESOLVE_METHOD, self._resolve_spool)
++        self.server.register_remote_method("spoollink_save_pa", self._handle_remote_save_pa)
+         self.server.register_event_handler(
+             "server:klippy_ready", self._handle_klippy_ready)
+         self.server.register_event_handler(
+@@ -274,8 +275,9 @@
+     async def _ensure_fields(self) -> None:
+         await self._ensure_field("spool", "card_uids", "Card UIDs")
+         await self._ensure_field("filament", "variant", "Variant")
+-
+-    async def _ensure_field(self, entity_type: str, key: str, name: str) -> None:
++        await self._ensure_field("spool", "pressure_advance", "Pressure Advance", field_type="float")
++
++    async def _ensure_field(self, entity_type: str, key: str, name: str, field_type: str = "text") -> None:
+         base = f"{self._spoolman_url}/api/v1/field/{entity_type}"
+         try:
+             resp = await self.http_client.get(base, enable_cache=False)
+@@ -288,11 +290,12 @@
+             if any(f.get("key") == key for f in fields):
+                 logging.info("[spoollink] field %s/%s: exists", entity_type, key)
+                 return
++            default_val = json.dumps("") if field_type == "text" else json.dumps(0)
+             body = {
+                 "name": name,
+-                "field_type": "text",
++                "field_type": field_type,
+                 "order": 1,
+-                "default_value": json.dumps(""),
++                "default_value": default_val,
+             }
+             resp = await self.http_client.post(f"{base}/{key}", body=body)
+             if resp.status_code in (200, 201):
+@@ -332,6 +335,25 @@
+         if resp.status_code == 200:
+             return resp.json()
+         raise RuntimeError(f"HTTP {resp.status_code}: {resp.text()}")
++
++    async def _spoolman_save_pa(self, spool_id: int, pa_value: float) -> dict:
++        await self._ensure_fields()
++        encoded = json.dumps(round(float(pa_value), 6))
++        resp = await self.http_client.request(
++            "PATCH", f"{self._spoolman_url}/api/v1/spool/{spool_id}",
++            body={"extra": {"pressure_advance": encoded}})
++        if resp.status_code == 200:
++            logging.info("[spoollink] saved pressure_advance %.6f to spool #%d", pa_value, spool_id)
++            return resp.json()
++        raise RuntimeError(f"HTTP {resp.status_code}: {resp.text}")
++
++    async def _handle_remote_save_pa(self, spool_id: Any = None, pa_value: Any = None, **kwargs) -> None:
++        try:
++            spool_id_int = int(spool_id)
++            pa_val_float = float(pa_value)
++            await self._retry(self._spoolman_save_pa, spool_id_int, pa_val_float)
++        except Exception as e:
++            logging.error("[spoollink] save PA failed for spool %s: %s", spool_id, e, exc_info=True)
+ 
+     async def _spoolman_add_card_uid(self, spool: dict, card_uid: str) -> dict:
+         uid_upper = card_uid.upper()
+@@ -447,6 +469,17 @@
+         vendor = (filament.get("vendor") or {}).get("name", "Generic")
+         variant = _parse_variant(vendor, filament)
+ 
++        extra = spool.get("extra") or {}
++        raw_pa = _unquote(str(extra.get("pressure_advance") or ""))
++        spoolman_pa = None
++        if raw_pa:
++            try:
++                val = float(raw_pa)
++                if val > 0:
++                    spoolman_pa = val
++            except ValueError:
++                spoolman_pa = None
++
+         raw_multi = filament.get("multi_color_hexes") or ""
+         colors = [c.strip().upper()[:6] for c in raw_multi.split(",") if c.strip()]
+         color_hex = colors[0] if colors else (filament.get("color_hex") or "FFFFFF")[:6].upper()
+@@ -461,6 +494,8 @@
+         alpha = 0xFF
+         info = {
+             "VENDOR": vendor,
++            "PRESSURE_ADVANCE": spoolman_pa,
++            "SPOOLMAN_PA": spoolman_pa,
+             "MAIN_TYPE": material,
+             "SUB_TYPE": variant,
+             "RGB_1": int(color_list[0], 16),
