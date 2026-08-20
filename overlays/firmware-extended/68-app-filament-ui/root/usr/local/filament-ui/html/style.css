@@ -171,12 +171,13 @@ header h1 {
     letter-spacing: 0.05em;
 }
 
-.tag-type-badge.official   { color: var(--accent);  background: rgba(255, 107, 53, 0.12); }
-.tag-type-badge.rfid       { color: var(--accent);  background: rgba(255, 107, 53, 0.15); cursor: help; text-decoration: underline dotted; text-underline-offset: 2px; }
-.tag-type-badge.spoolman   { color: #ce93d8;        background: rgba(206, 147, 216, 0.12); cursor: help; text-decoration: underline dotted; text-underline-offset: 2px; }
-.tag-type-badge.user       { color: var(--success); background: rgba(76, 175, 80, 0.12); }
-.tag-type-badge.unknown    { color: var(--warning); background: rgba(255, 152,   0, 0.12); }
-.tag-type-badge.detecting  { color: var(--success); background: rgba(76, 175, 80, 0.12); }
+.tag-type-badge.official        { color: var(--accent);  background: rgba(255, 107, 53, 0.12); }
+.tag-type-badge.rfid            { color: var(--accent);  background: rgba(255, 107, 53, 0.15); cursor: help; text-decoration: underline dotted; text-underline-offset: 2px; }
+.tag-type-badge.force-generic   { color: #64b5f6;        background: rgba(100, 181, 246, 0.12); cursor: help; text-decoration: underline dotted; text-underline-offset: 2px; }
+.tag-type-badge.spoolman        { color: #ce93d8;        background: rgba(206, 147, 216, 0.12); cursor: help; text-decoration: underline dotted; text-underline-offset: 2px; }
+.tag-type-badge.user            { color: var(--success); background: rgba(76, 175, 80, 0.12); }
+.tag-type-badge.unknown         { color: var(--warning); background: rgba(255, 152,   0, 0.12); }
+.tag-type-badge.detecting       { color: var(--success); background: rgba(76, 175, 80, 0.12); }
 
 .card-type-badge {
     font-size: 11px;
@@ -813,6 +814,10 @@ input[type="checkbox"] {
     font-size: 12px;
     padding: 2px 0;
 }
+
+.popover-row.stacked { display: block; }
+.popover-row.stacked .popover-label { display: block; margin-bottom: 6px; }
+.popover-row.stacked .popover-value { display: block; text-align: left; white-space: normal; max-width: 280px; }
 
 .popover-label { color: var(--muted); white-space: nowrap; }
 .popover-value { color: var(--text); text-align: right; word-break: break-all; font-family: monospace; }
