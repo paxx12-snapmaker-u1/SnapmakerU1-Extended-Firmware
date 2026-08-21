@@ -66,7 +66,12 @@ class SpoolLink:
         self._resolution_tasks: Dict[int, "asyncio.Future"] = {}
         self._resolution_task_uids: Dict[int, str] = {}
         self._queued_resolutions: Dict[int, str] = {}
-        self._recovery_holds: Dict[int, Tuple[str, int]] = {}
+        self._recovery_holds: Dict[int, Tuple[Optional[str], int]] = {}
+        self._known_spools: Dict[int, Tuple[str, dict]] = {}
+        self._retention_tasks: Dict[int, "asyncio.Future"] = {}
+        self._feeder_eligible: Dict[int, bool] = {}
+        self._toolhead_sensors: Dict[int, Dict[str, Any]] = {}
+        self._sensor_refresh_deadlines: Dict[int, float] = {}
         self._toolhead_extruder: str = "extruder"
         self._ptc_vendors: List[str] = []
         self._ptc_types: List[str] = []
@@ -96,12 +101,24 @@ class SpoolLink:
             "print_task_config": [
                 "filament_spool_id", "filament_vendor", "filament_type"],
             "toolhead": ["extruder"],
+            "filament_feed left": None,
+            "filament_feed right": None,
+            "filament_motion_sensor e0_filament": [
+                "filament_detected", "enabled"],
+            "filament_motion_sensor e1_filament": [
+                "filament_detected", "enabled"],
+            "filament_motion_sensor e2_filament": [
+                "filament_detected", "enabled"],
+            "filament_motion_sensor e3_filament": [
+                "filament_detected", "enabled"],
         }, self._handle_status_update, {})
         self._handle_status_update(status, 0.)
 
     def _handle_klippy_disconnect(self) -> None:
         logging.info("[spoollink] Klippy disconnected")
         for task in self._resolution_tasks.values():
+            task.cancel()
+        for task in self._retention_tasks.values():
             task.cancel()
         self._channel_uids = {}
         self._channel_signatures = {}
@@ -114,6 +131,11 @@ class SpoolLink:
         self._resolution_task_uids = {}
         self._queued_resolutions = {}
         self._recovery_holds = {}
+        self._known_spools = {}
+        self._retention_tasks = {}
+        self._feeder_eligible = {}
+        self._toolhead_sensors = {}
+        self._sensor_refresh_deadlines = {}
         self._ptc_vendors = []
         self._ptc_types = []
         self._ptc_spool_ids = []
@@ -137,6 +159,12 @@ class SpoolLink:
                              self._toolhead_extruder, extruder)
                 self._toolhead_extruder = extruder
                 self._fire(self._sync_active_spool())
+
+        # Feeder presence and toolhead-sensor transitions distinguish an
+        # automatic RFID refresh from a manual clear. Process them first so a
+        # combined update can qualify the RFID and spool-ID changes below.
+        self._handle_feeder_status(status)
+        self._handle_toolhead_sensors(status, eventtime)
 
         # Process the RFID object before print_task_config. A single Klippy
         # status update may contain both a new card and a cleared spool ID;
@@ -172,6 +200,58 @@ class SpoolLink:
                             ch, old_id, eventtime)
                 self._ptc_spool_ids = new_ids
                 self._fire(self._sync_active_spool())
+
+    def _handle_feeder_status(self, status: Dict[str, Any]) -> None:
+        modules = {
+            "filament_feed left": {"extruder0": 0, "extruder1": 1},
+            "filament_feed right": {"extruder2": 2, "extruder3": 3},
+        }
+        for object_name, channels in modules.items():
+            feed = status.get(object_name)
+            if not isinstance(feed, dict):
+                continue
+            for extruder, ch in channels.items():
+                state = feed.get(extruder)
+                if not isinstance(state, dict):
+                    continue
+                eligible = bool(
+                    state.get("module_exist")
+                    and state.get("filament_detected")
+                    and not state.get("disable_auto"))
+                was_eligible = self._feeder_eligible.get(ch)
+                self._feeder_eligible[ch] = eligible
+                if was_eligible and not eligible:
+                    logging.info(
+                        "[spoollink] ch%d: feeder no longer retains filament",
+                        ch)
+                    self._forget_known_spool(ch)
+
+    def _handle_toolhead_sensors(
+            self, status: Dict[str, Any], eventtime: float) -> None:
+        for ch in range(4):
+            key = f"filament_motion_sensor e{ch}_filament"
+            update = status.get(key)
+            if not isinstance(update, dict):
+                continue
+            state = self._toolhead_sensors.setdefault(ch, {})
+            previous = state.get("filament_detected")
+            state.update(update)
+            present = state.get("filament_detected")
+            if (eventtime > 0. and previous is not None
+                    and present is not None and present != previous
+                    and state.get("enabled", True)
+                    and self._feeder_eligible.get(ch, False)):
+                self._sensor_refresh_deadlines[ch] = (
+                    eventtime + RFID_REFRESH_WINDOW)
+                logging.debug(
+                    "[spoollink] ch%d: toolhead filament transition", ch)
+
+    def _has_sensor_refresh_evidence(
+            self, ch: int, eventtime: float) -> bool:
+        return (
+            eventtime > 0.
+            and eventtime <= self._sensor_refresh_deadlines.get(ch, 0.)
+            and self._feeder_eligible.get(ch, False))
 
     @staticmethod
     def _field_is_clear(value: Any) -> bool:
@@ -248,15 +328,37 @@ class SpoolLink:
             self._refresh_deadlines.pop(ch, None)
             self._metadata_clear_deadlines.pop(ch, None)
             self._queued_resolutions.pop(ch, None)
-            self._release_recovery_hold(ch)
+            hold = self._recovery_holds.get(ch)
+            retained_restore = bool(
+                ch in self._retention_tasks
+                or (hold is not None and hold[0] is None))
+            if (ch in self._known_spools
+                    and self._feeder_eligible.get(ch, False)
+                    and (self._has_sensor_refresh_evidence(ch, eventtime)
+                         or retained_restore)):
+                logging.info(
+                    "[spoollink] ch%d: UID cleared during toolhead transition; "
+                    "retaining spool", ch)
+            else:
+                self._forget_known_spool(ch)
             return
 
         if uid_hex and uid_hex != prev:
+            known = self._known_spools.get(ch)
+            same_known_uid = known is not None and known[0] == uid_hex
+            if same_known_uid:
+                self._cancel_retention_task(ch)
+                known_id = (known[1].get("id", 0) or 0)
+                if known_id:
+                    self._recovery_holds[ch] = (uid_hex, known_id)
+            else:
+                self._forget_known_spool(ch)
             self._resolved_uids.pop(ch, None)
             self._refreshing_channels.pop(ch, None)
             self._refresh_deadlines.pop(ch, None)
             self._metadata_clear_deadlines.pop(ch, None)
-            self._release_recovery_hold(ch)
+            if not same_known_uid:
+                self._release_recovery_hold(ch)
             logging.info("[spoollink] ch%d: card UID changed to %s, resolving",
                          ch, uid_hex)
             self._schedule_detected_resolution(ch, uid_hex)
@@ -272,20 +374,106 @@ class SpoolLink:
         has_refresh_evidence = (
             eventtime > 0.
             and eventtime <= max(refresh_deadline, metadata_deadline))
-        if (not uid or self._resolved_uids.get(ch) != uid
-                or not has_refresh_evidence):
+        if (uid and self._resolved_uids.get(ch) == uid
+                and has_refresh_evidence):
+            self._refresh_deadlines.pop(ch, None)
+            self._metadata_clear_deadlines.pop(ch, None)
+            self._recovery_holds[ch] = (uid, old_spool_id)
+            logging.info(
+                "[spoollink] ch%d: same card %s cleared spool %s; re-resolving",
+                ch, uid, old_spool_id)
+            self._schedule_detected_resolution(ch, uid)
             return
-        self._refresh_deadlines.pop(ch, None)
-        self._metadata_clear_deadlines.pop(ch, None)
-        self._recovery_holds[ch] = (uid, old_spool_id)
-        logging.info(
-            "[spoollink] ch%d: same card %s cleared spool %s; re-resolving",
-            ch, uid, old_spool_id)
-        self._schedule_detected_resolution(ch, uid)
+
+        known = self._known_spools.get(ch)
+        known_id = (known[1].get("id", 0) if known is not None else 0) or 0
+        if (not uid and known is not None and known_id == old_spool_id
+                and self._has_sensor_refresh_evidence(ch, eventtime)):
+            self._sensor_refresh_deadlines.pop(ch, None)
+            self._recovery_holds[ch] = (None, old_spool_id)
+            logging.info(
+                "[spoollink] ch%d: automatic read lost UID; restoring spool %s",
+                ch, old_spool_id)
+            self._schedule_retained_restore(ch, known[0], known[1])
+            return
+
+        if known_id == old_spool_id:
+            self._forget_known_spool(ch)
 
     def _release_recovery_hold(self, ch: int) -> None:
         if self._recovery_holds.pop(ch, None) is not None:
             self._fire(self._sync_active_spool())
+
+    def _forget_known_spool(self, ch: int) -> None:
+        self._known_spools.pop(ch, None)
+        self._sensor_refresh_deadlines.pop(ch, None)
+        self._resolved_uids.pop(ch, None)
+        self._cancel_retention_task(ch)
+        self._release_recovery_hold(ch)
+
+    def _cancel_retention_task(self, ch: int) -> None:
+        task = self._retention_tasks.pop(ch, None)
+        if task is not None and not task.done():
+            task.cancel()
+
+    def _schedule_retained_restore(
+            self, ch: int, uid: str, spool: dict) -> None:
+        task = self._retention_tasks.get(ch)
+        if task is not None and not task.done():
+            return
+        task = asyncio.ensure_future(
+            self._restore_known_spool(ch, uid, spool))
+        self._retention_tasks[ch] = task
+        task.add_done_callback(
+            lambda completed, channel=ch, card_uid=uid:
+                self._retained_restore_done(channel, card_uid, completed))
+
+    def _can_restore_known_spool(
+            self, ch: int, uid: str, spool_id: int) -> bool:
+        known = self._known_spools.get(ch)
+        return bool(
+            known is not None
+            and known[0] == uid
+            and (known[1].get("id", 0) or 0) == spool_id
+            and not self._channel_uids.get(ch, "")
+            and self._feeder_eligible.get(ch, False))
+
+    async def _restore_known_spool(
+            self, ch: int, uid: str, spool: dict) -> Optional[int]:
+        await asyncio.sleep(0)
+        spool_id = (spool.get("id", 0) or 0)
+        if not self._can_restore_known_spool(ch, uid, spool_id):
+            return None
+        # The reader reported no UID. Restore the spool metadata without
+        # claiming that a card is currently readable.
+        return await self._apply_spool(ch, spool, "")
+
+    def _retained_restore_done(
+            self, ch: int, uid: str, task: "asyncio.Future") -> None:
+        if self._retention_tasks.get(ch) is not task:
+            return
+        self._retention_tasks.pop(ch, None)
+        if task.cancelled():
+            return
+        try:
+            spool_id = task.result()
+        except Exception as e:
+            logging.error(
+                "[spoollink] ch%d: retained spool restore failed: %s",
+                ch, e, exc_info=e)
+            self._forget_known_spool(ch)
+            return
+        if not spool_id or not self._can_restore_known_spool(ch, uid, spool_id):
+            self._forget_known_spool(ch)
+            return
+        while len(self._ptc_spool_ids) <= ch:
+            self._ptc_spool_ids.append(0)
+        if not self._ptc_spool_ids[ch]:
+            self._ptc_spool_ids[ch] = spool_id
+        hold = self._recovery_holds.get(ch)
+        if hold == (None, spool_id):
+            self._recovery_holds.pop(ch, None)
+        self._fire(self._sync_active_spool())
 
     def _schedule_detected_resolution(self, ch: int, uid: str) -> None:
         task = self._resolution_tasks.get(ch)
@@ -359,9 +547,18 @@ class SpoolLink:
         spool_id = (self._ptc_spool_ids[channel]
                     if channel < len(self._ptc_spool_ids) else 0) or 0
         hold = self._recovery_holds.get(channel)
-        if (spool_id == 0 and hold is not None
-                and self._channel_uids.get(channel) == hold[0]):
-            spool_id = hold[1]
+        if spool_id == 0 and hold is not None:
+            hold_uid, hold_id = hold
+            known = self._known_spools.get(channel)
+            retained_hold = bool(
+                hold_uid is None
+                and known is not None
+                and (known[1].get("id", 0) or 0) == hold_id
+                and self._feeder_eligible.get(channel, False))
+            if ((hold_uid is not None
+                 and self._channel_uids.get(channel) == hold_uid)
+                    or retained_hold):
+                spool_id = hold_id
         if spool_id == self._active_spool_id:
             return
         logging.info("[spoollink] set active spool: channel=%d spool_id=%s → %s",
@@ -705,6 +902,7 @@ class SpoolLink:
             logging.info("[spoollink] ch%d: spool %s applied", channel, spool_id)
             if uid_hex:
                 self._resolved_uids[channel] = uid_hex
+                self._known_spools[channel] = (uid_hex, spool)
             return spool_id
         return None
 
