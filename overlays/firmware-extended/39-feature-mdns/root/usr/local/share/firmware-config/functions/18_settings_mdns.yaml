@@ -1,0 +1,31 @@
+settings:
+  networking:
+    items:
+      mdns_enabled:
+        label: mDNS (.local hostname)
+        description: Answer "<hostname>.local" queries on the local network via mDNS.
+        get_cmd:
+          - /usr/local/bin/extended-config.py
+          - get
+          - /home/lava/printer_data/config/extended/extended2.cfg
+          - networking
+          - mdns_enabled
+          - "false"
+        options:
+          "true":
+            label: Enabled
+            cmd:
+              - bash
+              - -xc
+              - |
+                /usr/local/bin/extended-config.py add /home/lava/printer_data/config/extended/extended2.cfg networking mdns_enabled true &&
+                /etc/init.d/S31mdns restart
+          "false":
+            label: Disabled
+            cmd:
+              - bash
+              - -xc
+              - |
+                /usr/local/bin/extended-config.py add /home/lava/printer_data/config/extended/extended2.cfg networking mdns_enabled false &&
+                /etc/init.d/S31mdns stop
+        default: "false"

@@ -76,6 +76,7 @@ Heavily expanded firmware with extensive features and customization:
 
 - [VPN Remote Access](vpn.md) - Secure remote access via Tailscale
 - [Cloud Remote Access](cloud.md) - Cloud-based remote access service for 3D printers
+- [mDNS (.local Hostname)](mdns.md) - Reach the printer as `<printer-name>.local` instead of its IP address
 
 ## Support
 
