@@ -70,6 +70,7 @@ class SpoolLink:
         self._known_spools: Dict[int, Tuple[str, dict]] = {}
         self._retention_tasks: Dict[int, "asyncio.Future"] = {}
         self._feeder_eligible: Dict[int, bool] = {}
+        self._feeder_load_states: Dict[int, Tuple[Any, Any]] = {}
         self._toolhead_sensors: Dict[int, Dict[str, Any]] = {}
         self._sensor_refresh_deadlines: Dict[int, float] = {}
         self._toolhead_extruder: str = "extruder"
@@ -134,6 +135,7 @@ class SpoolLink:
         self._known_spools = {}
         self._retention_tasks = {}
         self._feeder_eligible = {}
+        self._feeder_load_states = {}
         self._toolhead_sensors = {}
         self._sensor_refresh_deadlines = {}
         self._ptc_vendors = []
@@ -214,6 +216,9 @@ class SpoolLink:
                 state = feed.get(extruder)
                 if not isinstance(state, dict):
                     continue
+                self._feeder_load_states[ch] = (
+                    state.get("channel_state"),
+                    state.get("channel_action_state"))
                 eligible = bool(
                     state.get("module_exist")
                     and state.get("filament_detected")
@@ -252,6 +257,12 @@ class SpoolLink:
             eventtime > 0.
             and eventtime <= self._sensor_refresh_deadlines.get(ch, 0.)
             and self._feeder_eligible.get(ch, False))
+
+    @staticmethod
+    def _deadline_remaining(deadline: float, eventtime: float) -> str:
+        if deadline <= 0. or eventtime <= 0.:
+            return "none"
+        return f"{deadline - eventtime:+.3f}s"
 
     @staticmethod
     def _field_is_clear(value: Any) -> bool:
@@ -332,9 +343,34 @@ class SpoolLink:
             retained_restore = bool(
                 ch in self._retention_tasks
                 or (hold is not None and hold[0] is None))
+            known = self._known_spools.get(ch)
+            known_id = (
+                known[1].get("id", 0) if known is not None else 0) or 0
+            feeder_eligible = self._feeder_eligible.get(ch, False)
+            sensor_evidence = self._has_sensor_refresh_evidence(
+                ch, eventtime)
+            feeder_state, feeder_action = self._feeder_load_states.get(
+                ch, (None, None))
+            if prev:
+                logging.info(
+                    "[spoollink] ch%d: UID clear decision: "
+                    "known_spool_id=%s feeder_eligible=%s "
+                    "feeder_state=%s feeder_action=%s "
+                    "sensor_evidence=%s sensor_window=%s "
+                    "toolhead_sensor=%s selected_toolhead=%s "
+                    "retained_restore=%s",
+                    ch, known_id, feeder_eligible, feeder_state,
+                    feeder_action, sensor_evidence,
+                    self._deadline_remaining(
+                        self._sensor_refresh_deadlines.get(ch, 0.),
+                        eventtime),
+                    self._toolhead_sensors.get(ch, {}).get(
+                        "filament_detected"),
+                    self._extruder_to_channel(self._toolhead_extruder) == ch,
+                    retained_restore)
             if (ch in self._known_spools
-                    and self._feeder_eligible.get(ch, False)
-                    and (self._has_sensor_refresh_evidence(ch, eventtime)
+                    and feeder_eligible
+                    and (sensor_evidence
                          or retained_restore)):
                 logging.info(
                     "[spoollink] ch%d: UID cleared during toolhead transition; "
@@ -374,6 +410,28 @@ class SpoolLink:
         has_refresh_evidence = (
             eventtime > 0.
             and eventtime <= max(refresh_deadline, metadata_deadline))
+        known = self._known_spools.get(ch)
+        known_id = (
+            known[1].get("id", 0) if known is not None else 0) or 0
+        feeder_eligible = self._feeder_eligible.get(ch, False)
+        sensor_evidence = self._has_sensor_refresh_evidence(ch, eventtime)
+        feeder_state, feeder_action = self._feeder_load_states.get(
+            ch, (None, None))
+        logging.info(
+            "[spoollink] ch%d: spool clear decision: old_spool_id=%s "
+            "uid_present=%s uid_resolved=%s known_spool_id=%s "
+            "feeder_eligible=%s feeder_state=%s feeder_action=%s "
+            "sensor_evidence=%s sensor_window=%s reader_window=%s "
+            "metadata_window=%s toolhead_sensor=%s selected_toolhead=%s",
+            ch, old_spool_id, bool(uid),
+            bool(uid and self._resolved_uids.get(ch) == uid), known_id,
+            feeder_eligible, feeder_state, feeder_action, sensor_evidence,
+            self._deadline_remaining(
+                self._sensor_refresh_deadlines.get(ch, 0.), eventtime),
+            self._deadline_remaining(refresh_deadline, eventtime),
+            self._deadline_remaining(metadata_deadline, eventtime),
+            self._toolhead_sensors.get(ch, {}).get("filament_detected"),
+            self._extruder_to_channel(self._toolhead_extruder) == ch)
         if (uid and self._resolved_uids.get(ch) == uid
                 and has_refresh_evidence):
             self._refresh_deadlines.pop(ch, None)
@@ -385,10 +443,8 @@ class SpoolLink:
             self._schedule_detected_resolution(ch, uid)
             return
 
-        known = self._known_spools.get(ch)
-        known_id = (known[1].get("id", 0) if known is not None else 0) or 0
         if (not uid and known is not None and known_id == old_spool_id
-                and self._has_sensor_refresh_evidence(ch, eventtime)):
+                and sensor_evidence):
             self._sensor_refresh_deadlines.pop(ch, None)
             self._recovery_holds[ch] = (None, old_spool_id)
             logging.info(

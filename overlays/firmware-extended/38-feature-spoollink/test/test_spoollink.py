@@ -115,7 +115,9 @@ class SpoolLinkRecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.link._active_spool_id = 27
 
     def set_feeder(self, present=True, module_exist=True,
-                   disable_auto=False, eventtime=0.0, channel=2):
+                   disable_auto=False, eventtime=0.0, channel=2,
+                   channel_state="load_finish",
+                   channel_action_state="load_finish"):
         side = "left" if channel < 2 else "right"
         self.link._handle_status_update({
             f"filament_feed {side}": {
@@ -123,6 +125,8 @@ class SpoolLinkRecoveryTests(unittest.IsolatedAsyncioTestCase):
                     "module_exist": module_exist,
                     "filament_detected": present,
                     "disable_auto": disable_auto,
+                    "channel_state": channel_state,
+                    "channel_action_state": channel_action_state,
                 },
             },
         }, eventtime)
@@ -349,6 +353,37 @@ class SpoolLinkRecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.link._active_spool_id, 27)
         self.assertNotIn(None, self.config.server.spoolman.calls)
         self.assertIn(3, self.link._known_spools)
+
+    async def test_expired_sensor_window_logs_recovery_decision_inputs(self):
+        self.prime_spool_27()
+        self.set_feeder(
+            channel_state="loading",
+            channel_action_state="feed_to_extruder")
+        self.set_toolhead_sensor(True, 0.0)
+        self.set_toolhead_sensor(False, 10.0)
+
+        with self.assertLogs(level="INFO") as captured:
+            self.clear_uid_and_spool(eventtime=15.001)
+        await self.drain(6)
+
+        messages = "\n".join(captured.output)
+        self.assertIn(
+            "UID clear decision: known_spool_id=27 feeder_eligible=True "
+            "feeder_state=loading feeder_action=feed_to_extruder "
+            "sensor_evidence=False sensor_window=-0.001s "
+            "toolhead_sensor=False selected_toolhead=True "
+            "retained_restore=False",
+            messages)
+        self.assertIn(
+            "spool clear decision: old_spool_id=27 uid_present=False "
+            "uid_resolved=False known_spool_id=0 feeder_eligible=True "
+            "feeder_state=loading feeder_action=feed_to_extruder "
+            "sensor_evidence=False sensor_window=none",
+            messages)
+        self.link._spoollink_set.assert_not_awaited()
+        self.assertEqual(self.link._ptc_spool_ids[2], 0)
+        self.assertEqual(self.link._active_spool_id, 0)
+        self.assertNotIn(2, self.link._known_spools)
 
     async def test_successful_uid_apply_caches_spool_for_continuity(self):
         result = await self.link._apply_spool(2, OLD_SPOOL, OLD_UID)
