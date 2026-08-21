@@ -7,11 +7,8 @@ PIDFILE=/var/run/cmdnsd.pid
 
 MDNS_ENABLED=$(/usr/local/bin/extended-config.py get "$EXTENDED_CFG" networking mdns_enabled false)
 
-# Prefer the live printer name (set via the app / Moonraker's `machine` component)
-# over the legacy seed file, over the Linux hostname (always "lava", not useful).
 device_name() {
     if [ -f "$PRODUCT_INFO" ]; then
-        # No `jq` on this rootfs; python3 is always present (Moonraker depends on it).
         name=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('device_name') or '')" "$PRODUCT_INFO" 2>/dev/null)
         [ -n "$name" ] && { echo "$name"; return; }
     fi
@@ -22,9 +19,6 @@ device_name() {
     cat /etc/hostname
 }
 
-# The app-set device_name is free text (up to 32 chars per machine.py) and may
-# contain spaces/punctuation that aren't valid DNS labels. Sanitize to
-# alphanumeric + hyphen before handing to cmdnsd.
 sanitize_label() {
     printf '%s' "$1" | tr 'A-Z' 'a-z' | tr -c 'a-z0-9-' '-' | sed -e 's/-\{2,\}/-/g' -e 's/^-*//' -e 's/-*$//'
 }
