@@ -131,11 +131,12 @@ class SpoolLinkRecoveryTests(unittest.IsolatedAsyncioTestCase):
             },
         }, eventtime)
 
-    def set_toolhead_sensor(self, present, eventtime, channel=2):
+    def set_toolhead_sensor(
+            self, present, eventtime, channel=2, enabled=True):
         self.link._handle_status_update({
             f"filament_motion_sensor e{channel}_filament": {
                 "filament_detected": present,
-                "enabled": True,
+                "enabled": enabled,
             },
         }, eventtime)
 
@@ -144,16 +145,21 @@ class SpoolLinkRecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.set_toolhead_sensor(True, 0.0, channel=channel)
         self.set_toolhead_sensor(False, eventtime, channel=channel)
 
-    def clear_uid_and_spool(self, eventtime=10.5, channel=2):
+    def clear_uid_and_spool(
+            self, eventtime=10.5, channel=2, clear_metadata=False):
         info = [None] * 4
         info[channel] = {"CARD_UID": 0}
+        ptc = {"filament_spool_id": [0, 0, 0, 0]}
+        if clear_metadata:
+            ptc.update({
+                "filament_vendor": ["NONE"] * 4,
+                "filament_type": ["NONE"] * 4,
+            })
         self.link._handle_status_update({
             "filament_detect": {
                 "info": info,
             },
-            "print_task_config": {
-                "filament_spool_id": [0, 0, 0, 0],
-            },
+            "print_task_config": ptc,
         }, eventtime)
 
     def start_reader_refresh(self, eventtime=10.0):
@@ -384,6 +390,89 @@ class SpoolLinkRecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.link._ptc_spool_ids[2], 0)
         self.assertEqual(self.link._active_spool_id, 0)
         self.assertNotIn(2, self.link._known_spools)
+
+    async def test_load_heating_combined_clear_recovers_after_sensor_window(self):
+        self.prime_spool_27()
+        self.set_feeder(
+            channel_state="load_heating",
+            channel_action_state="load_heating")
+        self.set_toolhead_sensor(False, 0.0)
+        self.set_toolhead_sensor(True, 10.0)
+
+        with self.assertLogs(level="INFO") as captured:
+            self.clear_uid_and_spool(
+                eventtime=16.519, clear_metadata=True)
+        await self.drain(10)
+
+        messages = "\n".join(captured.output)
+        self.assertIn(
+            "sensor_evidence=False sensor_window=-1.519s "
+            "toolhead_sensor=True selected_toolhead=True "
+            "retained_restore=False load_clear_evidence=True",
+            messages)
+        self.assertIn(
+            "automatic read lost UID; restoring spool 27",
+            messages)
+        self.assertEqual(self.link._spoollink_set.await_count, 1)
+        self.assertEqual(self.link._ptc_spool_ids[2], 27)
+        self.assertEqual(self.link._active_spool_id, 27)
+        self.assertNotIn(None, self.config.server.spoolman.calls)
+        self.assertIn(2, self.link._known_spools)
+
+    async def test_combined_clear_requires_all_load_guards(self):
+        cases = (
+            ("finished load", {
+                "state": "load_finish", "action": "load_finish"}),
+            ("unknown load", {"state": None, "action": None}),
+            ("mismatched action", {"action": "load_finish"}),
+            ("sensor absent", {"sensor_present": False}),
+            ("sensor disabled", {"sensor_enabled": False}),
+            ("other toolhead", {"selected_toolhead": False}),
+            ("metadata retained", {"clear_metadata": False}),
+            ("automatic load disabled", {"disable_auto": True}),
+            ("known spool mismatch", {"known_spool_id": 31}),
+        )
+        for name, overrides in cases:
+            with self.subTest(name=name):
+                self.setUp()
+                self.prime_spool_27()
+                options = {
+                    "state": "load_heating",
+                    "action": "load_heating",
+                    "sensor_present": True,
+                    "sensor_enabled": True,
+                    "selected_toolhead": True,
+                    "clear_metadata": True,
+                    "disable_auto": False,
+                    "known_spool_id": 27,
+                }
+                options.update(overrides)
+                if options["known_spool_id"] != 27:
+                    known_spool = dict(OLD_SPOOL)
+                    known_spool["id"] = options["known_spool_id"]
+                    self.link._known_spools[2] = (OLD_UID, known_spool)
+                self.set_feeder(
+                    channel_state=options["state"],
+                    channel_action_state=options["action"],
+                    disable_auto=options["disable_auto"])
+                self.set_toolhead_sensor(
+                    not options["sensor_present"], 0.0,
+                    enabled=options["sensor_enabled"])
+                self.set_toolhead_sensor(
+                    options["sensor_present"], 10.0,
+                    enabled=options["sensor_enabled"])
+                if not options["selected_toolhead"]:
+                    self.link._toolhead_extruder = "extruder"
+
+                self.clear_uid_and_spool(
+                    eventtime=16.519,
+                    clear_metadata=options["clear_metadata"])
+                await self.drain(6)
+
+                self.link._spoollink_set.assert_not_awaited()
+                self.assertEqual(self.link._ptc_spool_ids[2], 0)
+                self.assertEqual(self.link._active_spool_id, 0)
+                self.assertNotIn(2, self.link._known_spools)
 
     async def test_successful_uid_apply_caches_spool_for_continuity(self):
         result = await self.link._apply_spool(2, OLD_SPOOL, OLD_UID)

@@ -24,6 +24,8 @@ if TYPE_CHECKING:
 RESOLVE_METHOD = "spoollink_resolve_spool"
 SET_ENDPOINT = "spoollink/set"
 RFID_REFRESH_WINDOW = 5.0
+# Do not include terminal or unknown feeder states in empty-UID recovery.
+EMPTY_UID_RECOVERY_LOAD_STATES = {"load_heating"}
 
 
 def _unquote(value: str) -> str:
@@ -168,6 +170,11 @@ class SpoolLink:
         self._handle_feeder_status(status)
         self._handle_toolhead_sensors(status, eventtime)
 
+        # Capture same-update clear evidence before the empty-UID handler can
+        # discard the known spool. The spool-ID decision still runs afterward.
+        ptc = status.get("print_task_config")
+        combined_clear_spool_ids = self._combined_ptc_clear_spool_ids(ptc)
+
         # Process the RFID object before print_task_config. A single Klippy
         # status update may contain both a new card and a cleared spool ID;
         # using the current UID avoids resolving the card that was just removed.
@@ -179,9 +186,10 @@ class SpoolLink:
             info_list = fd.get("info")
             if info_list is not None:
                 for ch, info in enumerate(info_list):
-                    self._handle_filament_detect_channel(ch, info, eventtime)
+                    self._handle_filament_detect_channel(
+                        ch, info, eventtime,
+                        combined_clear_spool_ids.get(ch, 0))
 
-        ptc = status.get("print_task_config")
         if ptc is not None:
             self._handle_ptc_metadata(ptc, eventtime)
             spool_ids = ptc.get("filament_spool_id")
@@ -199,7 +207,9 @@ class SpoolLink:
                     new_id = (new_ids[ch] if ch < len(new_ids) else 0) or 0
                     if old_id > 0 and new_id == 0:
                         self._start_same_uid_recovery(
-                            ch, old_id, eventtime)
+                            ch, old_id, eventtime,
+                            combined_clear_spool_ids.get(ch) == old_id
+                            and self._has_automatic_load_evidence(ch))
                 self._ptc_spool_ids = new_ids
                 self._fire(self._sync_active_spool())
 
@@ -258,6 +268,18 @@ class SpoolLink:
             and eventtime <= self._sensor_refresh_deadlines.get(ch, 0.)
             and self._feeder_eligible.get(ch, False))
 
+    def _has_automatic_load_evidence(self, ch: int) -> bool:
+        feeder_state, feeder_action = self._feeder_load_states.get(
+            ch, (None, None))
+        sensor = self._toolhead_sensors.get(ch, {})
+        return bool(
+            self._feeder_eligible.get(ch, False)
+            and feeder_state == feeder_action
+            and feeder_state in EMPTY_UID_RECOVERY_LOAD_STATES
+            and sensor.get("filament_detected") is True
+            and sensor.get("enabled", True)
+            and self._extruder_to_channel(self._toolhead_extruder) == ch)
+
     @staticmethod
     def _deadline_remaining(deadline: float, eventtime: float) -> str:
         if deadline <= 0. or eventtime <= 0.:
@@ -267,6 +289,45 @@ class SpoolLink:
     @staticmethod
     def _field_is_clear(value: Any) -> bool:
         return value in (None, "", "NONE", "None")
+
+    def _combined_ptc_clear_spool_ids(
+            self, ptc: Any) -> Dict[int, int]:
+        if not isinstance(ptc, dict):
+            return {}
+        spool_ids = ptc.get("filament_spool_id")
+        if spool_ids is None:
+            return {}
+        new_ids = list(spool_ids or [])
+        vendors = ptc.get("filament_vendor")
+        types = ptc.get("filament_type")
+        new_vendors = (
+            list(vendors) if vendors is not None else self._ptc_vendors)
+        new_types = list(types) if types is not None else self._ptc_types
+        channels = max(
+            len(self._ptc_spool_ids), len(new_ids),
+            len(self._ptc_vendors), len(self._ptc_types),
+            len(new_vendors), len(new_types))
+        cleared: Dict[int, int] = {}
+        for ch in range(channels):
+            old_id = (self._ptc_spool_ids[ch]
+                      if ch < len(self._ptc_spool_ids) else 0) or 0
+            new_id = (new_ids[ch] if ch < len(new_ids) else 0) or 0
+            old_vendor = (self._ptc_vendors[ch]
+                          if ch < len(self._ptc_vendors) else None)
+            old_type = (self._ptc_types[ch]
+                        if ch < len(self._ptc_types) else None)
+            new_vendor = (
+                new_vendors[ch] if ch < len(new_vendors) else None)
+            new_type = new_types[ch] if ch < len(new_types) else None
+            was_populated = not (
+                self._field_is_clear(old_vendor)
+                and self._field_is_clear(old_type))
+            is_cleared = (
+                self._field_is_clear(new_vendor)
+                and self._field_is_clear(new_type))
+            if old_id > 0 and new_id == 0 and was_populated and is_cleared:
+                cleared[ch] = old_id
+        return cleared
 
     def _handle_ptc_metadata(
             self, ptc: Dict[str, Any], eventtime: float) -> None:
@@ -323,7 +384,8 @@ class SpoolLink:
             "[spoollink] ch%d: RFID refresh detected (%s)", ch, reason)
 
     def _handle_filament_detect_channel(
-            self, ch: int, info: Any, eventtime: float = 0.) -> None:
+            self, ch: int, info: Any, eventtime: float = 0.,
+            combined_clear_spool_id: int = 0) -> None:
         if not isinstance(info, dict):
             return
         uid_hex = self._uid_to_hex(info.get("CARD_UID"))
@@ -351,6 +413,10 @@ class SpoolLink:
                 ch, eventtime)
             feeder_state, feeder_action = self._feeder_load_states.get(
                 ch, (None, None))
+            load_clear_evidence = bool(
+                known_id > 0
+                and known_id == combined_clear_spool_id
+                and self._has_automatic_load_evidence(ch))
             if prev:
                 logging.info(
                     "[spoollink] ch%d: UID clear decision: "
@@ -358,7 +424,7 @@ class SpoolLink:
                     "feeder_state=%s feeder_action=%s "
                     "sensor_evidence=%s sensor_window=%s "
                     "toolhead_sensor=%s selected_toolhead=%s "
-                    "retained_restore=%s",
+                    "retained_restore=%s load_clear_evidence=%s",
                     ch, known_id, feeder_eligible, feeder_state,
                     feeder_action, sensor_evidence,
                     self._deadline_remaining(
@@ -367,13 +433,14 @@ class SpoolLink:
                     self._toolhead_sensors.get(ch, {}).get(
                         "filament_detected"),
                     self._extruder_to_channel(self._toolhead_extruder) == ch,
-                    retained_restore)
+                    retained_restore, load_clear_evidence)
             if (ch in self._known_spools
                     and feeder_eligible
                     and (sensor_evidence
-                         or retained_restore)):
+                         or retained_restore
+                         or load_clear_evidence)):
                 logging.info(
-                    "[spoollink] ch%d: UID cleared during toolhead transition; "
+                    "[spoollink] ch%d: UID cleared during qualified load; "
                     "retaining spool", ch)
             else:
                 self._forget_known_spool(ch)
@@ -403,7 +470,8 @@ class SpoolLink:
             self._mark_rfid_refresh(ch, eventtime, "card data updated")
 
     def _start_same_uid_recovery(
-            self, ch: int, old_spool_id: int, eventtime: float) -> None:
+            self, ch: int, old_spool_id: int, eventtime: float,
+            load_clear_evidence: bool = False) -> None:
         uid = self._channel_uids.get(ch, "")
         refresh_deadline = self._refresh_deadlines.get(ch, 0.)
         metadata_deadline = self._metadata_clear_deadlines.get(ch, 0.)
@@ -422,7 +490,8 @@ class SpoolLink:
             "uid_present=%s uid_resolved=%s known_spool_id=%s "
             "feeder_eligible=%s feeder_state=%s feeder_action=%s "
             "sensor_evidence=%s sensor_window=%s reader_window=%s "
-            "metadata_window=%s toolhead_sensor=%s selected_toolhead=%s",
+            "metadata_window=%s toolhead_sensor=%s selected_toolhead=%s "
+            "load_clear_evidence=%s",
             ch, old_spool_id, bool(uid),
             bool(uid and self._resolved_uids.get(ch) == uid), known_id,
             feeder_eligible, feeder_state, feeder_action, sensor_evidence,
@@ -431,7 +500,8 @@ class SpoolLink:
             self._deadline_remaining(refresh_deadline, eventtime),
             self._deadline_remaining(metadata_deadline, eventtime),
             self._toolhead_sensors.get(ch, {}).get("filament_detected"),
-            self._extruder_to_channel(self._toolhead_extruder) == ch)
+            self._extruder_to_channel(self._toolhead_extruder) == ch,
+            load_clear_evidence)
         if (uid and self._resolved_uids.get(ch) == uid
                 and has_refresh_evidence):
             self._refresh_deadlines.pop(ch, None)
@@ -444,8 +514,9 @@ class SpoolLink:
             return
 
         if (not uid and known is not None and known_id == old_spool_id
-                and sensor_evidence):
+                and (sensor_evidence or load_clear_evidence)):
             self._sensor_refresh_deadlines.pop(ch, None)
+            self._metadata_clear_deadlines.pop(ch, None)
             self._recovery_holds[ch] = (None, old_spool_id)
             logging.info(
                 "[spoollink] ch%d: automatic read lost UID; restoring spool %s",
