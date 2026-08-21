@@ -19,7 +19,7 @@ settings:
               - -xc
               - |
                 /usr/local/bin/extended-config.py add /home/lava/printer_data/config/extended/extended2.cfg networking mdns_enabled true &&
-                /etc/init.d/S31mdns restart
+                /etc/init.d/S31cmdnsd restart
           "false":
             label: Disabled
             cmd:
@@ -27,5 +27,5 @@ settings:
               - -xc
               - |
                 /usr/local/bin/extended-config.py add /home/lava/printer_data/config/extended/extended2.cfg networking mdns_enabled false &&
-                /etc/init.d/S31mdns stop
+                /etc/init.d/S31cmdnsd stop
         default: "false"

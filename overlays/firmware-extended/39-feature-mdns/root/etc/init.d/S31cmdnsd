@@ -3,6 +3,7 @@
 EXTENDED_CFG="/home/lava/printer_data/config/extended/extended2.cfg"
 PRODUCT_INFO="/home/lava/printer_data/config/snapmaker/product_info.json"
 DEVICE_NAME_SEED="/home/lava/printer_data/.device_name"
+PIDFILE=/var/run/cmdnsd.pid
 
 MDNS_ENABLED=$(/usr/local/bin/extended-config.py get "$EXTENDED_CFG" networking mdns_enabled false)
 
@@ -23,10 +24,9 @@ device_name() {
 
 # The app-set device_name is free text (up to 32 chars per machine.py) and may
 # contain spaces/punctuation that aren't valid DNS labels. Sanitize to
-# alphanumeric + hyphen before handing to minimdnsd, since neither minimdnsd nor
-# mDNS itself will do this for us.
+# alphanumeric + hyphen before handing to cmdnsd.
 sanitize_label() {
-    printf '%s' "$1" | tr -c 'A-Za-z0-9-' '-' | sed -e 's/-\{2,\}/-/g' -e 's/^-*//' -e 's/-*$//'
+    printf '%s' "$1" | tr 'A-Z' 'a-z' | tr -c 'a-z0-9-' '-' | sed -e 's/-\{2,\}/-/g' -e 's/^-*//' -e 's/-*$//'
 }
 
 start() {
@@ -36,15 +36,15 @@ start() {
     fi
 
     MDNS_HOSTNAME=$(sanitize_label "$(device_name)")
-    [ -z "$MDNS_HOSTNAME" ] && MDNS_HOSTNAME=$(cat /etc/hostname)
-    printf "Starting minimdnsd (%s.local): " "$MDNS_HOSTNAME"
-    start-stop-daemon -S -b -q -m -p /var/run/minimdnsd.pid -x /usr/local/bin/minimdnsd -- -h "$MDNS_HOSTNAME"
+    [ -z "$MDNS_HOSTNAME" ] && MDNS_HOSTNAME=$(sanitize_label "$(cat /etc/hostname)")
+    printf "Starting cmdnsd (%s.local): " "$MDNS_HOSTNAME"
+    start-stop-daemon -S -b -q -m -p "$PIDFILE" -x /usr/local/sbin/cmdnsd -- -H "$MDNS_HOSTNAME"
     echo "OK"
 }
 
 stop() {
-    printf "Stopping minimdnsd: "
-    start-stop-daemon -K -q -p /var/run/minimdnsd.pid
+    printf "Stopping cmdnsd: "
+    start-stop-daemon -K -q -p "$PIDFILE"
     echo "OK"
 }
 
