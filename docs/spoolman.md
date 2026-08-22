@@ -86,9 +86,9 @@ Hardware and setup details for both readers are in
 
 ### `SET_SPOOL_ID`
 
-Assign a Spoolman spool to an AFC lane. Reads the lane's RFID card UID,
-binds it to the spool (so a later scan resolves automatically), and
-applies the filament metadata to the channel:
+Assign a Spoolman spool to an extruder channel. Reads the channel's RFID
+card UID, binds it to the spool (so a later scan resolves automatically),
+and applies the filament metadata to the channel:
 
 ```
 SET_SPOOL_ID LANE=E0 SPOOL_ID=5
@@ -96,8 +96,12 @@ SET_SPOOL_ID LANE=E0 SPOOL_ID=5
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `LANE` | — | AFC lane name (e.g. `E0`) |
+| `LANE` | — | Lane name (e.g. `E0`); resolved through [AFC-Lite](afc-lite.md) when enabled, otherwise from the name itself |
+| `CHANNEL` | — | Extruder channel index (`0`-`3`), used instead of `LANE` |
 | `SPOOL_ID` | `0` | Spoolman spool ID; `0` clears the assignment |
+
+The macro is provided by the Spoolman integration itself, so it is
+available whenever Spoolman is enabled, with or without AFC-Lite.
 
 ## Known Conflicts
 
