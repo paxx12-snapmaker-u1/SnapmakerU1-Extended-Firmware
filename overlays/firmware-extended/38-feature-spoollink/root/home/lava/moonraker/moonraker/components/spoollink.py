@@ -14,7 +14,7 @@ import asyncio
 import json
 import logging
 import os
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Tuple
 
 if TYPE_CHECKING:
     from ..confighelper import ConfigHelper
@@ -55,6 +55,15 @@ class SpoolLink:
             url = "http://" + url
         self._spoolman_url = url
         self._cache_dir: Optional[str] = config.get("cache_dir", None)
+        configured_channels = config.getintlist(
+            "external_channels", [], separator=",")
+        invalid_channels = sorted({
+            ch for ch in configured_channels if ch < 0 or ch > 3})
+        if invalid_channels:
+            raise config.error(
+                "[spoollink] external_channels must contain only channel "
+                f"numbers from 0 to 3; invalid: {invalid_channels}")
+        self._external_channels: Set[int] = set(configured_channels)
         self.http_client: HttpClient = self.server.lookup_component("http_client")
         self.klippy_apis: APIComp = self.server.lookup_component("klippy_apis")
 
@@ -91,8 +100,10 @@ class SpoolLink:
 
     async def component_init(self) -> None:
         logging.info(
-            "spoollink starting (spoolman: %s, cache: %s)",
-            self._spoolman_url, self._cache_dir or "disabled")
+            "spoollink starting (spoolman: %s, cache: %s, "
+            "external channels: %s)",
+            self._spoolman_url, self._cache_dir or "disabled",
+            sorted(self._external_channels) or "none")
         await self._ensure_fields()
 
     # -- Klippy lifecycle ---------------------------------------------------
@@ -229,17 +240,45 @@ class SpoolLink:
                 self._feeder_load_states[ch] = (
                     state.get("channel_state"),
                     state.get("channel_action_state"))
+                module_exist = bool(state.get("module_exist"))
+                filament_detected = bool(state.get("filament_detected"))
+                disable_auto = bool(state.get("disable_auto"))
                 eligible = bool(
-                    state.get("module_exist")
-                    and state.get("filament_detected")
-                    and not state.get("disable_auto"))
+                    module_exist and filament_detected and not disable_auto)
                 was_eligible = self._feeder_eligible.get(ch)
                 self._feeder_eligible[ch] = eligible
                 if was_eligible and not eligible:
+                    uid = self._channel_uids.get(ch, "")
+                    known = self._known_spools.get(ch)
+                    known_id = (
+                        known[1].get("id", 0)
+                        if known is not None else 0) or 0
+                    retain_known_spool = (
+                        self._can_retain_external_spool(ch))
                     logging.info(
-                        "[spoollink] ch%d: feeder no longer retains filament",
-                        ch)
-                    self._forget_known_spool(ch)
+                        "[spoollink] ch%d: feeder no longer retains filament: "
+                        "external_channel=%s module_exist=%s "
+                        "filament_detected=%s disable_auto=%s "
+                        "uid_present=%s uid_resolved=%s known_spool_id=%s "
+                        "retain_known_spool=%s",
+                        ch, ch in self._external_channels, module_exist,
+                        filament_detected, disable_auto, bool(uid),
+                        bool(uid and self._resolved_uids.get(ch) == uid),
+                        known_id, retain_known_spool)
+                    if not retain_known_spool:
+                        self._forget_known_spool(ch)
+
+    def _can_retain_external_spool(self, ch: int) -> bool:
+        if ch not in self._external_channels:
+            return False
+        uid = self._channel_uids.get(ch, "")
+        known = self._known_spools.get(ch)
+        return bool(
+            uid
+            and self._resolved_uids.get(ch) == uid
+            and known is not None
+            and known[0] == uid
+            and (known[1].get("id", 0) or 0) > 0)
 
     def _handle_toolhead_sensors(
             self, status: Dict[str, Any], eventtime: float) -> None:
@@ -435,6 +474,7 @@ class SpoolLink:
                     self._extruder_to_channel(self._toolhead_extruder) == ch,
                     retained_restore, load_clear_evidence)
             if (ch in self._known_spools
+                    and ch not in self._external_channels
                     and feeder_eligible
                     and (sensor_evidence
                          or retained_restore
@@ -462,6 +502,9 @@ class SpoolLink:
             self._metadata_clear_deadlines.pop(ch, None)
             if not same_known_uid:
                 self._release_recovery_hold(ch)
+            if ch in self._external_channels and eventtime > 0.:
+                self._mark_rfid_refresh(
+                    ch, eventtime, "external UID changed")
             logging.info("[spoollink] ch%d: card UID changed to %s, resolving",
                          ch, uid_hex)
             self._schedule_detected_resolution(ch, uid_hex)
@@ -513,7 +556,8 @@ class SpoolLink:
             self._schedule_detected_resolution(ch, uid)
             return
 
-        if (not uid and known is not None and known_id == old_spool_id
+        if (not uid and ch not in self._external_channels
+                and known is not None and known_id == old_spool_id
                 and (sensor_evidence or load_clear_evidence)):
             self._sensor_refresh_deadlines.pop(ch, None)
             self._metadata_clear_deadlines.pop(ch, None)
@@ -563,6 +607,7 @@ class SpoolLink:
             and known[0] == uid
             and (known[1].get("id", 0) or 0) == spool_id
             and not self._channel_uids.get(ch, "")
+            and ch not in self._external_channels
             and self._feeder_eligible.get(ch, False))
 
     async def _restore_known_spool(
@@ -679,6 +724,7 @@ class SpoolLink:
             known = self._known_spools.get(channel)
             retained_hold = bool(
                 hold_uid is None
+                and channel not in self._external_channels
                 and known is not None
                 and (known[1].get("id", 0) or 0) == hold_id
                 and self._feeder_eligible.get(channel, False))

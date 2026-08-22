@@ -167,3 +167,20 @@ it does not maintain its own WebSocket connection.
 7. Klipper stores the metadata in `print_task_config` and notifies subscribers.
    `AFC_lane.get_status()` surfaces `spool_id` to Fluidd/Mainsail.
 
+## Feederless external channels
+
+The optional `[spoollink] external_channels` setting accepts a comma-separated
+list of zero-based channels from `0` through `3`. The firmware configuration
+hook copies `[spoolman] external_channels` from `extended2.cfg` into the
+generated Moonraker section. The default is an empty list.
+
+For a configured channel, a changed external UID opens the same five-second
+refresh window used by reader and metadata evidence. A spool-ID clear during
+that window can re-resolve the same UID without requiring side-feeder
+eligibility. A feeder eligible-to-ineligible transition retains the known spool
+only while the current non-empty UID is resolved and still matches that spool.
+
+The component does not infer external channels from feeder state. Empty UIDs,
+different UIDs, unresolved UIDs, expired refresh windows, and Klippy disconnects
+release the previous assignment. Empty-UID automatic-load recovery remains
+restricted to normal feeder channels.

@@ -78,19 +78,42 @@ class FakeServer:
 
 
 class FakeConfig:
-    def __init__(self):
+    error = RuntimeError
+
+    def __init__(self, external_channels=None):
         self.server = FakeServer()
+        self.options = {
+            "server": "http://spoolman.test",
+            "external_channels": external_channels,
+        }
 
     def get_server(self):
         return self.server
 
     def get(self, key, default=None):
-        return "http://spoolman.test" if key == "server" else default
+        value = self.options.get(key)
+        return default if value is None else value
+
+    def getintlist(self, key, default=None, separator="\n"):
+        value = self.options.get(key)
+        if value is None:
+            return default
+        try:
+            return [
+                int(item.strip()) for item in value.split(separator)
+                if item.strip()
+            ]
+        except (AttributeError, ValueError) as e:
+            raise self.error(
+                f"invalid integer list for {key}: {value}") from e
 
 
 class SpoolLinkRecoveryTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
-        self.config = FakeConfig()
+        self.configure_link()
+
+    def configure_link(self, external_channels=None):
+        self.config = FakeConfig(external_channels)
         self.link = SPOOLLINK.SpoolLink(self.config)
         self.link._spoollink_set = AsyncMock(return_value={})
 
@@ -207,6 +230,201 @@ class SpoolLinkRecoveryTests(unittest.IsolatedAsyncioTestCase):
         }, 5.0)
         await self.drain()
         self.assertEqual(calls, [])
+
+    def test_external_channel_configuration_defaults_and_normalizes(self):
+        self.assertEqual(self.link._external_channels, set())
+
+        configured = SPOOLLINK.SpoolLink(FakeConfig("3, 1, 3"))
+
+        self.assertEqual(configured._external_channels, {1, 3})
+
+    def test_external_channel_configuration_rejects_invalid_values(self):
+        for value in ("-1", "4", "1,4", "invalid"):
+            with self.subTest(value=value):
+                with self.assertRaisesRegex(
+                        RuntimeError, "external_channels"):
+                    SPOOLLINK.SpoolLink(FakeConfig(value))
+
+    async def test_startup_logs_configured_external_channels(self):
+        self.configure_link("3,1")
+        self.link._ensure_fields = AsyncMock()
+
+        with self.assertLogs(level="INFO") as captured:
+            await self.link.component_init()
+
+        self.assertIn(
+            "external channels: [1, 3]", "\n".join(captured.output))
+
+    async def test_configured_external_feeder_loss_retains_current_spool(self):
+        self.configure_link("3")
+        self.prime_spool_27(channel=3)
+        self.set_feeder(channel=3)
+
+        with self.assertLogs(level="INFO") as captured:
+            self.set_feeder(
+                present=False, module_exist=False,
+                eventtime=1.0, channel=3)
+
+        self.assertEqual(
+            self.link._known_spools.get(3), (OLD_UID, OLD_SPOOL))
+        self.assertEqual(self.link._resolved_uids.get(3), OLD_UID)
+        messages = "\n".join(captured.output)
+        self.assertIn("external_channel=True", messages)
+        self.assertIn("module_exist=False", messages)
+        self.assertIn("filament_detected=False", messages)
+        self.assertIn("disable_auto=False", messages)
+        self.assertIn("retain_known_spool=True", messages)
+
+    async def test_external_feeder_loss_requires_current_resolved_spool(self):
+        cases = ("empty UID", "unresolved UID", "known UID mismatch")
+        for case in cases:
+            with self.subTest(case=case):
+                self.configure_link("3")
+                self.prime_spool_27(channel=3)
+                self.set_feeder(channel=3)
+                if case == "empty UID":
+                    self.link._channel_uids[3] = ""
+                elif case == "unresolved UID":
+                    self.link._resolved_uids.pop(3)
+                else:
+                    self.link._known_spools[3] = (NEW_UID, OLD_SPOOL)
+
+                self.set_feeder(
+                    present=False, module_exist=False,
+                    eventtime=1.0, channel=3)
+
+                self.assertNotIn(3, self.link._known_spools)
+                self.assertNotIn(3, self.link._resolved_uids)
+
+    async def test_unconfigured_feeder_loss_forgets_current_spool(self):
+        self.prime_spool_27(channel=3)
+        self.set_feeder(channel=3)
+
+        self.set_feeder(
+            present=False, module_exist=False,
+            eventtime=1.0, channel=3)
+
+        self.assertNotIn(3, self.link._known_spools)
+        self.assertNotIn(3, self.link._resolved_uids)
+
+    async def test_continuously_ineligible_external_channel_recovers(self):
+        self.configure_link("3")
+        self.set_feeder(
+            present=False, module_exist=False,
+            eventtime=0.0, channel=3)
+        self.link._toolhead_extruder = "extruder3"
+
+        async def resolve(channel, spool_id=None, card_uid=None,
+                          expected_uid=None):
+            return await self.link._apply_spool(
+                channel, OLD_SPOOL, card_uid or "")
+
+        self.link._resolve_spool = resolve
+        self.link._handle_status_update({
+            "filament_detect": {
+                "info": [None, None, None, OLD_TAG],
+            },
+        }, 10.0)
+        await self.drain(8)
+        self.assertEqual(self.link._resolved_uids.get(3), OLD_UID)
+        self.assertEqual(
+            self.link._known_spools.get(3), (OLD_UID, OLD_SPOOL))
+        self.assertEqual(self.link._refresh_deadlines.get(3), 15.0)
+
+        self.link._active_spool_id = 27
+        self.config.server.spoolman.calls.clear()
+        self.link._handle_status_update({
+            "print_task_config": {
+                "filament_spool_id": [0, 0, 0, 0],
+            },
+        }, 10.5)
+        await self.drain(10)
+
+        self.assertEqual(self.link._ptc_spool_ids[3], 27)
+        self.assertEqual(self.link._active_spool_id, 27)
+        self.assertNotIn(None, self.config.server.spoolman.calls)
+
+    async def test_external_channel_empty_uid_is_always_a_release(self):
+        self.configure_link("3")
+        self.prime_spool_27(channel=3)
+        self.qualify_automatic_refresh(channel=3)
+
+        self.clear_uid_and_spool(
+            channel=3, clear_metadata=True)
+        await self.drain(8)
+
+        self.link._spoollink_set.assert_not_awaited()
+        self.assertEqual(self.link._ptc_spool_ids[3], 0)
+        self.assertEqual(self.link._active_spool_id, 0)
+        self.assertNotIn(3, self.link._known_spools)
+
+    async def test_external_manual_clear_after_window_remains_cleared(self):
+        self.configure_link("3")
+        self.prime_spool_27(channel=3)
+        self.link._refresh_deadlines[3] = 15.0
+
+        self.link._handle_status_update({
+            "print_task_config": {
+                "filament_spool_id": [0, 0, 0, 0],
+            },
+        }, 15.001)
+        await self.drain(8)
+
+        self.link._spoollink_set.assert_not_awaited()
+        self.assertEqual(self.link._ptc_spool_ids[3], 0)
+        self.assertEqual(self.link._active_spool_id, 0)
+        self.assertNotIn(3, self.link._known_spools)
+
+    async def test_external_failed_new_uid_resolution_never_restores_old(self):
+        self.configure_link("3")
+        self.prime_spool_27(channel=3)
+        calls = self.set_resolver(None)
+
+        self.link._handle_status_update({
+            "filament_detect": {
+                "info": [None, None, None, NEW_TAG],
+            },
+        }, 10.0)
+        await self.drain(8)
+        self.link._handle_status_update({
+            "print_task_config": {
+                "filament_spool_id": [0, 0, 0, 0],
+            },
+        }, 10.5)
+        await self.drain(8)
+
+        self.assertEqual(calls, [(3, NEW_UID, NEW_UID)])
+        self.assertEqual(self.link._ptc_spool_ids[3], 0)
+        self.assertEqual(self.link._active_spool_id, 0)
+        self.assertNotIn(3, self.link._known_spools)
+        self.assertNotIn(3, self.link._resolved_uids)
+
+    async def test_external_disconnect_clears_only_runtime_state(self):
+        self.configure_link("3")
+        self.prime_spool_27(channel=3)
+        self.set_feeder(channel=3)
+        self.set_feeder(
+            present=False, module_exist=False,
+            eventtime=1.0, channel=3)
+        self.assertIn(3, self.link._known_spools)
+
+        self.link._handle_klippy_disconnect()
+        await self.drain(4)
+
+        self.assertEqual(self.link._known_spools, {})
+        self.assertEqual(self.link._resolved_uids, {})
+        self.assertEqual(self.link._refresh_deadlines, {})
+        self.assertEqual(self.link._feeder_eligible, {})
+        self.assertEqual(self.link._external_channels, {3})
+
+    async def test_channel_spool_overrides_manual_active_spool(self):
+        self.prime_spool_27(channel=3)
+
+        self.link._handle_active_spool_set({"spool_id": 99})
+        await self.drain(4)
+
+        self.assertEqual(self.link._active_spool_id, 27)
+        self.assertEqual(self.config.server.spoolman.calls, [27])
 
     async def test_reader_refresh_recovers_once_and_holds_active_spool(self):
         self.prime_spool_27()
