@@ -16,3 +16,19 @@
              addresses = [x for x in self._extract_ip_addresses(network)]
              for addr_bytes in addresses:
                  try:
+@@ -219,7 +226,14 @@
+                     self.zc_service_props["ip"] = str(ip_addr)
+                 except ValueError:
+                     pass
+-            self.service_info.addresses = addresses
++            # The line below must set self.addresses (not just mutate the
++            # old, about-to-be-replaced service_info object) since the
++            # AsyncServiceInfo constructed just below reads addresses from
++            # self.addresses. Without this, the new service_info silently
++            # keeps whatever address list was set at component_init() time
++            # (empty, on first boot) instead of the current one just
++            # computed above.
++            self.addresses = addresses
+             self.service_info = AsyncServiceInfo(
+                     ZC_SERVICE_TYPE,
+                     self.zc_service_name,
