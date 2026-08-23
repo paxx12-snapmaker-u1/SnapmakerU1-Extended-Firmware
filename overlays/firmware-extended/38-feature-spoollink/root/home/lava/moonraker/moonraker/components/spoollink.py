@@ -68,6 +68,7 @@ class SpoolLink:
         self.klippy_apis: APIComp = self.server.lookup_component("klippy_apis")
 
         self._channel_uids: Dict[int, str] = {}
+        self._channel_event_times: Dict[int, float] = {}
         self._channel_signatures: Dict[int, Tuple[Any, ...]] = {}
         self._resolved_uids: Dict[int, str] = {}
         self._fd_states: List[Any] = []
@@ -76,7 +77,9 @@ class SpoolLink:
         self._metadata_clear_deadlines: Dict[int, float] = {}
         self._resolution_tasks: Dict[int, "asyncio.Future"] = {}
         self._resolution_task_uids: Dict[int, str] = {}
-        self._queued_resolutions: Dict[int, str] = {}
+        self._resolution_task_event_times: Dict[int, Optional[float]] = {}
+        self._queued_resolutions: Dict[
+            int, Tuple[str, Optional[float]]] = {}
         self._recovery_holds: Dict[int, Tuple[Optional[str], int]] = {}
         self._known_spools: Dict[int, Tuple[str, dict]] = {}
         self._retention_tasks: Dict[int, "asyncio.Future"] = {}
@@ -135,6 +138,7 @@ class SpoolLink:
         for task in self._retention_tasks.values():
             task.cancel()
         self._channel_uids = {}
+        self._channel_event_times = {}
         self._channel_signatures = {}
         self._resolved_uids = {}
         self._fd_states = []
@@ -143,6 +147,7 @@ class SpoolLink:
         self._metadata_clear_deadlines = {}
         self._resolution_tasks = {}
         self._resolution_task_uids = {}
+        self._resolution_task_event_times = {}
         self._queued_resolutions = {}
         self._recovery_holds = {}
         self._known_spools = {}
@@ -266,6 +271,7 @@ class SpoolLink:
                         bool(uid and self._resolved_uids.get(ch) == uid),
                         known_id, retain_known_spool)
                     if not retain_known_spool:
+                        self._cancel_detected_resolution(ch)
                         self._forget_known_spool(ch)
 
     def _can_retain_external_spool(self, ch: int) -> bool:
@@ -416,6 +422,14 @@ class SpoolLink:
             info.get("VENDOR"), info.get("MAIN_TYPE"), info.get("SUB_TYPE"),
             info.get("OFFICIAL"), info.get("SKU"), info.get("SPOOL_ID"))
 
+    @staticmethod
+    def _card_event_time(info: Dict[str, Any]) -> Optional[float]:
+        value = info.get("CARD_EVENT_TIME")
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return None
+        event_time = float(value)
+        return event_time if event_time > 0. else None
+
     def _mark_rfid_refresh(
             self, ch: int, eventtime: float, reason: str) -> None:
         self._refresh_deadlines[ch] = eventtime + RFID_REFRESH_WINDOW
@@ -427,6 +441,13 @@ class SpoolLink:
             combined_clear_spool_id: int = 0) -> None:
         if not isinstance(info, dict):
             return
+        card_event_time = self._card_event_time(info)
+        previous_card_event_time = self._channel_event_times.get(ch)
+        if card_event_time is not None:
+            if (previous_card_event_time is not None
+                    and card_event_time <= previous_card_event_time):
+                return
+            self._channel_event_times[ch] = card_event_time
         uid_hex = self._uid_to_hex(info.get("CARD_UID"))
         prev = self._channel_uids.get(ch, "")
         signature = self._filament_signature(info)
@@ -435,11 +456,11 @@ class SpoolLink:
         self._channel_signatures[ch] = signature
 
         if not uid_hex:
+            self._cancel_detected_resolution(ch)
             self._resolved_uids.pop(ch, None)
             self._refreshing_channels.pop(ch, None)
             self._refresh_deadlines.pop(ch, None)
             self._metadata_clear_deadlines.pop(ch, None)
-            self._queued_resolutions.pop(ch, None)
             hold = self._recovery_holds.get(ch)
             retained_restore = bool(
                 ch in self._retention_tasks
@@ -505,9 +526,31 @@ class SpoolLink:
             if ch in self._external_channels and eventtime > 0.:
                 self._mark_rfid_refresh(
                     ch, eventtime, "external UID changed")
-            logging.info("[spoollink] ch%d: card UID changed to %s, resolving",
-                         ch, uid_hex)
-            self._schedule_detected_resolution(ch, uid_hex)
+            if card_event_time is not None:
+                logging.info(
+                    "[spoollink] ch%d: card event %.6f changed UID to %s, "
+                    "resolving", ch, card_event_time, uid_hex)
+            else:
+                logging.info(
+                    "[spoollink] ch%d: card UID changed to %s, resolving",
+                    ch, uid_hex)
+            self._schedule_detected_resolution(
+                ch, uid_hex, card_event_time)
+        elif card_event_time is not None:
+            known = self._known_spools.get(ch)
+            known_id = (
+                known[1].get("id", 0) if known is not None else 0) or 0
+            if (known is not None and known[0] == uid_hex
+                    and self._resolved_uids.get(ch) == uid_hex
+                    and known_id > 0):
+                self._recovery_holds[ch] = (uid_hex, known_id)
+            if eventtime > 0.:
+                self._mark_rfid_refresh(ch, eventtime, "card event")
+            logging.info(
+                "[spoollink] ch%d: card event %.6f for %s, resolving",
+                ch, card_event_time, uid_hex)
+            self._schedule_detected_resolution(
+                ch, uid_hex, card_event_time)
         elif (eventtime > 0. and prev_signature is not None
               and signature != prev_signature):
             self._mark_rfid_refresh(ch, eventtime, "card data updated")
@@ -553,7 +596,8 @@ class SpoolLink:
             logging.info(
                 "[spoollink] ch%d: same card %s cleared spool %s; re-resolving",
                 ch, uid, old_spool_id)
-            self._schedule_detected_resolution(ch, uid)
+            self._schedule_detected_resolution(
+                ch, uid, self._channel_event_times.get(ch))
             return
 
         if (not uid and ch not in self._external_channels
@@ -568,6 +612,8 @@ class SpoolLink:
             self._schedule_retained_restore(ch, known[0], known[1])
             return
 
+        if not uid or self._resolved_uids.get(ch) == uid:
+            self._cancel_detected_resolution(ch)
         if known_id == old_spool_id:
             self._forget_known_spool(ch)
 
@@ -581,6 +627,14 @@ class SpoolLink:
         self._resolved_uids.pop(ch, None)
         self._cancel_retention_task(ch)
         self._release_recovery_hold(ch)
+
+    def _cancel_detected_resolution(self, ch: int) -> None:
+        task = self._resolution_tasks.pop(ch, None)
+        self._resolution_task_uids.pop(ch, None)
+        self._resolution_task_event_times.pop(ch, None)
+        self._queued_resolutions.pop(ch, None)
+        if task is not None and not task.done():
+            task.cancel()
 
     def _cancel_retention_task(self, ch: int) -> None:
         task = self._retention_tasks.pop(ch, None)
@@ -647,26 +701,47 @@ class SpoolLink:
             self._recovery_holds.pop(ch, None)
         self._fire(self._sync_active_spool())
 
-    def _schedule_detected_resolution(self, ch: int, uid: str) -> None:
+    def _detected_resolution_is_current(
+            self, ch: int, uid: str,
+            card_event_time: Optional[float]) -> bool:
+        return bool(
+            self._channel_uids.get(ch) == uid
+            and (card_event_time is None
+                 or self._channel_event_times.get(ch) == card_event_time))
+
+    def _schedule_detected_resolution(
+            self, ch: int, uid: str,
+            card_event_time: Optional[float] = None) -> None:
         task = self._resolution_tasks.get(ch)
         if task is not None and not task.done():
-            if self._resolution_task_uids.get(ch) != uid:
-                self._queued_resolutions[ch] = uid
+            active = (
+                self._resolution_task_uids.get(ch),
+                self._resolution_task_event_times.get(ch))
+            queued = (uid, card_event_time)
+            if active != queued:
+                self._queued_resolutions[ch] = queued
             return
         task = asyncio.ensure_future(
-            self._resolve_spool(ch, card_uid=uid, expected_uid=uid))
+            self._resolve_spool(
+                ch, card_uid=uid, expected_uid=uid,
+                expected_card_event_time=card_event_time))
         self._resolution_tasks[ch] = task
         self._resolution_task_uids[ch] = uid
+        self._resolution_task_event_times[ch] = card_event_time
         task.add_done_callback(
-            lambda completed, channel=ch, card_uid=uid:
-                self._detected_resolution_done(channel, card_uid, completed))
+            lambda completed, channel=ch, card_uid=uid,
+            event_time=card_event_time:
+                self._detected_resolution_done(
+                    channel, card_uid, event_time, completed))
 
     def _detected_resolution_done(
-            self, ch: int, uid: str, task: "asyncio.Future") -> None:
+            self, ch: int, uid: str, card_event_time: Optional[float],
+            task: "asyncio.Future") -> None:
         if self._resolution_tasks.get(ch) is not task:
             return
         self._resolution_tasks.pop(ch, None)
         self._resolution_task_uids.pop(ch, None)
+        self._resolution_task_event_times.pop(ch, None)
 
         spool_id = None
         if not task.cancelled():
@@ -677,7 +752,9 @@ class SpoolLink:
                     "[spoollink] ch%d: card %s resolution failed: %s",
                     ch, uid, e, exc_info=e)
 
-        if spool_id and self._channel_uids.get(ch) == uid:
+        is_current = self._detected_resolution_is_current(
+            ch, uid, card_event_time)
+        if spool_id and is_current:
             self._resolved_uids[ch] = uid
             while len(self._ptc_spool_ids) <= ch:
                 self._ptc_spool_ids.append(0)
@@ -685,13 +762,17 @@ class SpoolLink:
                 self._ptc_spool_ids[ch] = spool_id
 
         hold = self._recovery_holds.get(ch)
-        if hold is not None and hold[0] == uid:
+        if hold is not None and hold[0] == uid and is_current:
             self._recovery_holds.pop(ch, None)
             self._fire(self._sync_active_spool())
 
-        queued_uid = self._queued_resolutions.pop(ch, None)
-        if queued_uid and self._channel_uids.get(ch) == queued_uid:
-            self._schedule_detected_resolution(ch, queued_uid)
+        queued = self._queued_resolutions.pop(ch, None)
+        if queued is not None:
+            queued_uid, queued_event_time = queued
+            if self._detected_resolution_is_current(
+                    ch, queued_uid, queued_event_time):
+                self._schedule_detected_resolution(
+                    ch, queued_uid, queued_event_time)
 
     # -- Active spool sync --------------------------------------------------
 
@@ -921,7 +1002,8 @@ class SpoolLink:
 
     async def _resolve_spool(
             self, channel: int, spool_id: Any = None, card_uid: Any = None,
-            expected_uid: Optional[str] = None) -> Optional[int]:
+            expected_uid: Optional[str] = None,
+            expected_card_event_time: Optional[float] = None) -> Optional[int]:
         spool_id = spool_id or None
         card_uid = card_uid or None
         if channel is None:
@@ -1008,10 +1090,12 @@ class SpoolLink:
             self._save_cache(card_uid, spool)
 
         if (expected_uid is not None
-                and self._channel_uids.get(channel) != expected_uid):
+                and not self._detected_resolution_is_current(
+                    channel, expected_uid, expected_card_event_time)):
             logging.info(
-                "[spoollink] ch%d: discarding stale resolution for card %s",
-                channel, expected_uid)
+                "[spoollink] ch%d: discarding stale resolution for card %s "
+                "event=%s", channel, expected_uid,
+                expected_card_event_time)
             return None
 
         return await self._apply_spool(

@@ -205,7 +205,8 @@ class SpoolLinkRecoveryTests(unittest.IsolatedAsyncioTestCase):
         calls = []
 
         async def resolve(channel, spool_id=None, card_uid=None,
-                          expected_uid=None):
+                          expected_uid=None,
+                          expected_card_event_time=None):
             calls.append((channel, card_uid, expected_uid))
             if gate is not None:
                 await gate.wait()
@@ -230,6 +231,148 @@ class SpoolLinkRecoveryTests(unittest.IsolatedAsyncioTestCase):
         }, 5.0)
         await self.drain()
         self.assertEqual(calls, [])
+
+    async def test_same_uid_card_event_resolves_and_holds_active_spool(self):
+        self.prime_spool_27()
+        gate = asyncio.Event()
+        calls = self.set_resolver(27, gate)
+        info = dict(OLD_TAG, CARD_EVENT_TIME=100.25)
+
+        self.link._handle_status_update({
+            "filament_detect": {"info": [None, None, info]},
+            "print_task_config": {
+                "filament_spool_id": [0, 0, 0, 0],
+            },
+        }, 10.0)
+        await self.drain(2)
+
+        self.assertEqual(calls, [(2, OLD_UID, OLD_UID)])
+        self.assertEqual(self.link._active_spool_id, 27)
+        self.assertEqual(self.link._recovery_holds.get(2), (OLD_UID, 27))
+        self.assertNotIn(None, self.config.server.spoolman.calls)
+
+        gate.set()
+        await self.drain(8)
+        self.assertEqual(self.link._ptc_spool_ids[2], 27)
+        self.assertEqual(self.link._active_spool_id, 27)
+        self.assertNotIn(None, self.config.server.spoolman.calls)
+
+    async def test_duplicate_and_older_card_events_are_ignored(self):
+        self.prime_spool_27()
+        self.link._channel_event_times[2] = 100.25
+        calls = self.set_resolver(27)
+
+        for card_event_time in (100.25, 100.0):
+            info = dict(OLD_TAG, CARD_EVENT_TIME=card_event_time)
+            self.link._handle_status_update({
+                "filament_detect": {"info": [None, None, info]},
+            }, 10.0)
+        await self.drain()
+        self.assertEqual(calls, [])
+
+        info = dict(OLD_TAG, CARD_EVENT_TIME=100.5)
+        self.link._handle_status_update({
+            "filament_detect": {"info": [None, None, info]},
+        }, 10.1)
+        await self.drain()
+        self.assertEqual(calls, [(2, OLD_UID, OLD_UID)])
+
+    async def test_newer_same_uid_event_supersedes_inflight_resolution(self):
+        self.prime_spool_27()
+        gate = asyncio.Event()
+        calls = []
+
+        async def resolve(channel, spool_id=None, card_uid=None,
+                          expected_uid=None,
+                          expected_card_event_time=None):
+            calls.append(expected_card_event_time)
+            if expected_card_event_time == 100.25:
+                await gate.wait()
+            return 27
+
+        self.link._resolve_spool = resolve
+        first = dict(OLD_TAG, CARD_EVENT_TIME=100.25)
+        second = dict(OLD_TAG, CARD_EVENT_TIME=100.5)
+        self.link._handle_status_update({
+            "filament_detect": {"info": [None, None, first]},
+        }, 10.0)
+        await self.drain(2)
+        self.link._handle_status_update({
+            "filament_detect": {"info": [None, None, second]},
+        }, 10.1)
+        await self.drain(2)
+        self.assertEqual(calls, [100.25])
+
+        gate.set()
+        await self.drain(10)
+        self.assertEqual(calls, [100.25, 100.5])
+        self.assertEqual(self.link._resolved_uids.get(2), OLD_UID)
+        self.assertEqual(self.link._ptc_spool_ids[2], 27)
+        self.assertNotIn(None, self.config.server.spoolman.calls)
+
+    async def test_manual_clear_cancels_inflight_card_event_resolution(self):
+        self.prime_spool_27()
+        gate = asyncio.Event()
+        calls = self.set_resolver(27, gate)
+        info = dict(OLD_TAG, CARD_EVENT_TIME=100.25)
+        self.link._handle_status_update({
+            "filament_detect": {"info": [None, None, info]},
+        }, 10.0)
+        await self.drain(2)
+
+        self.link._handle_status_update({
+            "print_task_config": {
+                "filament_spool_id": [0, 0, 0, 0],
+            },
+        }, 15.001)
+        await self.drain(6)
+
+        self.assertEqual(calls, [(2, OLD_UID, OLD_UID)])
+        self.assertEqual(self.link._resolution_tasks, {})
+        self.assertEqual(self.link._ptc_spool_ids[2], 0)
+        self.assertEqual(self.link._active_spool_id, 0)
+        self.assertEqual(self.config.server.spoolman.calls, [None])
+
+        gate.set()
+        await self.drain(4)
+        self.assertEqual(self.link._ptc_spool_ids[2], 0)
+
+    async def test_empty_card_event_cancels_external_resolution(self):
+        self.configure_link("3")
+        self.prime_spool_27(channel=3)
+        gate = asyncio.Event()
+        calls = self.set_resolver(27, gate)
+        present = dict(OLD_TAG, CARD_EVENT_TIME=100.25)
+        self.link._handle_status_update({
+            "filament_detect": {
+                "info": [None, None, None, present],
+            },
+        }, 10.0)
+        await self.drain(2)
+
+        self.link._handle_status_update({
+            "filament_detect": {
+                "info": [None, None, None, {
+                    "CARD_UID": 0,
+                    "CARD_EVENT_TIME": 100.5,
+                }],
+            },
+            "print_task_config": {
+                "filament_spool_id": [0, 0, 0, 0],
+            },
+        }, 10.1)
+        await self.drain(6)
+
+        self.assertEqual(calls, [(3, OLD_UID, OLD_UID)])
+        self.assertEqual(self.link._resolution_tasks, {})
+        self.assertEqual(self.link._ptc_spool_ids[3], 0)
+        self.assertEqual(self.link._active_spool_id, 0)
+        self.assertEqual(self.config.server.spoolman.calls, [None])
+        self.assertNotIn(3, self.link._known_spools)
+
+        gate.set()
+        await self.drain(4)
+        self.assertEqual(self.link._ptc_spool_ids[3], 0)
 
     def test_external_channel_configuration_defaults_and_normalizes(self):
         self.assertEqual(self.link._external_channels, set())
@@ -315,7 +458,8 @@ class SpoolLinkRecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.link._toolhead_extruder = "extruder3"
 
         async def resolve(channel, spool_id=None, card_uid=None,
-                          expected_uid=None):
+                          expected_uid=None,
+                          expected_card_event_time=None):
             return await self.link._apply_spool(
                 channel, OLD_SPOOL, card_uid or "")
 
@@ -413,6 +557,7 @@ class SpoolLinkRecoveryTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(self.link._known_spools, {})
         self.assertEqual(self.link._resolved_uids, {})
+        self.assertEqual(self.link._channel_event_times, {})
         self.assertEqual(self.link._refresh_deadlines, {})
         self.assertEqual(self.link._feeder_eligible, {})
         self.assertEqual(self.link._external_channels, {3})
@@ -496,7 +641,8 @@ class SpoolLinkRecoveryTests(unittest.IsolatedAsyncioTestCase):
         calls = []
 
         async def resolve(channel, spool_id=None, card_uid=None,
-                          expected_uid=None):
+                          expected_uid=None,
+                          expected_card_event_time=None):
             calls.append(card_uid)
             if card_uid == OLD_UID:
                 await old_gate.wait()
@@ -563,6 +709,23 @@ class SpoolLinkRecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.link._apply_spool = AsyncMock(return_value=27)
         result = await self.link._resolve_spool(
             2, card_uid=OLD_UID, expected_uid=OLD_UID)
+        self.assertIsNone(result)
+        self.link._apply_spool.assert_not_awaited()
+
+    async def test_resolve_checks_expected_card_event_before_apply(self):
+        self.link._channel_uids[2] = OLD_UID
+        self.link._channel_event_times[2] = 100.25
+        spool = {"id": 27, "filament": {}}
+
+        async def find_after_newer_event(card_uid):
+            self.link._channel_event_times[2] = 100.5
+            return [spool]
+
+        self.link._spoolman_find_by_card = find_after_newer_event
+        self.link._apply_spool = AsyncMock(return_value=27)
+        result = await self.link._resolve_spool(
+            2, card_uid=OLD_UID, expected_uid=OLD_UID,
+            expected_card_event_time=100.25)
         self.assertIsNone(result)
         self.link._apply_spool.assert_not_awaited()
 
@@ -935,6 +1098,8 @@ class SpoolLinkRecoveryTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(self.link._known_spools, {})
         self.assertEqual(self.link._retention_tasks, {})
+        self.assertEqual(self.link._channel_event_times, {})
+        self.assertEqual(self.link._resolution_task_event_times, {})
         self.assertEqual(self.link._feeder_eligible, {})
         self.assertEqual(self.link._toolhead_sensors, {})
 

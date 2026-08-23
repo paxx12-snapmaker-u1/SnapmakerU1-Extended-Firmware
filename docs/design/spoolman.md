@@ -167,6 +167,25 @@ it does not maintain its own WebSocket connection.
 7. Klipper stores the metadata in `print_task_config` and notifies subscribers.
    `AFC_lane.get_status()` surfaces `spool_id` to Fluidd/Mainsail.
 
+### Detection-event recovery
+
+When `filament_detect.info[channel]` exposes `CARD_EVENT_TIME`, SpoolLink
+treats each increasing value as the primary evidence that the channel record
+was rewritten. A non-empty UID is resolved even when the UID and filament
+metadata are unchanged. This repairs the spool-ID loss caused by a successful
+same-card rescan without inferring the event from metadata or reader timing.
+
+The UID and `CARD_EVENT_TIME` form the generation for an automatic resolution.
+SpoolLink runs one resolution task per channel, queues the newest generation,
+and verifies both values again before applying the result. An empty or changed
+UID, an unqualified manual clear, feeder removal, or a Klippy disconnect
+invalidates pending work. While a known same-UID spool is resolving, the
+active-spool hold prevents an intermediate `None` from reaching Spoolman.
+
+Reader-state, metadata, and sensor evidence remain as compatibility fallbacks
+when the running firmware does not expose `CARD_EVENT_TIME`. The guarded
+empty-UID automatic-load recovery is separate because it has no UID to resolve.
+
 ## Feederless external channels
 
 The optional `[spoollink] external_channels` setting accepts a comma-separated
@@ -174,11 +193,12 @@ list of zero-based channels from `0` through `3`. The firmware configuration
 hook copies `[spoolman] external_channels` from `extended2.cfg` into the
 generated Moonraker section. The default is an empty list.
 
-For a configured channel, a changed external UID opens the same five-second
-refresh window used by reader and metadata evidence. A spool-ID clear during
-that window can re-resolve the same UID without requiring side-feeder
-eligibility. A feeder eligible-to-ineligible transition retains the known spool
-only while the current non-empty UID is resolved and still matches that spool.
+For a configured channel, an advancing `CARD_EVENT_TIME` re-resolves the
+current non-empty UID without requiring side-feeder eligibility. A changed UID
+also opens the five-second compatibility window used when the event field is
+unavailable. A feeder eligible-to-ineligible transition retains the known
+spool only while the current non-empty UID is resolved and still matches that
+spool.
 
 The component does not infer external channels from feeder state. Empty UIDs,
 different UIDs, unresolved UIDs, expired refresh windows, and Klippy disconnects
