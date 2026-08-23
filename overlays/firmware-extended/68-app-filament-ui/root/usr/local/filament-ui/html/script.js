@@ -41,25 +41,50 @@ document.addEventListener('DOMContentLoaded', () => {
     initializeModals();
 });
 
+// Moonraker authentication: Get JWT from Fluidd/Mainsail localStorage
+function getJWT() {
+    // Fluidd stores tokens as "user-token-{hash}" where hash is based on the instance
+
+    // First try: instance-specific token (most secure)
+    const instanceKey = `user-token-${window.location.host.replace(/[^a-zA-Z0-9]/g, '_')}`;
+    let token = localStorage.getItem(instanceKey);
+    if (token) return token;
+
+    // Second try: search for any Fluidd user-token pattern
+    for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('user-token-')) {
+            token = localStorage.getItem(key);
+            if (token) return token;
+        }
+    }
+
+    return null;
+}
+
 // ── WebSocket ─────────────────────────────────────────────────────────────
 
 function initializeWebSocket() {
     const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const jwt = getJWT();
     ws = new WebSocket(`${protocol}//${location.host}/websocket`);
 
     ws.onopen = () => {
-        sendRPC('server.connection.identify', {
+        const identifyPayload = {
             client_name: 'filament-manager',
             version: '1.0.0',
             type: 'web',
             url: location.href,
-        }).then(() => {
-            wsReady = true;
-            setConnectionStatus(true);
-            loadInitialData();
-        }).catch(() => {
-            showStatus('Failed to connect to Moonraker', 'error');
-        });
+            ...(jwt && { access_token: jwt })
+        };
+        sendRPC('server.connection.identify', identifyPayload)
+            .then(() => {
+                wsReady = true;
+                setConnectionStatus(true);
+                loadInitialData();
+            }).catch(() => {
+                showStatus('Failed to connect to Moonraker', 'error');
+            });
     };
 
     ws.onclose = () => {
