@@ -171,6 +171,28 @@ def main():
     expect("RFID CARD_UID reset to struct default (0)")
     check("rfid.CARD_UID", rfid.get("CARD_UID"), 0)
 
+    section("Step 7: CARD_EVENT_TIME advances on every set, even sub-second and with unchanged fields")
+    reset(host)
+    op(f"set-rfid channel=0  {RFID_VENDOR} {RFID_TYPE} {RFID_SUBTYPE}  CARD_UID={RFID_CARD_UID}")
+    fd.cmd_set_rfid(host, 0, RFID_VENDOR, RFID_TYPE, RFID_SUBTYPE, RFID_COLOR, card_uid=RFID_CARD_UID)
+    rfid, ptc = get_state(host)
+    expect("CARD_EVENT_TIME stamped on first set")
+    first_event_time = rfid.get("CARD_EVENT_TIME")
+    check("rfid.CARD_EVENT_TIME > 0", first_event_time is not None and first_event_time > 0, True)
+    # Two detection events can land closer together than 1s apart; a whole-second value
+    # would make them indistinguishable and hide the second update, at any gap size.
+    time.sleep(0.2)
+    op(f"set-rfid channel=0  {RFID_VENDOR} {RFID_TYPE} {RFID_SUBTYPE}  CARD_UID={RFID_CARD_UID}  (same UID, same fields, 0.2s later)")
+    fd.cmd_set_rfid(host, 0, RFID_VENDOR, RFID_TYPE, RFID_SUBTYPE, RFID_COLOR, card_uid=RFID_CARD_UID)
+    rfid, ptc = get_state(host)
+    expect("CARD_EVENT_TIME advances within the same wall-clock second (sub-second precision)")
+    check("rfid.CARD_EVENT_TIME advanced", rfid.get("CARD_EVENT_TIME", 0) > first_event_time, True)
+    op("clear-rfid channel=0")
+    fd.cmd_clear_rfid(host, 0)
+    rfid, ptc = get_state(host)
+    expect("CARD_EVENT_TIME is still stamped on a clear (it marks detection activity, not tag content)")
+    check("rfid.CARD_EVENT_TIME > 0 after clear", rfid.get("CARD_EVENT_TIME", 0) > 0, True)
+
     print(f"\n{'OK' if _failures == 0 else 'FAILED'}  {_passes} passed, {_failures} failed")
     sys.exit(0 if _failures == 0 else 1)
 
