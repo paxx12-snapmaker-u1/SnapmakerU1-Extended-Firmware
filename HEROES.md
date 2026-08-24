@@ -19,7 +19,7 @@ You can thank them here:
 | [@justinh-rahb](https://github.com/justinh-rahb) | `@wildtang3nt` | V4L2 camera controls, Mainsail Remote Screen support, Panda Breath chamber heater | [![Buy Me A Coffee](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://buymeacoffee.com/wildtang3nt) |
 | [@suchmememanyskill](https://github.com/suchmememanyskill) | `@Sims` | OpenRFID | [![Ko-Fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/suchmememanyskill) |
 | [@morgendagen](https://github.com/morgendagen) | | OpenSpool `subtype` field for material specification | |
-| [@Tareku99](https://github.com/Tareku99) | | `.zip` firmware upload support in `firmware-config` | |
+| [@Tareku99](https://github.com/Tareku99) | | `.zip` firmware upload support in `firmware-config` | [![Ko-Fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/tareku) |
 | [@plastikman](https://github.com/plastikman) | | Panda Breath firmware `V1.0.4` support | |
 | [@djgringoboy2003](https://github.com/djgringoboy2003) | | Root-caused the `cavity_led` PWM camera flicker | |
 
