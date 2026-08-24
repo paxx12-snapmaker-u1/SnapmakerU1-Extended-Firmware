@@ -11,6 +11,22 @@ on:
   workflow_dispatch:
 
 jobs:
+  filament-ui-tests:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+
+    - name: Test firmware line-ending guard
+      run: |
+        python3 -m unittest scripts.test_check_line_endings
+        python3 scripts/check_line_endings.py
+
+    - name: Test Filament Manager
+      run: node --test overlays/firmware-extended/68-app-filament-ui/test/*.test.js
+
   custom-firmware-build:
     runs-on: ubuntu-24.04-arm
     permissions:
