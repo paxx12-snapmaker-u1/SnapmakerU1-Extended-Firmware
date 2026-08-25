@@ -1,9 +1,10 @@
 --- a/klippy/extras/spoollink.py
 +++ b/klippy/extras/spoollink.py
-@@ -1,13 +1,127 @@
+@@ -1,13 +1,166 @@
  import logging
  
  from . import filament_protocol
++import json
 +
 +def is_auto_pa_enabled():
 +    try:
@@ -21,7 +22,7 @@
          self.printer = config.get_printer()
          self.gcode = self.printer.lookup_object('gcode')
 +        self.channel_spools = {}
-+        self.spoolman_pa = {}
++        self.channel_pa_matrix = {}
 +        self.calibrated_channels = set()
 +        self.calibration_attempts = {}
 +        self.auto_pa_timer = None
@@ -37,16 +38,54 @@
 +        else:
 +            logging.warning("[spoollink] machine_state_manager post_hooks not available")
 +
-+    def update_calibrated_pa(self, channel, pa_val):
++    def _nozzle_key_for_channel(self, channel):
++        # Build the per-nozzle matrix key "<nozzle_diameter>_<nozzle_volume_type>"
++        # (e.g. "0.4_standard") using the raw values exposed by the extruder.
++        extruder_name = "extruder" if channel == 0 else f"extruder{channel}"
++        extruder = self.printer.lookup_object(extruder_name, None)
++        if extruder is None:
++            return None
++        nozzle_diameter = getattr(extruder, 'nozzle_diameter', None)
++        if nozzle_diameter is None:
++            return None
++        nozzle_volume_type = getattr(extruder, 'nozzle_volume_type', 'standard')
++        return f"{nozzle_diameter}_{nozzle_volume_type}"
++
++    def _pa_for_current_nozzle(self, channel):
++        # Resolve the Pressure Advance stored for the channel's current nozzle.
++        matrix = self.channel_pa_matrix.get(channel) or {}
++        key = self._nozzle_key_for_channel(channel)
++        if not key:
++            return None, None
++        raw = matrix.get(key)
++        if raw is None:
++            return None, key
 +        try:
-+            self.spoolman_pa[channel] = pa_val
++            val = float(raw)
++        except (TypeError, ValueError):
++            return None, key
++        if val <= 0:
++            return None, key
++        return val, key
++
++    def _apply_pa(self, channel, pa_val):
++        extruder_name = "extruder" if channel == 0 else f"extruder{channel}"
++        extruder = self.printer.lookup_object(extruder_name, None)
++        if extruder and hasattr(extruder, 'extruder_stepper'):
++            estepper = extruder.extruder_stepper
++            estepper._set_pressure_advance(pa_val, estepper.config_smooth_time)
++            return extruder_name
++        return None
++
++    def update_calibrated_pa(self, channel, nozzle_key, pa_val):
++        try:
++            matrix = self.channel_pa_matrix.setdefault(channel, {})
++            if nozzle_key:
++                matrix[nozzle_key] = pa_val
 +            self.calibrated_channels.add(channel)
-+            extruder_name = "extruder" if channel == 0 else f"extruder{channel}"
-+            extruder = self.printer.lookup_object(extruder_name, None)
-+            if extruder and hasattr(extruder, 'extruder_stepper'):
-+                estepper = extruder.extruder_stepper
-+                estepper._set_pressure_advance(pa_val, estepper.config_smooth_time)
-+                logging.info("[spoollink] ch%d (%s): updated in-memory PA to %.5f after calibration", channel, extruder_name, pa_val)
++            extruder_name = self._apply_pa(channel, pa_val)
++            if extruder_name:
++                logging.info("[spoollink] ch%d (%s): updated in-memory PA to %.5f (%s) after calibration", channel, extruder_name, pa_val, nozzle_key)
 +        except Exception as e:
 +            logging.warning("[spoollink] update_calibrated_pa error: %s", e)
 +
@@ -91,8 +130,8 @@
 +                        logging.info("[spoollink] ch%d (Spool #%s): max calibration attempts reached in this session, skipping", ch, spool_id)
 +                        continue
 +
-+                    spa = self.spoolman_pa.get(ch)
-+                    if spa is None or spa <= 0:
++                    pa_val, _key = self._pa_for_current_nozzle(ch)
++                    if pa_val is None:
 +                        target_channel = ch
 +                        target_spool_id = spool_id
 +                        break
@@ -128,32 +167,40 @@
  
      def _handle_set(self, web_request):
          wh = self.printer.lookup_object('webhooks')
-@@ -30,6 +144,29 @@
+@@ -30,6 +183,37 @@
              logging.info('[spoollink] ch%d: %s', channel, message)
          ptc = self.printer.lookup_object('print_task_config')
          ptc._rfid_filament_info_update_cb(channel, info, is_clear=True)
 +
-+        spoolman_pa = info.get('SPOOLMAN_PA')
 +        spool_id = info.get('SPOOL_ID')
 +        has_spoolman = spool_id is not None and isinstance(spool_id, int) and spool_id > 0
 +        extruder_name = "extruder" if channel == 0 else f"extruder{channel}"
 +
++        pa_matrix = {}
++        raw_matrix = info.get('SPOOLMAN_PA_MATRIX')
++        if raw_matrix:
++            try:
++                parsed = json.loads(raw_matrix)
++                if isinstance(parsed, dict):
++                    pa_matrix = parsed
++            except (ValueError, TypeError):
++                logging.warning("[spoollink] ch%d: invalid SPOOLMAN_PA_MATRIX, ignoring", channel)
++
 +        if has_spoolman:
 +            self.channel_spools[channel] = spool_id
-+            self.spoolman_pa[channel] = spoolman_pa
++            self.channel_pa_matrix[channel] = pa_matrix
 +            self.calibrated_channels.discard(channel)
 +            self.calibration_attempts[channel] = 0
 +
-+        if spoolman_pa is not None and spoolman_pa > 0:
-+            extruder = self.printer.lookup_object(extruder_name, None)
-+            if extruder and hasattr(extruder, 'extruder_stepper'):
-+                estepper = extruder.extruder_stepper
-+                estepper._set_pressure_advance(spoolman_pa, estepper.config_smooth_time)
-+                logging.info("[spoollink] ch%d (%s): applied pressure_advance %.5f from Spoolman spool #%s", channel, extruder_name, spoolman_pa, spool_id)
-+                self.gcode.respond_raw(f"// [spoollink] ch{channel} ({extruder_name}): Applied Pressure Advance {spoolman_pa:.5f} from Spoolman spool #{spool_id}")
++        pa_val, nozzle_key = self._pa_for_current_nozzle(channel)
++        if pa_val is not None:
++            applied = self._apply_pa(channel, pa_val)
++            if applied:
++                logging.info("[spoollink] ch%d (%s): applied pressure_advance %.5f (%s) from Spoolman spool #%s", channel, applied, pa_val, nozzle_key, spool_id)
++                self.gcode.respond_raw(f"// [spoollink] ch{channel} ({applied}): Applied Pressure Advance {pa_val:.5f} ({nozzle_key}) from Spoolman spool #{spool_id}")
 +        elif has_spoolman and is_auto_pa_enabled():
-+            logging.info("[spoollink] ch%d (%s): Spool #%s queued for auto PA calibration after load", channel, extruder_name, spool_id)
-+            self.gcode.respond_raw(f"// [spoollink] ch{channel} (Spool #{spool_id}): Queued for automatic Pressure Advance calibration after load")
++            logging.info("[spoollink] ch%d (%s): Spool #%s has no PA for nozzle %s, queued for auto calibration after load", channel, extruder_name, spool_id, nozzle_key)
++            self.gcode.respond_raw(f"// [spoollink] ch{channel} (Spool #{spool_id}): No Pressure Advance stored for nozzle {nozzle_key}, queued for automatic calibration after load")
 +
          self.gcode.respond_raw('// %s' % message)
          web_request.send({})
