@@ -1,4 +1,7 @@
 #!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-PackageHomePage: https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware
+# SPDX-FileCopyrightText: Copyright (c) 2026 @paxx12
 
 EXTENDED_CFG="/home/lava/printer_data/config/extended/extended2.cfg"
 CAMERA_USB=$(/usr/local/bin/extended-config.py get "$EXTENDED_CFG" camera usb none)

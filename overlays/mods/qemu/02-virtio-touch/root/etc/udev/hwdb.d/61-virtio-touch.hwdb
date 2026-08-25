@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-PackageHomePage: https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware
+# SPDX-FileCopyrightText: Copyright (c) 2026 @paxx12
+
 # Map the QEMU virtio multitouch device to the U1 480x320 panel range.
 #
 # NOTE: this only rewrites the *reported* axis range (absinfo). QEMU still
