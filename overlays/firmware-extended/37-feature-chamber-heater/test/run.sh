@@ -1,4 +1,6 @@
 #!/bin/bash
+#
+# SSH-iterate the chamber-heater overlay onto a LIVE U1 (no image rebuild).
 
 ROOT_DIR="$(dirname "$(realpath "$0")")/.."
 
