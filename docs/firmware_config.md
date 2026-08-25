@@ -173,10 +173,7 @@ Note: Remote screen requires additional Moonraker configuration. See [Remote Scr
 - `snapmaker` (default) - Snapmaker's built-in RFID reader
 - `external` - Disable built-in readers (useful for external readers)
 - `openrfid` - Alternative detection with extended spool/tag support
-- `openrfid-generic` - Same as openrfid, labels all spool vendors as generic.
-  When SpoolLink resolves a spool from Spoolman, the original spool ID and
-  tracking data are preserved while non-Snapmaker filament metadata applied
-  to the printer uses the generic vendor and no variant.
+- `openrfid-generic` - Same as openrfid, labels all spool vendors as generic
 
 See [Alternative Filament Detection](design/rfid.md#enabling-openrfid) for setup instructions.
 

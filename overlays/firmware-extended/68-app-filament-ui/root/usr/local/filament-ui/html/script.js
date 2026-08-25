@@ -442,8 +442,8 @@ function createChannelCard(channel) {
     const displayCh = channel.channel + 1;
     const { present, filament_exists: filamentExists, official: isOfficial,
             empty: isEmpty, malformed: isMalformed, filament, card_type, uid,
-            spool_id: spoolId, mismatch, force_generic_applied: forceGenericApplied,
-            display_vendor: displayVendor, ptc_sources: ptcSources } = channel;
+            spool_id: spoolId, mismatch, display_vendor: displayVendor,
+            ptc_sources: ptcSources } = channel;
     const hasUid = uid.length > 0;
     const hasPtcInfo = !!filament.type;
     const showBody = present || filamentExists || hasPtcInfo || spoolmanActive;
@@ -533,23 +533,6 @@ function createChannelCard(channel) {
         const b = document.createElement('span');
         b.className = 'tag-type-badge detecting';
         b.textContent = 'Detecting';
-        badgesDiv.appendChild(b);
-    }
-
-    if (forceGenericApplied) {
-        const b = document.createElement('span');
-        b.className = 'tag-type-badge force-generic';
-        b.textContent = 'Generic';
-
-        b.addEventListener('mouseenter', () => {
-            showPopover(b, [{
-                label: 'Force Generic',
-                value: 'Vendor is intentionally exposed to the printer as Generic.',
-                stacked: true
-            }]);
-        });
-        b.addEventListener('mouseleave', hidePopover);
-
         badgesDiv.appendChild(b);
     }
 
@@ -668,7 +651,7 @@ function createChannelCard(channel) {
 function showPopover(anchorEl, rows) {
     const popover = document.getElementById('info-popover');
     popover.innerHTML = rows.map(r =>
-        `<div class="popover-row${r.stacked ? ' stacked' : ''}">` +
+        `<div class="popover-row">` +
         `<span class="popover-label">${escHtml(r.label)}</span>` +
         `<span class="popover-value">${r.html !== undefined ? r.html : escHtml(r.value)}</span>` +
         `</div>`

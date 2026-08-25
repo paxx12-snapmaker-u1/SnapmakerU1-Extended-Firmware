@@ -19,8 +19,6 @@ settings:
                 /etc/init.d/S59rfid-support restart
                 /etc/init.d/S99openrfid restart
                 /etc/init.d/S60klipper restart
-                /etc/hooks/moonraker.d/10-spoollink.sh start
-                /etc/init.d/S61moonraker restart
           openrfid-generic:
             label: OpenRFID (force generic vendor)
             confirm: Please read the relevant documentation for this feature. Bambu Lab and Creality spools are not enabled by default.
@@ -33,6 +31,4 @@ settings:
                 /etc/init.d/S59rfid-support restart
                 /etc/init.d/S99openrfid restart
                 /etc/init.d/S60klipper restart
-                /etc/hooks/moonraker.d/10-spoollink.sh start
-                /etc/init.d/S61moonraker restart
                 echo Please read the relevant documentation for this feature. Bambu Lab and Creality spools are not enabled by default.

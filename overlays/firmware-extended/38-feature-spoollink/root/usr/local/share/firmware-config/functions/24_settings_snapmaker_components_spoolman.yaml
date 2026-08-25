@@ -12,7 +12,17 @@ settings:
         get_cmd:
           - bash
           - -c
-          - /usr/local/bin/extended-config.py get /oem/printer_data/config/extended/extended2.cfg spoolman host 2>/dev/null | grep -q . && echo "enabled" || echo "disabled"
+          - |
+            HOST=$(/usr/local/bin/extended-config.py get /oem/printer_data/config/extended/extended2.cfg spoolman host "" 2>/dev/null)
+            FORCE_GENERIC=$(/usr/local/bin/extended-config.py get /oem/printer_data/config/extended/extended2.cfg spoolman force_generic_vendor false 2>/dev/null)
+
+            if [ -z "$HOST" ]; then
+              echo "disabled"
+            elif [ "$FORCE_GENERIC" = "true" ]; then
+              echo "force_generic"
+            else
+              echo "enabled"
+            fi
         options:
           enabled:
             label: Enabled
@@ -36,7 +46,40 @@ settings:
                   echo "ERROR: Failed to set Spoolman host."
                   exit 1
                 }
+                /usr/local/bin/extended-config.py add /oem/printer_data/config/extended/extended2.cfg spoolman force_generic_vendor false || {
+                  echo "ERROR: Failed to disable Force Generic Vendor."
+                  exit 1
+                }
                 echo "Spoolman enabled. Restarting Klipper and Moonraker to start SpoolLink..."
+                /etc/init.d/S60klipper restart
+                /etc/init.d/S61moonraker restart
+          force_generic:
+            label: Enabled (Force Generic Vendor)
+            confirm: "Enable Spoolman integration with Force Generic Vendor? Enter the Spoolman server URL below.\n\nNon-Snapmaker filament vendors will be exposed to the U1 as Generic while Spoolman metadata and tracking remain unchanged."
+            inputs:
+              - name: SPOOLMAN_URL
+                label: Spoolman URL
+                placeholder: "http://192.168.1.100:7912"
+                regex: "^https?://.+"
+            cmd:
+              - bash
+              - -c
+              - |
+                URL="${SPOOLMAN_URL%/}"
+                if ! curl -fsS --max-time 10 "${URL}/api/v1/info" | grep -q '"version"'; then
+                  echo "ERROR: Spoolman validation failed (could not reach ${URL})."
+                  exit 1
+                fi
+                /usr/local/bin/extended-config.py uncomment /oem/printer_data/config/extended/extended2.cfg spoolman
+                /usr/local/bin/extended-config.py add /oem/printer_data/config/extended/extended2.cfg spoolman host "${URL}" || {
+                  echo "ERROR: Failed to set Spoolman host."
+                  exit 1
+                }
+                /usr/local/bin/extended-config.py add /oem/printer_data/config/extended/extended2.cfg spoolman force_generic_vendor true || {
+                  echo "ERROR: Failed to enable Force Generic Vendor."
+                  exit 1
+                }
+                echo "Spoolman enabled with Force Generic Vendor. Restarting Klipper and Moonraker to start SpoolLink..."
                 /etc/init.d/S60klipper restart
                 /etc/init.d/S61moonraker restart
           disabled:

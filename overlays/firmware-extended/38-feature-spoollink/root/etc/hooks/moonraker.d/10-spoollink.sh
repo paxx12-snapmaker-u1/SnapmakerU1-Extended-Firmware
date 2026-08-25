@@ -16,12 +16,7 @@ if [ "$1" = start ]; then
     CACHE_DIR="/oem/printer_data/config/extended/spoollink"
 
     SPOOLMAN_HOST=$(/usr/local/bin/extended-config.py get "$EXTENDED_CFG" spoolman host "" 2>/dev/null)
-    RFID_MODE=$(/usr/local/bin/extended-config.py get "$EXTENDED_CFG" components rfid snapmaker 2>/dev/null)
-
-    FORCE_GENERIC_VENDOR=false
-    if [ "$RFID_MODE" = "openrfid-generic" ]; then
-        FORCE_GENERIC_VENDOR=true
-    fi
+    FORCE_GENERIC_VENDOR=$(/usr/local/bin/extended-config.py get "$EXTENDED_CFG" spoolman force_generic_vendor false 2>/dev/null)
 
     if [ -n "$SPOOLMAN_HOST" ]; then
         mkdir -p "$(dirname "$MOONRAKER_CFG")" "$CACHE_DIR"
