@@ -18,6 +18,8 @@ Access the Firmware Config tool at `http://<printer-ip>/firmware-config/`
 
 **Note:** The Firmware Config interface is only available when Advanced Mode is enabled. On the printer touchscreen, go to **Settings > Maintenance > Advanced Mode** and enable it, then restart the printer.
 
+![Firmware Config overview](screenshots/firmware-config.png)
+
 ### Status
 
 Displays system information including:
@@ -54,6 +56,8 @@ Toggle settings directly from the web interface:
 | Tweaks | TMC AutoTune, TMC Reduced Current, Object Processing, AFC Stub | Experimental Klipper tweaks ([tweaks](tweaks.md)) |
 | Troubleshooting | Faulty Toolhead Bypass | Temporary toolhead thermistor bypass so the remaining toolheads can still be used ([faulty_toolhead](faulty_toolhead.md)) |
 | RFID Detection System | External, Snapmaker, OpenRFID, OpenRFID (force generic vendor) | Set how filament is detected ([RFID Format & Reader Design](design/rfid.md)) |
+
+![Firmware Config settings](screenshots/firmware-config-settings.png)
 
 Changes are applied immediately and relevant services are restarted.
 

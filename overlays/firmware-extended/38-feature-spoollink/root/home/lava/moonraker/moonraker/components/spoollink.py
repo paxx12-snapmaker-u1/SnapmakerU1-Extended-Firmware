@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-PackageHomePage: https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware
+# SPDX-FileCopyrightText: Copyright (c) 2026 @paxx12
+
 # SpoolLink — bridge between Spoolman and the Snapmaker AFC/RFID stack.
 #
 # Runs inside Moonraker as a component. It registers the

@@ -16,6 +16,10 @@
 
 See [HEROES.md](HEROES.md) for all-time contributors.
 
+## Screenshots
+
+<!-- PLACEHOLDER: add screenshots here -->
+
 ## Install
 
 For detailed installation instructions, see the [Installation Guide](docs/install.md).

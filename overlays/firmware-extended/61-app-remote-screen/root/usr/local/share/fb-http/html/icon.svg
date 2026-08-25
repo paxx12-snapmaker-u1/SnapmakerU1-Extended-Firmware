@@ -1,3 +1,7 @@
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<!-- SPDX-PackageHomePage: https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 @paxx12 -->
+
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
   <!-- Main body -->
   <rect x="64" y="100" width="128" height="120" rx="8" fill="#f0f0f0" stroke="#333" stroke-width="4"/>
