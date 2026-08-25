@@ -14,7 +14,7 @@
          await self._ensure_field("filament", "variant", "Variant")
 -
 -    async def _ensure_field(self, entity_type: str, key: str, name: str) -> None:
-+        await self._ensure_field("spool", "pressure_advance", "Pressure Advance", field_type="float")
++        await self._ensure_field("spool", "pressure_advance_matrix", "Pressure Advance Matrix")
 +
 +    async def _ensure_field(self, entity_type: str, key: str, name: str, field_type: str = "text") -> None:
          base = f"{self._spoolman_url}/api/v1/field/{entity_type}"
@@ -35,56 +35,80 @@
              }
              resp = await self.http_client.post(f"{base}/{key}", body=body)
              if resp.status_code in (200, 201):
-@@ -332,6 +335,25 @@
+@@ -332,6 +335,51 @@
          if resp.status_code == 200:
              return resp.json()
          raise RuntimeError(f"HTTP {resp.status_code}: {resp.text()}")
 +
-+    async def _spoolman_save_pa(self, spool_id: int, pa_value: float) -> dict:
++    async def _spoolman_get_spool(self, spool_id: int) -> dict:
++        resp = await self.http_client.get(
++            f"{self._spoolman_url}/api/v1/spool/{spool_id}", enable_cache=False)
++        if resp.status_code == 200:
++            return resp.json()
++        raise RuntimeError(f"HTTP {resp.status_code}: {resp.text()}")
++
++    async def _spoolman_save_pa(self, spool_id: int, nozzle_key: str, pa_value: float) -> dict:
++        # Persist the calibrated Pressure Advance into a per-nozzle JSON matrix
++        # stored in the spool's `extra.pressure_advance_matrix` field. The matrix
++        # is keyed by "<nozzle_diameter>_<nozzle_volume_type>" (e.g. "0.4_standard").
++        # Existing entries are preserved (merge, not overwrite).
 +        await self._ensure_fields()
-+        encoded = json.dumps(round(float(pa_value), 6))
++        matrix: dict = {}
++        try:
++            spool = await self._spoolman_get_spool(spool_id)
++            extra = spool.get("extra") or {}
++            raw_matrix = _unquote(str(extra.get("pressure_advance_matrix") or ""))
++            if raw_matrix:
++                parsed = json.loads(raw_matrix)
++                if isinstance(parsed, dict):
++                    matrix = parsed
++        except Exception as e:
++            logging.warning("[spoollink] could not read existing PA matrix for spool #%d: %s", spool_id, e)
++        matrix[nozzle_key] = round(float(pa_value), 6)
++        encoded = json.dumps(json.dumps(matrix))
 +        resp = await self.http_client.request(
 +            "PATCH", f"{self._spoolman_url}/api/v1/spool/{spool_id}",
-+            body={"extra": {"pressure_advance": encoded}})
++            body={"extra": {"pressure_advance_matrix": encoded}})
 +        if resp.status_code == 200:
-+            logging.info("[spoollink] saved pressure_advance %.6f to spool #%d", pa_value, spool_id)
++            logging.info("[spoollink] saved pressure_advance %.6f (%s) to spool #%d", pa_value, nozzle_key, spool_id)
 +            return resp.json()
 +        raise RuntimeError(f"HTTP {resp.status_code}: {resp.text}")
 +
-+    async def _handle_remote_save_pa(self, spool_id: Any = None, pa_value: Any = None, **kwargs) -> None:
++    async def _handle_remote_save_pa(self, spool_id: Any = None, nozzle_key: Any = None, pa_value: Any = None, **kwargs) -> None:
 +        try:
 +            spool_id_int = int(spool_id)
 +            pa_val_float = float(pa_value)
-+            await self._retry(self._spoolman_save_pa, spool_id_int, pa_val_float)
++            key = str(nozzle_key or "").strip()
++            if not key:
++                raise ValueError("missing nozzle_key")
++            await self._retry(self._spoolman_save_pa, spool_id_int, key, pa_val_float)
 +        except Exception as e:
-+            logging.error("[spoollink] save PA failed for spool %s: %s", spool_id, e, exc_info=True)
++            logging.error("[spoollink] save PA failed for spool %s (%s): %s", spool_id, nozzle_key, e, exc_info=True)
  
      async def _spoolman_add_card_uid(self, spool: dict, card_uid: str) -> dict:
          uid_upper = card_uid.upper()
-@@ -447,6 +469,17 @@
+@@ -447,6 +502,16 @@
          vendor = (filament.get("vendor") or {}).get("name", "Generic")
          variant = _parse_variant(vendor, filament)
  
 +        extra = spool.get("extra") or {}
-+        raw_pa = _unquote(str(extra.get("pressure_advance") or ""))
-+        spoolman_pa = None
-+        if raw_pa:
++        raw_matrix = _unquote(str(extra.get("pressure_advance_matrix") or ""))
++        pa_matrix = ""
++        if raw_matrix:
 +            try:
-+                val = float(raw_pa)
-+                if val > 0:
-+                    spoolman_pa = val
++                if isinstance(json.loads(raw_matrix), dict):
++                    pa_matrix = raw_matrix
 +            except ValueError:
-+                spoolman_pa = None
++                pa_matrix = ""
 +
          raw_multi = filament.get("multi_color_hexes") or ""
          colors = [c.strip().upper()[:6] for c in raw_multi.split(",") if c.strip()]
          color_hex = colors[0] if colors else (filament.get("color_hex") or "FFFFFF")[:6].upper()
-@@ -461,6 +494,8 @@
+@@ -461,6 +525,7 @@
          alpha = 0xFF
          info = {
              "VENDOR": vendor,
-+            "PRESSURE_ADVANCE": spoolman_pa,
-+            "SPOOLMAN_PA": spoolman_pa,
++            "SPOOLMAN_PA_MATRIX": pa_matrix,
              "MAIN_TYPE": material,
              "SUB_TYPE": variant,
              "RGB_1": int(color_list[0], 16),
