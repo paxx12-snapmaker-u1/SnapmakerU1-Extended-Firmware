@@ -25,10 +25,6 @@ Patch set in `overlays/firmware-extended/13-rfid-support/patches`:
   - When M1 auth fails, sets `card_data` to the UID bytes from the anticollision/SELECT phase
     (`self.__picc_a.UID[0:4]`) so that `CARD_UID` and `CARD_TYPE` are still populated via the
     existing patch-07 handler in `filament_detect.py`.
-- `09-add-card-event-time.patch`
-  - Adds `CARD_EVENT_TIME` (`self.reactor.monotonic()`, `float`) to `FILAMENT_INFO_STRUCT`,
-    stamped in `_filament_info_update` and directly in `_handle_filament_detect_set` on every
-    write to a channel's record.
 
 ## API Contract
 

@@ -2,10 +2,10 @@
 +++ b/usr/local/share/firmware-config/extended/extended2.cfg
 @@ -9,7 +9,7 @@
  remote_screen: false
- 
+
  [camera]
 -# Internal (Case) camera options: paxx12, snapmaker, none
 +# Internal (Case) camera options: paxx12-ai, paxx12, snapmaker, none
  internal: paxx12
- # External (USB) camera options: paxx12, none
- usb: none
+ # Internal (Case) camera resolution/framerate preset, resolution is always 1080p: 1080p30, 1080p25, 1080p15, 1080p5
+ # internal_resolution: 1080p25

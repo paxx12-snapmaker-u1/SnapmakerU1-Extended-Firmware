@@ -121,7 +121,7 @@ if FILES=$(find "$ROOTFS_DIR" -type f -exec file {} + | grep "ELF" | grep -v "AR
 fi
 
 echo ">> Create squash filesystem..."
-mksquashfs "$ROOTFS_DIR" "$BUILD_DIR/rk-unpacked/rootfs-v2.img" -comp gzip
+mksquashfs "$ROOTFS_DIR" "$BUILD_DIR/rk-unpacked/rootfs-v2.img" -comp zstd
 
 echo ">> Replace rootfs.img in firmware..."
 mv -v "$BUILD_DIR/rk-unpacked"/{rootfs-v2,rootfs}.img

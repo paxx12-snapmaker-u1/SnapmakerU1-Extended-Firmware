@@ -55,7 +55,7 @@ class SpoolLink:
         self.http_client: HttpClient = self.server.lookup_component("http_client")
         self.klippy_apis: APIComp = self.server.lookup_component("klippy_apis")
 
-        self._channel_event_times: Dict[int, float] = {}
+        self._channel_uids: Dict[int, str] = {}
         self._toolhead_extruder: str = "extruder"
         self._ptc_spool_ids: List[int] = []
         self._active_spool_id: Optional[int] = None
@@ -87,7 +87,7 @@ class SpoolLink:
 
     def _handle_klippy_disconnect(self) -> None:
         logging.info("[spoollink] Klippy disconnected")
-        self._channel_event_times = {}
+        self._channel_uids = {}
         self._ptc_spool_ids = []
         self._active_spool_id = None
 
@@ -130,14 +130,12 @@ class SpoolLink:
     def _handle_filament_detect_channel(self, ch: int, info: Any) -> None:
         if not isinstance(info, dict):
             return
-        event_time = info.get("CARD_EVENT_TIME") or 0
-        if event_time <= self._channel_event_times.get(ch, 0):
-            return
-        self._channel_event_times[ch] = event_time
         uid_hex = self._uid_to_hex(info.get("CARD_UID"))
-        if uid_hex:
-            logging.info("[spoollink] ch%d: detected at %.3f (card %s), resolving",
-                         ch, event_time, uid_hex)
+        prev = self._channel_uids.get(ch, "")
+        self._channel_uids[ch] = uid_hex
+        if uid_hex and uid_hex != prev:
+            logging.info("[spoollink] ch%d: card UID changed to %s, resolving",
+                         ch, uid_hex)
             self._fire(self._resolve_spool(ch, card_uid=uid_hex))
 
     # -- Active spool sync --------------------------------------------------
