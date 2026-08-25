@@ -1,0 +1,50 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-PackageHomePage: https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware
+# SPDX-FileCopyrightText: Copyright (c) 2026 @paxx12, @plastikman
+
+settings:
+  snapmaker_components:
+    items:
+      chamber_heater:
+        label: PandaBreath / DragonBreath Chamber Heater
+        description: BIQU Panda Breath chamber heater and air filter integration, or DragonBreath open firmware on the same board.
+        help_url: https://snapmakeru1-extended-firmware.pages.dev/panda_breath
+        get_cmd:
+          - bash
+          - -c
+          - |
+            CFG=/oem/printer_data/config/extended/klipper
+            if test -f "$CFG/dragonbreath.cfg"; then
+              echo "dragonbreath"
+            elif /usr/local/bin/extended-config.py has "$CFG/panda_breath.cfg" "include /usr/local/share/firmware-config/tweaks/klipper/panda_breath_heater_auto.cfg" &>/dev/null; then
+              echo "auto"
+            elif /usr/local/bin/extended-config.py has "$CFG/panda_breath.cfg" "include /usr/local/share/firmware-config/tweaks/klipper/panda_breath_heater_manual.cfg" &>/dev/null; then
+              echo "manual"
+            elif test -f "$CFG/panda_breath.cfg"; then
+              echo "manual"
+            else
+              echo "disabled"
+            fi
+        options:
+          disabled:
+            label: Disabled
+            cmd:
+              - bash
+              - -ec
+              - |
+                CFG=/oem/printer_data/config/extended/klipper
+                if PANDA_BREATH_IP=$(/usr/local/bin/extended-config.py get "$CFG/panda_breath.cfg" panda_breath host 2>/dev/null); then
+                  echo ""
+                  echo ">> Unbinding Panda Breath at ${PANDA_BREATH_IP}..."
+                  /usr/local/bin/panda_breath_cli.py --host "${PANDA_BREATH_IP}" unbind || true
+                fi
+
+                echo ""
+                echo ">> Removing chamber heater configuration..."
+                rm -f "$CFG/panda_breath.cfg"
+                rm -f "$CFG/dragonbreath.cfg"
+
+                echo ""
+                echo ">> Chamber heater disabled. Restarting Klipper..."
+                /etc/init.d/S60klipper restart
+        default: disabled
