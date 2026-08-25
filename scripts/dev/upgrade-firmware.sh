@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-PackageHomePage: https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware
+# SPDX-FileCopyrightText: Copyright (c) 2025-2026 @paxx12, @LixNix, @liberodark
 
 if [[ $# -ne 2 ]]; then
   echo "usage: $0 <user@ip> <profile>"

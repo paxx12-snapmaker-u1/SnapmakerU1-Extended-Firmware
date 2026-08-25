@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-PackageHomePage: https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware
+# SPDX-FileCopyrightText: Copyright (c) 2026 @paxx12
+
 # Reconcile the Klipper `[spoollink]` include with the Spoolman configuration.
 #
 # `[spoolman] host` in `extended2.cfg` is the single source of truth for whether
