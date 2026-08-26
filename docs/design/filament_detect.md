@@ -104,6 +104,18 @@ The endpoint has three modes determined by the filament fields present in `info`
 
 `CARD_UID` and `CARD_TYPE` are both popped before `has_params` is computed, so they never contribute to `OFFICIAL`. `CARD_TYPE` is populated automatically on hardware reads (`NTAG` via `filament_protocol_ndef`, `M1` via `filament_protocol`).
 
+### Feederless channel lifecycle
+
+A channel listed in SpoolLink's `external_channels` configuration relies on the
+external integration for UID presence. The integration must send a stable,
+non-empty `CARD_UID` while a spool is selected, send the replacement UID when
+the slot changes, and use the clear mode when no spool is selected. An empty UID
+releases the current spool assignment even during automatic loading.
+
+The endpoint shape does not change for feederless channels. Configuration is
+explicit because built-in OpenRFID and community readers use the same endpoint,
+so the request itself does not identify the reader source.
+
 ## openrfid Integration
 
 `openrfid_u1_base.cfg` registers two webhook exporters that drive `filament_detect/set` automatically:

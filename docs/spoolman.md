@@ -82,6 +82,39 @@ when a tag can't be parsed:
 Hardware and setup details for both readers are in
 [RFID Format & Reader Design](design/rfid.md#readers).
 
+### Feederless external channels
+
+An external filament system can feed a toolhead without using the matching U1
+side feeder. SpoolLink cannot identify this arrangement from feeder status
+alone because an empty or disconnected side feeder reports the same state.
+
+Back up `/oem/printer_data/config/extended/extended2.cfg`, then add
+`external_channels` under its existing `[spoolman]` section. Channel numbers
+are zero-based and may be comma-separated:
+
+```ini
+external_channels: 3
+```
+
+Channel `3` corresponds to toolhead 4. Do not include channels that use their
+normal side feeders. Reboot after changing the setting so the Moonraker config
+is regenerated.
+
+For each configured channel, the external integration must:
+
+- report a stable, non-empty `CARD_UID` whenever a spool is selected;
+- report the new UID when the external slot changes; and
+- clear the channel through `filament_detect/set` when no spool is selected.
+
+An empty UID always releases a feederless channel. SpoolLink does not apply its
+empty-UID automatic-load fallback to these channels.
+
+## Active spool ownership
+
+The spool resolved for the selected toolhead channel is authoritative. If a
+client manually changes Moonraker's active spool while that channel remains
+resolved, SpoolLink sets the channel's spool active again on its next sync.
+
 ## GCode Commands
 
 ### `SET_SPOOL_ID`
