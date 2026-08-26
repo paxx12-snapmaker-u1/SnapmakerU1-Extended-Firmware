@@ -11,6 +11,27 @@ fi
 ROOTFS_DIR="$1"
 shift
 
+PIP_ARGS=()
+STAGED_FILES=()
+cleanup() {
+  rm -f "${STAGED_FILES[@]}"
+}
+trap cleanup EXIT
+
+while [[ $# -gt 0 ]]; do
+  if [[ "$1" == "-r" ]]; then
+    shift
+    STAGED="/tmp/$(basename "$1").$$"
+    cp "$1" "$ROOTFS_DIR$STAGED"
+    STAGED_FILES+=("$ROOTFS_DIR$STAGED")
+    PIP_ARGS+=(-r "$STAGED")
+    shift
+  else
+    PIP_ARGS+=("$1")
+    shift
+  fi
+done
+
 chroot_cmd() {
   chroot_firmware.sh "$ROOTFS_DIR" "$@"
 }
@@ -21,4 +42,4 @@ chroot_cmd bash -c '
     pip3 download -d /cache/pip "$@" &&
     pip3 install --no-index --find-links=/cache/pip "$@"
   )
-' -- "$@"
+' -- "${PIP_ARGS[@]}"
