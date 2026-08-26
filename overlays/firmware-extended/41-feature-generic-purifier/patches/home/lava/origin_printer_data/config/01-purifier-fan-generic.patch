@@ -1,0 +1,49 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-PackageHomePage: https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware
+# SPDX-FileCopyrightText: Copyright (c) 2025 @paxx12
+#
+# Split the purifier's exhaust/inner fan pin config out of [purifier] into
+# stock [fan_generic exhaust_fan] and [fan_generic circulation_fan] sections,
+# and have [purifier] reference them by name (exhaust_fan_name/inner_fan_name,
+# both required) instead of raw pins.
+#
+--- a/printer.cfg
++++ b/printer.cfg
+@@ -263,20 +263,24 @@
+ white_pin: PA10
+ cycle_time: 0.003333
+ 
++[fan_generic exhaust_fan]
++pin: !PA8
++max_power: 1.0
++cycle_time: 0.001
++hardware_pwm: True
++
++[fan_generic circulation_fan]
++pin: !PA9
++max_power: 1.0
++cycle_time: 0.001
++hardware_pwm: True
++tachometer_pin: PA6
++tachometer_ppr: 2
++tachometer_poll_interval: 0.0005
++
+ [purifier]
+-# exhaust fan
+-exhaust_pin: !PA8
+-exhaust_max_power: 1.0
+-exhaust_cycle_time: 0.001
+-exhaust_hardware_pwm: True
+-# inner fan
+-inner_pin: !PA9
+-inner_max_power: 1.0
+-inner_cycle_time: 0.001
+-inner_hardware_pwm: True
+-inner_tach_pin: PA6
+-inner_tach_ppr: 2
+-inner_tach_poll_interval: 0.0005
++exhaust_fan_name: exhaust_fan
++inner_fan_name: circulation_fan
+ # global
+ power_enable_pin: PE15
+ power_det_pin: PA7
