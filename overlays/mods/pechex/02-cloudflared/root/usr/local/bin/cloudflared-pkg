@@ -90,7 +90,8 @@ sync_certs() {
     done
 
     chown -R lava:lava "$CONFIG_DIR" /home/lava/.cloudflared 2>/dev/null || true
-    chmod 644 "$CERT_FILE" /home/lava/.cloudflared/cert.pem 2>/dev/null || true
+    [[ -f "$CERT_FILE" ]] && chmod 644 "$CERT_FILE" 2>/dev/null || true
+    [[ -f "/home/lava/.cloudflared/cert.pem" ]] && chmod 644 "/home/lava/.cloudflared/cert.pem" 2>/dev/null || true
     chmod 600 "$CONFIG_DIR"/*.json /home/lava/.cloudflared/*.json 2>/dev/null || true
 }
 
@@ -140,18 +141,27 @@ web_setup() {
     sync_certs
 
     echo ">> Step 1/3: Creating named tunnel '$TUNNEL_NAME'..."
-    su -s /bin/bash lava -c "$bin tunnel create '$TUNNEL_NAME'" 2>&1 | tee /tmp/cf_tunnel_create.out || true
+    local CREATE_OUT
+    CREATE_OUT=$(su -s /bin/bash lava -c "$bin tunnel create '$TUNNEL_NAME'" 2>&1 || true)
+    echo "$CREATE_OUT"
 
     local TUNNEL_ID
-    # Try getting from tunnel create output
-    TUNNEL_ID=$(grep -oE "[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}" /tmp/cf_tunnel_create.out 2>/dev/null | head -n 1)
+    TUNNEL_ID=$(echo "$CREATE_OUT" | grep -oE "[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}" | head -n 1)
 
-    # If already existed or not in output, get from tunnel list
+    # If tunnel already exists on Cloudflare, refresh it to obtain local credentials
+    if [[ -z "$TUNNEL_ID" && "$CREATE_OUT" =~ "already exists" ]]; then
+        echo ">> Tunnel '$TUNNEL_NAME' already exists in Cloudflare. Refreshing credentials..."
+        su -s /bin/bash lava -c "$bin tunnel delete -f '$TUNNEL_NAME'" >/dev/null 2>&1 || true
+        CREATE_OUT=$(su -s /bin/bash lava -c "$bin tunnel create '$TUNNEL_NAME'" 2>&1 || true)
+        echo "$CREATE_OUT"
+        TUNNEL_ID=$(echo "$CREATE_OUT" | grep -oE "[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}" | head -n 1)
+    fi
+
+    # Fallback to existing list if still not captured
     if [[ -z "$TUNNEL_ID" ]]; then
         TUNNEL_ID=$(su -s /bin/bash lava -c "$bin tunnel list" 2>/dev/null | grep -w "$TUNNEL_NAME" | awk '{print $1}')
     fi
 
-    # If still not found, check existing JSON files
     if [[ -z "$TUNNEL_ID" ]]; then
         TUNNEL_ID=$(ls -1 /home/lava/.cloudflared/*.json "$CONFIG_DIR"/*.json 2>/dev/null | xargs -n1 basename 2>/dev/null | grep -oE "[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}" | head -n 1)
     fi
@@ -220,7 +230,7 @@ status() {
     if [[ -f "$CONFIG_FILE" ]]; then
         echo "Mode: Named Tunnel (config.yaml)"
         echo "Config: $CONFIG_FILE"
-        HOSTNAME=$(grep "hostname:" "$CONFIG_FILE" 2>/dev/null | head -n 1 | awk '{print $2}')
+        HOSTNAME=$(grep -E "^\s*-\s*hostname:" "$CONFIG_FILE" 2>/dev/null | head -n 1 | awk '{print $NF}')
         [[ -n "$HOSTNAME" ]] && echo "URL: https://$HOSTNAME"
     else
         TOKEN=$(/usr/local/bin/extended-config.py get "$EXTENDED_CFG" remote_access cloudflared_token "" 2>/dev/null || true)
@@ -240,7 +250,7 @@ status() {
     echo
     echo "Recent Logs ($LOG_FILE):"
     echo "------------------------------------------------------------"
-    if [[ -f "$LOG_FILE" ]]; then
+    if [[ -f "$LOG_FILE" && -s "$LOG_FILE" ]]; then
         tail -n 10 "$LOG_FILE"
     else
         echo "No logs found."

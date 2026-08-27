@@ -1,5 +1,5 @@
---- a/usr/local/share/firmware-config/functions/24_settings_cloud.yaml	2026-08-27 01:01:55.743373526 +0000
-+++ b/usr/local/share/firmware-config/functions/24_settings_cloud.yaml	2026-08-27 01:01:55.743401167 +0000
+--- a/usr/local/share/firmware-config/functions/24_settings_cloud.yaml	2026-08-27 02:15:49.237360666 +0000
++++ b/usr/local/share/firmware-config/functions/24_settings_cloud.yaml	2026-08-27 02:15:49.237381635 +0000
 @@ -25,8 +25,11 @@
                - |
                  /usr/local/bin/extended-config.py add /home/lava/printer_data/config/extended/extended2.cfg remote_access cloud none &&
