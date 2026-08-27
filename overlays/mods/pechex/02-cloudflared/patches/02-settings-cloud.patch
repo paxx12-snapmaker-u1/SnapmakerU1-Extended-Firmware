@@ -1,0 +1,32 @@
+--- a/usr/local/share/firmware-config/functions/24_settings_cloud.yaml	2026-08-27 01:01:55.743373526 +0000
++++ b/usr/local/share/firmware-config/functions/24_settings_cloud.yaml	2026-08-27 01:01:55.743401167 +0000
+@@ -25,8 +25,11 @@
+               - |
+                 /usr/local/bin/extended-config.py add /home/lava/printer_data/config/extended/extended2.cfg remote_access cloud none &&
+                 /etc/init.d/S99cloud stop
++                /usr/local/bin/extended-config.py add /home/lava/printer_data/config/extended/extended2.cfg remote_access cloudflared_token "" &&
+                 /usr/local/bin/extended-pkg octoeverywhere clean
++                /usr/local/bin/cloudflared-pkg clean
+                 rm -rf /home/lava/printer_data/octoeverywhere-store
++                rm -rf /home/lava/printer_data/config/cloudflared
+           octoeverywhere:
+             label: OctoEverywhere
+             cmd:
+@@ -70,4 +73,17 @@
+ 
+                 echo "Authorization URL not found in logs. Please check the logs for more details."
+                 echo "If the plugin is already connected to your account, you can ignore this message."
++          cloudflared:
++            label: Cloudflared
++            confirm: "Enable Cloudflare Tunnel for remote access?\n\nEnter the domain / subdomain you want to use (e.g. u1.yourdomain.com):"
++            inputs:
++              - name: HOSTNAME
++                label: Domain / Subdomain
++                placeholder: "u1.mydomain.com"
++                regex: "^[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$"
++            cmd:
++              - bash
++              - -ec
++              - |
++                /usr/local/bin/cloudflared-pkg web-setup "$HOSTNAME"
+         default: none

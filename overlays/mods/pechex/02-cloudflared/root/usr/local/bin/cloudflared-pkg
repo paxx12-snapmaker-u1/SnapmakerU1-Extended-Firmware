@@ -1,0 +1,304 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-PackageHomePage: https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware
+# SPDX-FileCopyrightText: Copyright (c) 2026 @pechex
+
+#
+# Cloudflared package manager & setup helper
+# Downloads, manages and configures Cloudflare Tunnels (1-Click Web URL Login & Auto-DNS)
+#
+
+VERSION="2026.8.2"
+URL="https://github.com/cloudflare/cloudflared/releases/download/${VERSION}/cloudflared-linux-arm64"
+SHA256="7747d94570fb390cf47dcb4f9555c193c6355cda9793f0d878d9049e5d6a7790"
+
+# Paths (Using persistent storage partitions: /oem/apps and /home/lava/printer_data)
+APP_DIR="/oem/apps/cloudflared"
+BINARY_PATH="${APP_DIR}/cloudflared"
+CONFIG_DIR="/home/lava/printer_data/config/cloudflared"
+CONFIG_FILE="${CONFIG_DIR}/config.yaml"
+CERT_FILE="${CONFIG_DIR}/cert.pem"
+PID_FILE="/var/run/cloudflared.pid"
+LOG_FILE="/home/lava/printer_data/logs/cloudflared.log"
+EXTENDED_CFG="/home/lava/printer_data/config/extended/extended2.cfg"
+
+get_binary() {
+    if [[ -x "$BINARY_PATH" ]]; then
+        echo "$BINARY_PATH"
+    elif [[ -x "/usr/local/bin/cloudflared" ]]; then
+        echo "/usr/local/bin/cloudflared"
+    else
+        echo "$BINARY_PATH"
+    fi
+}
+
+check() {
+    local bin
+    bin=$(get_binary)
+    if [[ -f "$bin" && -x "$bin" ]]; then
+        echo "Cloudflared is installed ($VERSION)."
+        return 0
+    else
+        echo "Cloudflared is not installed."
+        return 1
+    fi
+}
+
+download() {
+    rm -f "$BINARY_PATH" /usr/local/bin/cloudflared 2>/dev/null || true
+    mkdir -p "$APP_DIR"
+    mkdir -p "$CONFIG_DIR" /home/lava/.cloudflared
+    chown -R lava:lava "$CONFIG_DIR" /home/lava/.cloudflared 2>/dev/null || true
+
+    echo "Downloading Cloudflared ${VERSION} from GitHub..."
+    if ! /usr/local/bin/curl -sfSL -o "$BINARY_PATH" "$URL"; then
+        echo "Error: Download failed"
+        return 1
+    fi
+
+    echo "Verifying SHA256 checksum..."
+    ACTUAL_SHA256=$(sha256sum "$BINARY_PATH" | awk '{print $1}')
+    if [[ "$ACTUAL_SHA256" != "$SHA256" ]]; then
+        echo "Error: SHA256 mismatch!"
+        echo "  Expected: $SHA256"
+        echo "  Actual:   $ACTUAL_SHA256"
+        rm -f "$BINARY_PATH"
+        return 1
+    fi
+    echo "Checksum verified."
+
+    chmod 755 "$BINARY_PATH"
+    ln -sf "$BINARY_PATH" /usr/local/bin/cloudflared 2>/dev/null || true
+    echo "Cloudflared installed successfully to $BINARY_PATH"
+}
+
+sync_certs() {
+    mkdir -p "$CONFIG_DIR" /home/lava/.cloudflared
+
+    if [[ ! -f "$CERT_FILE" && -f "/home/lava/.cloudflared/cert.pem" ]]; then
+        cp "/home/lava/.cloudflared/cert.pem" "$CERT_FILE"
+    elif [[ -f "$CERT_FILE" && ! -f "/home/lava/.cloudflared/cert.pem" ]]; then
+        cp "$CERT_FILE" "/home/lava/.cloudflared/cert.pem"
+    fi
+
+    # Sync any credential JSONs
+    for f in /home/lava/.cloudflared/*.json; do
+        [[ -f "$f" ]] && cp "$f" "$CONFIG_DIR/" 2>/dev/null || true
+    done
+    for f in "$CONFIG_DIR"/*.json; do
+        [[ -f "$f" ]] && cp "$f" /home/lava/.cloudflared/ 2>/dev/null || true
+    done
+
+    chown -R lava:lava "$CONFIG_DIR" /home/lava/.cloudflared 2>/dev/null || true
+    chmod 644 "$CERT_FILE" /home/lava/.cloudflared/cert.pem 2>/dev/null || true
+    chmod 600 "$CONFIG_DIR"/*.json /home/lava/.cloudflared/*.json 2>/dev/null || true
+}
+
+web_setup() {
+    local HOSTNAME="$1"
+    local TUNNEL_NAME="${2:-snapmaker-u1}"
+
+    if [[ -z "$HOSTNAME" ]]; then
+        echo "Error: Domain name / Hostname is required (e.g. u1.mydomain.com)."
+        return 1
+    fi
+
+    if ! check >/dev/null; then
+        echo ">> Downloading Cloudflared..."
+        download || return 1
+    fi
+
+    local bin
+    bin=$(get_binary)
+
+    sync_certs
+
+    if [[ ! -f "$CERT_FILE" && ! -f "/home/lava/.cloudflared/cert.pem" ]]; then
+        echo "============================================================"
+        echo "  CLOUDFLARE AUTHORIZATION LINK"
+        echo "============================================================"
+        echo "Please open the URL below in a new tab, select your domain,"
+        echo "and click 'Authorize':"
+        echo "============================================================"
+        echo
+
+        # Run login as lava user so cert.pem is downloaded
+        su -s /bin/bash lava -c "$bin tunnel login"
+
+        sync_certs
+
+        if [[ ! -f "$CERT_FILE" && ! -f "/home/lava/.cloudflared/cert.pem" ]]; then
+            echo "Error: Cloudflare authorization was not completed."
+            return 1
+        fi
+        echo
+        echo ">> Authorization confirmed by Cloudflare!"
+    else
+        echo ">> Found existing Cloudflare authorization certificate."
+    fi
+
+    sync_certs
+
+    echo ">> Step 1/3: Creating named tunnel '$TUNNEL_NAME'..."
+    su -s /bin/bash lava -c "$bin tunnel create '$TUNNEL_NAME'" 2>&1 | tee /tmp/cf_tunnel_create.out || true
+
+    local TUNNEL_ID
+    # Try getting from tunnel create output
+    TUNNEL_ID=$(grep -oE "[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}" /tmp/cf_tunnel_create.out 2>/dev/null | head -n 1)
+
+    # If already existed or not in output, get from tunnel list
+    if [[ -z "$TUNNEL_ID" ]]; then
+        TUNNEL_ID=$(su -s /bin/bash lava -c "$bin tunnel list" 2>/dev/null | grep -w "$TUNNEL_NAME" | awk '{print $1}')
+    fi
+
+    # If still not found, check existing JSON files
+    if [[ -z "$TUNNEL_ID" ]]; then
+        TUNNEL_ID=$(ls -1 /home/lava/.cloudflared/*.json "$CONFIG_DIR"/*.json 2>/dev/null | xargs -n1 basename 2>/dev/null | grep -oE "[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}" | head -n 1)
+    fi
+
+    if [[ -z "$TUNNEL_ID" ]]; then
+        echo "Error: Could not determine Tunnel ID."
+        return 1
+    fi
+
+    sync_certs
+
+    echo ">> Found Tunnel ID: $TUNNEL_ID"
+
+    echo ">> Step 2/3: Configuring DNS route for '$HOSTNAME'..."
+    su -s /bin/bash lava -c "$bin tunnel route dns -f '$TUNNEL_NAME' '$HOSTNAME'" || {
+        echo "Notice: DNS route command finished."
+    }
+
+    echo ">> Step 3/3: Writing configuration file $CONFIG_FILE..."
+    cat << EOF > "$CONFIG_FILE"
+tunnel: ${TUNNEL_ID}
+credentials-file: ${CONFIG_DIR}/${TUNNEL_ID}.json
+
+ingress:
+  - hostname: ${HOSTNAME}
+    service: http://localhost:80
+  - service: http_status:404
+EOF
+    sync_certs
+
+    if [[ -x /usr/local/bin/extended-config.py ]]; then
+        /usr/local/bin/extended-config.py add "$EXTENDED_CFG" remote_access cloud cloudflared
+    fi
+
+    echo ">> Starting Cloudflare service..."
+    /etc/init.d/S99cloud restart
+
+    echo
+    echo "============================================================"
+    echo "  🎉 SUCCESS! YOUR PRINTER IS NOW ONLINE!"
+    echo "============================================================"
+    echo "  Public URL: https://${HOSTNAME}"
+    echo
+    if [[ -f /oem/printer_data/config/extended/moonraker/authorization.cfg ]]; then
+        echo "  [✓] Login Screen: Web Authentication is active (Fluidd login enabled)."
+    else
+        echo "  [!] Notice: Web Authentication is currently DISABLED."
+        echo "      To protect your printer with a username & password login screen,"
+        echo "      enable 'Web Authentication' in Firmware Config > Remote Access."
+    fi
+    echo "============================================================"
+}
+
+status() {
+    echo "============================================================"
+    echo "  CLOUDFLARED STATUS"
+    echo "============================================================"
+    check
+
+    if [[ -f "$PID_FILE" ]] && kill -0 "$(cat "$PID_FILE" 2>/dev/null)" 2>/dev/null; then
+        echo "Service: RUNNING (PID $(cat "$PID_FILE"))"
+    else
+        echo "Service: STOPPED"
+    fi
+
+    if [[ -f "$CONFIG_FILE" ]]; then
+        echo "Mode: Named Tunnel (config.yaml)"
+        echo "Config: $CONFIG_FILE"
+        HOSTNAME=$(grep "hostname:" "$CONFIG_FILE" 2>/dev/null | head -n 1 | awk '{print $2}')
+        [[ -n "$HOSTNAME" ]] && echo "URL: https://$HOSTNAME"
+    else
+        TOKEN=$(/usr/local/bin/extended-config.py get "$EXTENDED_CFG" remote_access cloudflared_token "" 2>/dev/null || true)
+        if [[ -n "$TOKEN" && "$TOKEN" != "YOUR_TUNNEL_TOKEN_HERE" ]]; then
+            echo "Mode: Token Mode"
+        else
+            echo "Mode: Not configured"
+        fi
+    fi
+
+    if [[ -f /oem/printer_data/config/extended/moonraker/authorization.cfg ]]; then
+        echo "Login Protection: Web Authentication ENABLED (Fluidd login active)"
+    else
+        echo "Login Protection: Web Authentication DISABLED"
+    fi
+
+    echo
+    echo "Recent Logs ($LOG_FILE):"
+    echo "------------------------------------------------------------"
+    if [[ -f "$LOG_FILE" ]]; then
+        tail -n 10 "$LOG_FILE"
+    else
+        echo "No logs found."
+    fi
+    echo "============================================================"
+}
+
+clean() {
+    echo "Stopping Cloudflared service..."
+    if [[ -f "$PID_FILE" ]]; then
+        start-stop-daemon -K -p "$PID_FILE" -s TERM 2>/dev/null || true
+        rm -f "$PID_FILE"
+    fi
+
+    echo "Removing Cloudflared installation and configurations..."
+    rm -rf "$APP_DIR" /usr/local/bin/cloudflared
+    rm -rf "$CONFIG_DIR"
+    rm -rf /home/lava/.cloudflared
+    echo "Cleaned up."
+}
+
+case "$1" in
+    check)
+        check
+        ;;
+    download)
+        if check; then
+            echo "Cloudflared is already installed."
+            exit 0
+        fi
+        download
+        ;;
+    update)
+        echo "Updating Cloudflared..."
+        download
+        ;;
+    web-setup|setup)
+        shift
+        web_setup "$@"
+        ;;
+    login)
+        if ! check >/dev/null; then
+            download || exit 1
+        fi
+        mkdir -p "$CONFIG_DIR"
+        local bin
+        bin=$(get_binary)
+        su -s /bin/bash lava -c "$bin tunnel login"
+        sync_certs
+        ;;
+    status)
+        status
+        ;;
+    clean)
+        clean
+        ;;
+    *)
+        echo "Usage: $0 {web-setup <hostname>|status|update|check|download|clean}"
+        exit 1
+        ;;
+esac
