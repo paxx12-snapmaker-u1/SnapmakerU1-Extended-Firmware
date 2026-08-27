@@ -1,0 +1,27 @@
+--- a/usr/local/share/firmware-config/functions/25_actions_cloud.yaml	2026-08-27 01:01:55.744476362 +0000
++++ b/usr/local/share/firmware-config/functions/25_actions_cloud.yaml	2026-08-27 01:01:55.744498243 +0000
+@@ -17,3 +17,24 @@
+             /usr/local/bin/extended-pkg octoeverywhere upgrade
+             /etc/init.d/S99cloud restart
+         message: "Upgrading OctoEverywhere..."
++      cloudflared-upgrade:
++        label: Upgrade Cloudflared
++        description: Download and install the latest pinned Cloudflared version.
++        if_cmd: /usr/local/bin/cloudflared-pkg check
++        confirm: "Update Cloudflared and restart the cloud service?"
++        cmd:
++          - bash
++          - -ec
++          - |
++            /usr/local/bin/cloudflared-pkg update
++            /etc/init.d/S99cloud restart
++        message: "Updating Cloudflared..."
++
++actions:
++  troubleshooting:
++    items:
++      cloudflared-status:
++        label: Cloudflared Status
++        description: Show current Cloudflare Tunnel status, URL, and log snippet.
++        cmd: [/usr/local/bin/cloudflared-pkg, status]
++        message: "Checking Cloudflared status..."

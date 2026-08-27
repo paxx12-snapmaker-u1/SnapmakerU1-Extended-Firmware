@@ -1,0 +1,96 @@
+--- a/etc/init.d/S99cloud	2026-08-27 01:01:55.741972804 +0000
++++ b/etc/init.d/S99cloud	2026-08-27 01:01:55.742000235 +0000
+@@ -8,6 +8,10 @@
+ OCTOEVERYWHERE_LOGFILE="/home/lava/printer_data/logs/octoeverywhere.log"
+ OCTOEVERYWHERE_STATE_DIR="/home/lava/printer_data/octoeverywhere-store"
+ 
++CLOUDFLARED_PIDFILE="/var/run/cloudflared.pid"
++CLOUDFLARED_LOGFILE="/home/lava/printer_data/logs/cloudflared.log"
++CLOUDFLARED_CONFIG="/home/lava/printer_data/config/cloudflared/config.yaml"
++
+ # Load config from user
+ EXTENDED_CFG="/home/lava/printer_data/config/extended/extended2.cfg"
+ CLOUD_PROVIDER=$(/usr/local/bin/extended-config.py get "$EXTENDED_CFG" remote_access cloud none)
+@@ -29,11 +33,66 @@
+     echo "OK"
+ }
+ 
++get_cloudflared_binary() {
++    if [ -x "/oem/apps/cloudflared/cloudflared" ]; then
++        echo "/oem/apps/cloudflared/cloudflared"
++    elif [ -x "/usr/local/bin/cloudflared" ]; then
++        echo "/usr/local/bin/cloudflared"
++    else
++        echo "/oem/apps/cloudflared/cloudflared"
++    fi
++}
++
++start_cloudflared() {
++    if [ -f "$CLOUDFLARED_PIDFILE" ] && kill -0 "$(cat "$CLOUDFLARED_PIDFILE")" 2>/dev/null; then
++        echo "cloudflared already running"
++        return 0
++    fi
++
++    local CLOUDFLARED_BINARY
++    CLOUDFLARED_BINARY=$(get_cloudflared_binary)
++
++    if [ ! -x "$CLOUDFLARED_BINARY" ]; then
++        echo "FAILED"
++        echo "Cloudflared binary not found. Please install via Firmware Config."
++        return 1
++    fi
++
++    printf "Starting cloudflared: "
++    mkdir -p "$(dirname "$CLOUDFLARED_LOGFILE")"
++    mv "$CLOUDFLARED_LOGFILE" "$CLOUDFLARED_LOGFILE.old" 2>/dev/null || true
++
++    if [ -f "$CLOUDFLARED_CONFIG" ]; then
++        start-stop-daemon -S -b -m -u lava \
++            -p "$CLOUDFLARED_PIDFILE" \
++            -x "$CLOUDFLARED_BINARY" \
++            -- tunnel --no-autoupdate --config "$CLOUDFLARED_CONFIG" run
++        echo "OK"
++    else
++        TUNNEL_TOKEN=$(/usr/local/bin/extended-config.py get "$EXTENDED_CFG" remote_access cloudflared_token "")
++        if [ -n "$TUNNEL_TOKEN" ] && [ "$TUNNEL_TOKEN" != "YOUR_TUNNEL_TOKEN_HERE" ]; then
++            start-stop-daemon -S -b -m -u lava \
++                -p "$CLOUDFLARED_PIDFILE" \
++                -x "$CLOUDFLARED_BINARY" \
++                -- tunnel --no-autoupdate run --token "$TUNNEL_TOKEN"
++            echo "OK"
++        else
++            echo "FAILED"
++            echo "Cloudflared is not configured."
++            echo "Please set up Cloudflared through Firmware Config."
++            return 1
++        fi
++    fi
++}
++
+ start() {
+     case "$CLOUD_PROVIDER" in
+         octoeverywhere)
+             start_octoeverywhere
+             ;;
++        cloudflared)
++            start_cloudflared
++            ;;
+         *)
+             echo "No cloud is enabled in the extended configuration, not starting any cloud service."
+             exit 0
+@@ -50,6 +109,15 @@
+         echo "OK"
+     else
+         echo "not running"
++    fi
++
++    printf "Stopping Cloudflared: "
++    if [ -f "$CLOUDFLARED_PIDFILE" ]; then
++        start-stop-daemon -K -p "$CLOUDFLARED_PIDFILE" -s TERM
++        rm -f "$CLOUDFLARED_PIDFILE"
++        echo "OK"
++    else
++        echo "not running"
+     fi
+ }
+ 
