@@ -60,7 +60,7 @@ jobs:
       run: ./dev.sh make firmware
 
     - name: Build with Extended Fluidd firmware
-      run: ./dev.sh make build PROFILE=extended OUTPUT_FILE=U1_extended_${{ env.GIT_VERSION }}_upgrade.bin
+      run: ./dev.sh make build PROFILE=extended-pechex OUTPUT_FILE=U1_extended_${{ env.GIT_VERSION }}_upgrade.bin
 
     - name: Generate Changelog
       run: make changelog >> RELEASE.md
