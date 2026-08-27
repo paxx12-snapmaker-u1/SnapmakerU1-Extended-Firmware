@@ -1,5 +1,5 @@
---- a/etc/init.d/S99cloud	2026-08-27 01:01:55.741972804 +0000
-+++ b/etc/init.d/S99cloud	2026-08-27 01:01:55.742000235 +0000
+--- a/etc/init.d/S99cloud	2026-08-27 02:15:49.235472845 +0000
++++ b/etc/init.d/S99cloud	2026-08-27 02:15:49.235499094 +0000
 @@ -8,6 +8,10 @@
  OCTOEVERYWHERE_LOGFILE="/home/lava/printer_data/logs/octoeverywhere.log"
  OCTOEVERYWHERE_STATE_DIR="/home/lava/printer_data/octoeverywhere-store"
@@ -11,7 +11,7 @@
  # Load config from user
  EXTENDED_CFG="/home/lava/printer_data/config/extended/extended2.cfg"
  CLOUD_PROVIDER=$(/usr/local/bin/extended-config.py get "$EXTENDED_CFG" remote_access cloud none)
-@@ -29,11 +33,66 @@
+@@ -29,11 +33,70 @@
      echo "OK"
  }
  
@@ -42,13 +42,17 @@
 +
 +    printf "Starting cloudflared: "
 +    mkdir -p "$(dirname "$CLOUDFLARED_LOGFILE")"
++    touch "$CLOUDFLARED_LOGFILE"
++    chown -R lava:lava "$(dirname "$CLOUDFLARED_LOGFILE")" "$CLOUDFLARED_LOGFILE" 2>/dev/null || true
 +    mv "$CLOUDFLARED_LOGFILE" "$CLOUDFLARED_LOGFILE.old" 2>/dev/null || true
++    touch "$CLOUDFLARED_LOGFILE"
++    chown lava:lava "$CLOUDFLARED_LOGFILE" 2>/dev/null || true
 +
 +    if [ -f "$CLOUDFLARED_CONFIG" ]; then
 +        start-stop-daemon -S -b -m -u lava \
 +            -p "$CLOUDFLARED_PIDFILE" \
 +            -x "$CLOUDFLARED_BINARY" \
-+            -- tunnel --no-autoupdate --config "$CLOUDFLARED_CONFIG" run
++            -- --logfile "$CLOUDFLARED_LOGFILE" --loglevel info --no-autoupdate tunnel --config "$CLOUDFLARED_CONFIG" run
 +        echo "OK"
 +    else
 +        TUNNEL_TOKEN=$(/usr/local/bin/extended-config.py get "$EXTENDED_CFG" remote_access cloudflared_token "")
@@ -56,7 +60,7 @@
 +            start-stop-daemon -S -b -m -u lava \
 +                -p "$CLOUDFLARED_PIDFILE" \
 +                -x "$CLOUDFLARED_BINARY" \
-+                -- tunnel --no-autoupdate run --token "$TUNNEL_TOKEN"
++                -- --logfile "$CLOUDFLARED_LOGFILE" --loglevel info --no-autoupdate tunnel run --token "$TUNNEL_TOKEN"
 +            echo "OK"
 +        else
 +            echo "FAILED"
@@ -78,7 +82,7 @@
          *)
              echo "No cloud is enabled in the extended configuration, not starting any cloud service."
              exit 0
-@@ -50,6 +109,15 @@
+@@ -50,6 +113,15 @@
          echo "OK"
      else
          echo "not running"
