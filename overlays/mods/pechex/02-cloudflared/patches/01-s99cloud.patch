@@ -1,5 +1,5 @@
---- a/etc/init.d/S99cloud	2026-08-27 02:15:49.235472845 +0000
-+++ b/etc/init.d/S99cloud	2026-08-27 02:15:49.235499094 +0000
+--- a/etc/init.d/S99cloud	2026-08-27 02:32:29.413280712 +0000
++++ b/etc/init.d/S99cloud	2026-08-27 02:32:29.413304517 +0000
 @@ -8,6 +8,10 @@
  OCTOEVERYWHERE_LOGFILE="/home/lava/printer_data/logs/octoeverywhere.log"
  OCTOEVERYWHERE_STATE_DIR="/home/lava/printer_data/octoeverywhere-store"
@@ -11,7 +11,7 @@
  # Load config from user
  EXTENDED_CFG="/home/lava/printer_data/config/extended/extended2.cfg"
  CLOUD_PROVIDER=$(/usr/local/bin/extended-config.py get "$EXTENDED_CFG" remote_access cloud none)
-@@ -29,11 +33,70 @@
+@@ -29,11 +33,81 @@
      echo "OK"
  }
  
@@ -23,6 +23,15 @@
 +    else
 +        echo "/oem/apps/cloudflared/cloudflared"
 +    fi
++}
++
++wait_for_network() {
++    for i in $(seq 1 30); do
++        if nslookup argotunnel.com >/dev/null 2>&1 || ping -c 1 -W 1 1.1.1.1 >/dev/null 2>&1; then
++            return 0
++        fi
++        sleep 1
++    done
 +}
 +
 +start_cloudflared() {
@@ -41,6 +50,8 @@
 +    fi
 +
 +    printf "Starting cloudflared: "
++    wait_for_network
++
 +    mkdir -p "$(dirname "$CLOUDFLARED_LOGFILE")"
 +    touch "$CLOUDFLARED_LOGFILE"
 +    chown -R lava:lava "$(dirname "$CLOUDFLARED_LOGFILE")" "$CLOUDFLARED_LOGFILE" 2>/dev/null || true
@@ -82,7 +93,7 @@
          *)
              echo "No cloud is enabled in the extended configuration, not starting any cloud service."
              exit 0
-@@ -50,6 +113,15 @@
+@@ -50,6 +124,15 @@
          echo "OK"
      else
          echo "not running"
