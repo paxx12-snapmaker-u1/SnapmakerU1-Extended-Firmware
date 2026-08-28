@@ -1,0 +1,50 @@
+--- a/printer.cfg
++++ b/printer.cfg
+@@ -262,21 +262,25 @@
+ [led cavity_led]
+ white_pin: PA10
+ cycle_time: 0.003333
++
++[fan_generic exhaust_fan]
++pin: !PA8
++max_power: 1.0
++cycle_time: 0.001
++hardware_pwm: True
++
++[fan_generic circulation_fan]
++pin: !PA9
++max_power: 1.0
++cycle_time: 0.001
++hardware_pwm: True
++tachometer_pin: PA6
++tachometer_ppr: 2
++tachometer_poll_interval: 0.0005
+ 
+ [purifier]
+-# exhaust fan
+-exhaust_pin: !PA8
+-exhaust_max_power: 1.0
+-exhaust_cycle_time: 0.001
+-exhaust_hardware_pwm: True
+-# inner fan
+-inner_pin: !PA9
+-inner_max_power: 1.0
+-inner_cycle_time: 0.001
+-inner_hardware_pwm: True
+-inner_tach_pin: PA6
+-inner_tach_ppr: 2
+-inner_tach_poll_interval: 0.0005
++exhaust_fan_name: exhaust_fan
++inner_fan_name: circulation_fan
+ # global
+ power_enable_pin: PE15
+ power_det_pin: PA7
+@@ -733,6 +737,8 @@
+ shutdown_speed: 0
+ aux_cool_fan: cavity_fan
+ aux_cool_fan_id: 2
++exhaust_fan: exhaust_fan
++exhaust_fan_id: 3
+ 
+ [heater_fan e0_nozzle_fan]
+ pin: !e0:PB0
