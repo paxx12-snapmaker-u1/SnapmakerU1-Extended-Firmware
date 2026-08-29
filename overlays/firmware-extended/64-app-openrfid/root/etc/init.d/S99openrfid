@@ -7,9 +7,12 @@ PIDFILE="/var/run/openrfid.pid"
 EXTENDED2_CFG="/oem/printer_data/config/extended/extended2.cfg"
 
 start() {
-    RFID=$(/usr/local/bin/extended-config.py get "$EXTENDED2_CFG" components rfid snapmaker 2>/dev/null)
+    SOFTWARE=$(/usr/local/bin/extended-config.py get "$EXTENDED2_CFG" components rfid_software 2>/dev/null)
+    if [ -z "$SOFTWARE" ]; then
+        SOFTWARE=$(/usr/local/bin/extended-config.py get "$EXTENDED2_CFG" components rfid snapmaker 2>/dev/null)
+    fi
     DETECT_CONFIG=""
-    case "$RFID" in
+    case "$SOFTWARE" in
         openrfid)
             DETECT_CONFIG=/usr/local/share/openrfid/extended/openrfid_u1_vendor.cfg
             ;;
@@ -19,7 +22,7 @@ start() {
             ;;
 
         *)
-            echo "Filament tag detection not set to openrfid or openrfid-generic, not starting."
+            echo "Filament tag software not set to openrfid or openrfid-generic, not starting."
             return
             ;;
     esac

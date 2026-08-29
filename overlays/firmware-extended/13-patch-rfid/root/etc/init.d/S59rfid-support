@@ -8,8 +8,11 @@ DISABLE_RFID_READER="/oem/printer_data/config/extended/klipper/disable-rfid-read
 DISABLE_RFID_READER_TWEAK="/usr/local/share/firmware-config/tweaks/klipper/disable-rfid-reader.cfg"
 
 start() {
-    RFID=$(/usr/local/bin/extended-config.py get "$EXTENDED2_CFG" components rfid snapmaker 2>/dev/null)
-    case "$RFID" in
+    HARDWARE=$(/usr/local/bin/extended-config.py get "$EXTENDED2_CFG" components rfid_hardware 2>/dev/null)
+    if [ -z "$HARDWARE" ]; then
+        HARDWARE=$(/usr/local/bin/extended-config.py get "$EXTENDED2_CFG" components rfid snapmaker 2>/dev/null)
+    fi
+    case "$HARDWARE" in
         snapmaker)
             rm -vf "$DISABLE_RFID_READER"
             ;;

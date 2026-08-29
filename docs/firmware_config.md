@@ -54,8 +54,9 @@ Toggle settings directly from the web interface:
 | VPN Provider | None, Tailscale | Enable VPN remote access (Experimental) |
 | Cloud | None, OctoEverywhere | Enable Cloud-based remote access (Experimental) |
 | Tweaks | TMC AutoTune, TMC Reduced Current, Object Processing, AFC Stub | Experimental Klipper tweaks ([tweaks](tweaks.md)) |
+| Snapmaker Components | AFC Lite, Panda Breath, Anycubic ACE | Optional Klipper integrations for filament management and chamber hardware |
 | Troubleshooting | Faulty Toolhead Bypass | Temporary toolhead thermistor bypass so the remaining toolheads can still be used ([faulty_toolhead](faulty_toolhead.md)) |
-| RFID Detection System | External, Snapmaker, OpenRFID, OpenRFID (force generic vendor) | Set how filament is detected ([RFID Format & Reader Design](design/rfid.md)) |
+| RFID Detection System | RFID Hardware: Snapmaker, External, ACE \| RFID Software: Snapmaker, OpenRFID, OpenRFID (force generic vendor), ACE | Set RFID reader hardware and tag processing software ([RFID Format & Reader Design](design/rfid.md)) |
 
 ![Firmware Config settings](screenshots/firmware-config-settings.png)
 
@@ -169,13 +170,22 @@ Note: Remote screen requires additional Moonraker configuration. See [Remote Scr
 
 #### [components]
 
-**rfid** - Filament tag detection system
+**rfid_hardware** - RFID reader hardware
 - `snapmaker` (default) - Snapmaker's built-in RFID reader
-- `external` - Disable built-in readers (useful for external readers)
+- `external` - External reader (built-in reader disabled)
+- `ace` - ACE slot RFID reader
+
+**rfid_software** - RFID tag processing software
+- `snapmaker` (default) - Snapmaker's built-in tag decoder
 - `openrfid` - Alternative detection with extended spool/tag support
 - `openrfid-generic` - Same as openrfid, labels all spool vendors as generic
+- `ace` - ACE-format tag decoder via Anycubic ACE
 
 See [Alternative Filament Detection](design/rfid.md#enabling-openrfid) for setup instructions.
+
+Anycubic ACE is configured through the Firmware Config web
+interface and installs `extended/klipper/ace.cfg` when enabled. See
+[Anycubic ACE Pro / ACE 2 Pro](anycubic_ace.md) for setup and tuning.
 
 #### [remote_access]
 
@@ -228,8 +238,10 @@ usb: none
 rtsp: false
 
 [components]
-# Filament tag detection system: external, snapmaker, openrfid, openrfid-generic
-rfid: snapmaker
+# RFID reader hardware: snapmaker, external, ace
+rfid_hardware: snapmaker
+# RFID tag processing software: snapmaker, openrfid, openrfid-generic, ace
+rfid_software: snapmaker
 
 [remote_access]
 # Enable SSH access: true, false

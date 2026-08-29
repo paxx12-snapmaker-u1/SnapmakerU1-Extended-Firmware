@@ -5,30 +5,33 @@
 settings:
   snapmaker_components:
     items:
-      rfid:
+      rfid_software:
         options:
           openrfid:
             label: OpenRFID
+            if_cmd: test "$(/usr/local/bin/extended-config.py get /oem/printer_data/config/extended/extended2.cfg components rfid_hardware 2>/dev/null || echo snapmaker)" != "ace"
             confirm: Please read the relevant documentation for this feature. Bambu Lab and Creality spools are not enabled by default.
             cmd:
               - bash
               - -xc
               - |
-                /usr/local/bin/extended-config.py add /oem/printer_data/config/extended/extended2.cfg components rfid openrfid
+                /usr/local/bin/extended-config.py add /oem/printer_data/config/extended/extended2.cfg components rfid_software openrfid
+                cfg=/oem/printer_data/config/extended/klipper/ace.cfg
+                test -f "$cfg" && sed -i 's/^rfid_source:.*/rfid_source: existing/' "$cfg" || true
                 cp -an /usr/local/share/openrfid/extended/openrfid_user.cfg /oem/printer_data/config/extended/openrfid_user.cfg
-                /etc/init.d/S59rfid-support restart
                 /etc/init.d/S99openrfid restart
                 /etc/init.d/S60klipper restart
           openrfid-generic:
             label: OpenRFID (force generic vendor)
+            if_cmd: test "$(/usr/local/bin/extended-config.py get /oem/printer_data/config/extended/extended2.cfg components rfid_hardware 2>/dev/null || echo snapmaker)" != "ace"
             confirm: Please read the relevant documentation for this feature. Bambu Lab and Creality spools are not enabled by default.
             cmd:
               - bash
               - -xc
               - |
-                /usr/local/bin/extended-config.py add /oem/printer_data/config/extended/extended2.cfg components rfid openrfid-generic
+                /usr/local/bin/extended-config.py add /oem/printer_data/config/extended/extended2.cfg components rfid_software openrfid-generic
+                cfg=/oem/printer_data/config/extended/klipper/ace.cfg
+                test -f "$cfg" && sed -i 's/^rfid_source:.*/rfid_source: existing/' "$cfg" || true
                 cp -an /usr/local/share/openrfid/extended/openrfid_user.cfg /oem/printer_data/config/extended/openrfid_user.cfg
-                /etc/init.d/S59rfid-support restart
                 /etc/init.d/S99openrfid restart
                 /etc/init.d/S60klipper restart
-                echo Please read the relevant documentation for this feature. Bambu Lab and Creality spools are not enabled by default.

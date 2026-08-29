@@ -1,0 +1,105 @@
+settings:
+  snapmaker_components:
+    items:
+      anycubic_ace:
+        label: Anycubic ACE
+        description: Optional Anycubic ACE Pro / ACE 2 Pro loading, dryer, RFID, and status integration.
+        help_url: http://snapmakeru1-extended-firmware.pages.dev/anycubic_ace
+        get_cmd:
+          - bash
+          - -c
+          - test -f /oem/printer_data/config/extended/klipper/ace.cfg && echo "enabled" || echo "disabled"
+        options:
+          enabled:
+            label: Enabled
+            confirm: |
+              Enable Anycubic ACE Pro / ACE 2 Pro support?
+
+              This creates ace.cfg and restarts Klipper. The ACE model is auto-detected via USB — no manual serial path needed. Tune the slot load lengths for your tube routing before loading filament.
+            cmd:
+              - bash
+              - -ec
+              - |
+                ace_found=0
+                for ace_device in /dev/serial/by-id/usb-ANYCUBIC* /dev/serial/by-id/usb-1a86_USB_Single_Serial_* /dev/serial/by-id/usb-1a86_USB_Serial*; do
+                  if [ -e "$ace_device" ]; then
+                    ace_found=1
+                    break
+                  fi
+                done
+                if [ "$ace_found" -ne 1 ]; then
+                  echo "ERROR: No Anycubic ACE detected on USB. Connect the ACE and try again."
+                  exit 1
+                fi
+                mkdir -p /oem/printer_data/config/extended/klipper
+                cp -n /usr/local/share/firmware-config/tweaks/klipper/ace.cfg /oem/printer_data/config/extended/klipper/ace.cfg
+                chown lava:lava /oem/printer_data/config/extended/klipper/ace.cfg
+                echo "Anycubic ACE enabled. Review /oem/printer_data/config/extended/klipper/ace.cfg and tune slot lengths. Restarting Klipper..."
+                /etc/init.d/S60klipper restart
+          disabled:
+            label: Disabled
+            cmd:
+              - bash
+              - -ec
+              - |
+                rm -f /oem/printer_data/config/extended/klipper/ace.cfg
+                if [ "$(/usr/local/bin/extended-config.py get /oem/printer_data/config/extended/extended2.cfg components rfid_hardware 2>/dev/null || true)" = "ace" ]; then
+                  /usr/local/bin/extended-config.py add /oem/printer_data/config/extended/extended2.cfg components rfid_hardware snapmaker
+                fi
+                if [ "$(/usr/local/bin/extended-config.py get /oem/printer_data/config/extended/extended2.cfg components rfid_software 2>/dev/null || true)" = "ace" ]; then
+                  /usr/local/bin/extended-config.py add /oem/printer_data/config/extended/extended2.cfg components rfid_software snapmaker
+                fi
+                echo "Anycubic ACE disabled. Restarting Klipper..."
+                /etc/init.d/S59rfid-support restart
+                /etc/init.d/S99openrfid restart
+                /etc/init.d/S60klipper restart
+        default: disabled
+
+      rfid_hardware:
+        options:
+          ace:
+            label: ACE
+            if_cmd: test -f /oem/printer_data/config/extended/klipper/ace.cfg
+            cmd:
+              - bash
+              - -xc
+              - |
+                /usr/local/bin/extended-config.py add /oem/printer_data/config/extended/extended2.cfg components rfid_hardware ace
+                /usr/local/bin/extended-config.py add /oem/printer_data/config/extended/extended2.cfg components rfid_software ace
+                cfg=/oem/printer_data/config/extended/klipper/ace.cfg
+                test -f "$cfg" && sed -i 's/^rfid_source:.*/rfid_source: ace/' "$cfg" || true
+                /etc/init.d/S59rfid-support restart
+                /etc/init.d/S99openrfid stop
+                /etc/init.d/S60klipper restart
+
+      rfid_software:
+        options:
+          ace:
+            label: ACE
+            if_cmd: test -f /oem/printer_data/config/extended/klipper/ace.cfg -a "$(/usr/local/bin/extended-config.py get /oem/printer_data/config/extended/extended2.cfg components rfid_hardware 2>/dev/null || echo snapmaker)" = "ace"
+            cmd:
+              - bash
+              - -xc
+              - |
+                /usr/local/bin/extended-config.py add /oem/printer_data/config/extended/extended2.cfg components rfid_software ace
+                cfg=/oem/printer_data/config/extended/klipper/ace.cfg
+                test -f "$cfg" && sed -i 's/^rfid_source:.*/rfid_source: ace/' "$cfg" || true
+                /etc/init.d/S99openrfid stop
+                /etc/init.d/S60klipper restart
+
+actions:
+  troubleshooting:
+    items:
+      anycubic-ace-refresh:
+        label: Refresh Anycubic ACE
+        description: Redetect and reconnect the Anycubic ACE without changing config.
+        if_cmd: test -f /oem/printer_data/config/extended/klipper/ace.cfg
+        cmd:
+          - bash
+          - -ec
+          - |
+            /usr/local/bin/curl -sS -X POST \
+              -H 'Content-Type: application/json' \
+              -d '{"script":"ACE_REFRESH"}' \
+              http://127.0.0.1:7125/printer/gcode/script
+        message: "Refreshing Anycubic ACE connection..."

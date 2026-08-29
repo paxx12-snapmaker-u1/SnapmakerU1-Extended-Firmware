@@ -59,6 +59,15 @@ Build extended firmware:
 ./dev.sh make build PROFILE=extended OUTPUT_FILE=firmware/U1_extended.bin
 ```
 
+On Windows with Docker Desktop, build extended firmware and copy the artifact
+to `firmware/firmware.bin`:
+
+```powershell
+.\scripts\build_firmware_windows.ps1
+```
+
+The script automatically creates the Docker build image if it is missing.
+
 Open a shell in the development environment:
 
 ```bash
