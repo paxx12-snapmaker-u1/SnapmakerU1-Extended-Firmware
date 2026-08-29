@@ -11,6 +11,7 @@ RUN apt-get update -y && \
       build-essential \
       cmake \
       pkg-config \
+      python3 \
       squashfs-tools \
       git-core \
       bc \

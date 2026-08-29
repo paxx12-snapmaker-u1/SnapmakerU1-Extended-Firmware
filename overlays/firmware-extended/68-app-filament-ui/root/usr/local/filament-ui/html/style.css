@@ -290,6 +290,11 @@ header h1 {
 }
 
 .channel-action-btn:hover { border-color: var(--accent); }
+.channel-action-btn.create-spool-btn {
+    background: var(--accent);
+}
+.channel-action-btn.create-spool-btn:hover { background: var(--accent-hover); }
+.channel-action-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .channel-action-note { font-size: 12px; color: var(--muted); font-style: italic; }
 
 /* ── Modal overlay ───────────────────────────────────────────────────────── */
@@ -425,6 +430,12 @@ input[type="number"]:focus,
 select:focus {
     outline: none;
     border-color: var(--accent);
+}
+
+input:disabled,
+select:disabled {
+    opacity: 0.65;
+    cursor: not-allowed;
 }
 
 input[type="color"] {
@@ -787,6 +798,17 @@ input[type="checkbox"] {
     font-family: monospace;
 }
 
+.spoolman-rfid-count {
+    display: inline-block;
+    margin-top: 3px;
+    padding: 1px 5px;
+    border-radius: 999px;
+    background: var(--border);
+    color: var(--muted);
+    font-size: 10px;
+    white-space: nowrap;
+}
+
 .spoolman-empty,
 .spoolman-loading {
     text-align: center;
@@ -796,6 +818,80 @@ input[type="checkbox"] {
 }
 
 .spool-remaining { color: var(--success); font-weight: 600; }
+
+/* Create-spool and RFID confirmation dialogs */
+.create-spool-dialog { width: 720px; }
+.confirm-dialog { width: 520px; }
+
+.create-spool-source {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+.create-spool-source > div {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding: 9px 12px;
+    border-radius: 6px;
+    background: var(--item);
+}
+
+.create-spool-source span,
+.create-spool-section-title {
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+}
+
+.create-spool-source strong {
+    font-family: monospace;
+    font-size: 13px;
+}
+
+.create-spool-section-title {
+    margin: 16px 0 8px;
+}
+
+.create-spool-notice {
+    margin-bottom: 16px;
+    padding: 10px 12px;
+    border: 1px solid rgba(255, 152, 0, 0.4);
+    border-radius: 6px;
+    background: rgba(255, 152, 0, 0.12);
+    color: var(--warning);
+    font-size: 13px;
+}
+
+.create-spool-notice.error {
+    border-color: rgba(244, 67, 54, 0.45);
+    background: rgba(244, 67, 54, 0.12);
+    color: #ff8a80;
+}
+
+.form-help {
+    margin: 5px 0 0;
+    color: var(--muted);
+    font-size: 11px;
+    line-height: 1.4;
+}
+
+.confirm-content {
+    color: var(--text);
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+.confirm-content p { margin: 0 0 10px; }
+.confirm-content p:last-child { margin-bottom: 0; }
+
+@media (max-width: 560px) {
+    .create-spool-source { grid-template-columns: 1fr; }
+}
 
 .info-popover {
     position: fixed;

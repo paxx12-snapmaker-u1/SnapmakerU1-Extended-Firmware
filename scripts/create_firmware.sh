@@ -116,6 +116,9 @@ if [[ -z "$CI" ]]; then
   rm -rf "$ROOTFS_DIR/cache"
 fi
 
+echo ">> Checking Linux script line endings..."
+python3 "$ROOT_DIR/scripts/check_line_endings.py" --rootfs "$ROOTFS_DIR"
+
 echo ">> Checking for non-ARM binaries in rootfs..."
 if FILES=$(find "$ROOTFS_DIR" -type f -exec file {} + | grep "ELF" | grep -v "ARM"); then
   echo "!! Error: Found non-ARM binaries in the rootfs:"
