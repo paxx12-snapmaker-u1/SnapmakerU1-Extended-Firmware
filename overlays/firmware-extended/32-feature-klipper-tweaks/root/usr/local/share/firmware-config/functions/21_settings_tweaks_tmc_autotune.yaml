@@ -21,11 +21,6 @@ settings:
               - bash
               - -xc
               - |
-                if test -f /oem/printer_data/config/extended/klipper/10_max_speed.cfg; then
-                  echo "ERROR: Max Speed is enabled and changes the same TMC2240 driver settings."
-                  echo "Disable Max Speed first, then enable TMC AutoTune."
-                  exit 1
-                fi
                 cp /usr/local/share/firmware-config/tweaks/klipper/tmc_autotune.cfg /oem/printer_data/config/extended/klipper/tmc_autotune.cfg &&
                 echo "TMC AutoTune enabled. Restarting Klipper..." &&
                 /etc/init.d/S60klipper restart

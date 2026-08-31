@@ -54,65 +54,6 @@ Lowers the stepper motor run current from 1.2A to 1.0A for X and Y axes.
 **Configuration:**
 This feature can **only** be configured via Firmware Configuration web interface. Manual configuration is not supported.
 
-## Max Speed
-
-Raises the XY motion limits and speeds up tool changes, together with the TMC2240
-chopper tuning that keeps the XY drivers stable at those speeds.
-
-Parameters by [@JNP-1](https://github.com/JNP-1/Snapmaker-U1-Config).
-
-**What it does:**
-- Raises max XY velocity from 500 mm/s to 1000 mm/s and max acceleration from 20000 mm/s² to 25000 mm/s²
-- Raises the tool change speed from 400 mm/s to 800 mm/s and the tool change acceleration from 5000 mm/s² to 25000 mm/s² on all four toolheads
-- Raises the dock grab speed from 10 mm/s to 40 mm/s
-- Applies TMC2240 chopper tuning (`TBL`, `TOFF`, `HEND`, `HSTRT`, `TPFD`, `VHIGHFS`, `VHIGHCHM`, `PWM_*`) tuned for high-speed movement
-
-**Requirements:**
-- Dock positions are calibrated correctly
-- Belt tension is correct
-- Input shaper is calibrated for your printer (run `SHAPER_CALIBRATE`)
-- Tool changes are already reliable with the stock configuration
-
-**Risks:**
-- Crashes into the tool docks if dock positions are off
-- Layer shifts and skipped steps under heavy load
-- Higher driver and motor temperatures
-- Ringing and other quality artifacts if input shaper is not calibrated
-
-**Recommendation:**
-- Calibrate the printer fully before enabling
-- Start with a small test print and watch the first tool changes
-- Disable if you see dock alignment problems or layer shifts
-
-**Note:** This tweak cannot be combined with [TMC AutoTune](#tmc-autotune) or
-[TMC Reduced Current](#tmc-reduced-current) — all three change the same TMC2240
-driver settings, and Max Speed needs the full 1.2A X/Y current. Firmware Config
-refuses to enable a conflicting combination and tells you which tweak to disable
-first.
-
-### Not ported from JNP-1's configuration
-
-[@JNP-1's repo](https://github.com/JNP-1/Snapmaker-U1-Config) is a complete
-`printer.cfg`. This tweak takes only the settings that are about speed and that
-hold on any U1. These parts are deliberately left at stock:
-
-| Not ported | Stock | JNP-1 | Why |
-|---|---|---|---|
-| `[input_shaper]` and the `[resonance_tester]` probe point | — | X 54 Hz, Y 47.5 Hz | The right values depend on your individual printer. Run `SHAPER_CALIBRATE`, then `SAVE_CONFIG`. |
-| `rotation_distance` on all four extruders | 4.95 | 5.0147 | Extruder calibration, not a speed setting. |
-| `fan_speed` on `e0`–`e3_nozzle_fan` | 1 | 0.8 | Cooling preference, unrelated to motion. |
-| Faster homing: `[homing_xyz_override] speed`, the `M204` accel cap and the homing current | 300 mm/s, `S1000`, 0.650A | 800 mm/s, `S10000`, 0.900A | See below. |
-
-Homing needs all three of those together. `speed` is an ordinary config option,
-but the accel cap and the homing current live inside that section's `gcode:`
-template, which can only be changed by restating the whole macro body. Raising
-`speed` on its own would mean homing at 800 mm/s while still capped at
-1000 mm/s² and still at 0.650A — an untested combination on sensorless homing,
-with a failure mode (crashing into an endstop) that this tweak does not cover.
-
-**Configuration:**
-This feature can **only** be configured via Firmware Configuration web interface. Manual configuration is not supported.
-
 ## Object Processing for Adaptive Mesh
 
 Enables object processing in Moonraker's file manager to support adaptive mesh features.
@@ -161,7 +102,6 @@ Changes take effect immediately after Klipper restarts (no reboot required).
 These tweaks work by adding or removing configuration files from `/oem/printer_data/config/extended/`:
 - `klipper/tmc_autotune.cfg` - TMC AutoTune parameters
 - `klipper/tmc_current.cfg` - Reduced current settings
-- `klipper/10_max_speed.cfg` - Max Speed motion limits, tool change speeds and driver tuning
 - `moonraker/object_processing.cfg` - Moonraker object processing settings
 
 These files are automatically included by the main printer configuration if present. Manual editing of these files is not recommended as they will be overwritten by the Firmware Configuration interface.
