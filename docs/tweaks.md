@@ -86,6 +86,23 @@ Enables object processing in Moonraker's file manager to support adaptive mesh f
 **Configuration:**
 This feature can **only** be configured via Firmware Configuration web interface. Manual configuration is not supported.
 
+## Naive Heated Chamber
+
+Allow to heat chamber using bed heater.
+
+**What it does:**
+- Implements support for **M191** command
+- Sets heated bed temp to 100C
+- Waits actively for **Cavity sensor** reach target temp
+
+**Risks:**
+- Heated bed should be empty to not start melting any print left on plate
+
+
+**Configuration:**
+This feature can **only** be configured via Firmware Configuration web interface. Manual configuration is not supported.
+
+
 ## How to Configure
 
 1. Open the printer's web interface (Fluidd or Mainsail)
