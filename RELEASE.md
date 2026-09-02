@@ -39,6 +39,24 @@ Quick steps:
 1. Download `.bin` from the [Snapmaker U1 Wiki](https://wiki.snapmaker.com/en/snapmaker_u1/firmware/release_notes).
 2. Follow the same as for install.
 
+## Verifying your download
+
+Each release ships a `SHA256SUMS` file and a SLSA build-provenance attestation (`*.intoto.jsonl`).
+
+Verify the checksum:
+
+```
+sha256sum -c SHA256SUMS
+```
+
+Verify the build provenance with [`slsa-verifier`](https://github.com/slsa-framework/slsa-verifier) to confirm the firmware was built by this repository's release workflow and was not tampered with:
+
+```
+slsa-verifier verify-artifact U1_extended_*_upgrade.bin \
+  --provenance-path U1_*.intoto.jsonl \
+  --source-uri github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware
+```
+
 ## Community
 
 Join the [Snapmaker Discord](https://discord.com/invite/snapmaker-official-1086575708903571536) and visit the **#u1-printer** channel to connect with other users using the custom firmware, share experiences, and get help.
