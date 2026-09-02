@@ -12,3 +12,6 @@ test: upfile
 	./upfile pack tmp/update.bin tmp
 	md5sum $(FIRMWARE_FILE) tmp/update.bin
 	cmp $(FIRMWARE_FILE) tmp/update.bin
+
+clean:
+	rm -f upfile
