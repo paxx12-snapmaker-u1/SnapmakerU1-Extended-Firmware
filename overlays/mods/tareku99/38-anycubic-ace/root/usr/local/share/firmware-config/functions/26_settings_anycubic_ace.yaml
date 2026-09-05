@@ -1,0 +1,72 @@
+settings:
+  snapmaker_components:
+    items:
+      anycubic_ace_experimental:
+        label: Anycubic ACE (experimental)
+        description: Optional MultiACE-derived ACE Pro / ACE 2 Pro integration for one to four units.
+        get_cmd:
+          - bash
+          - -c
+          - test -f /oem/printer_data/config/extended/klipper/ace.cfg && echo "enabled" || echo "disabled"
+        options:
+          enabled:
+            label: Enabled
+            confirm: |
+              Enable the experimental MultiACE-derived Anycubic ACE path?
+
+              The ACE model and protocol are detected over USB. Review
+              ace.cfg, set ace_device_count, and tune the load values before
+              loading filament. Klipper will restart.
+            cmd:
+              - bash
+              - -ec
+              - |
+                ace_found=0
+                for ace_device in /dev/serial/by-id/usb-ANYCUBIC* /dev/serial/by-id/usb-1a86_USB_Single_Serial_* /dev/serial/by-id/usb-1a86_USB_Serial*; do
+                  if [ -e "$ace_device" ]; then
+                    ace_found=1
+                    break
+                  fi
+                done
+                if [ "$ace_found" -ne 1 ]; then
+                  echo "ERROR: No compatible ACE serial device detected."
+                  exit 1
+                fi
+                ace_mode=/usr/local/share/firmware-config/tweaks/klipper/multiace/ace_mode_switch.sh
+                if [ ! -f "$ace_mode" ]; then
+                  echo "ERROR: MultiACE runtime files are missing from this firmware."
+                  exit 1
+                fi
+                bash "$ace_mode" ace
+                mkdir -p /oem/printer_data/config/extended/klipper
+                ln -sf /usr/local/share/firmware-config/tweaks/klipper/ace.cfg /oem/printer_data/config/extended/klipper/ace.cfg
+                echo "Experimental MultiACE-derived ACE integration enabled. Review ace.cfg and restart Klipper..."
+                /etc/init.d/S60klipper restart
+          disabled:
+            label: Disabled
+            cmd:
+              - bash
+              - -ec
+              - |
+                ace_mode=/usr/local/share/firmware-config/tweaks/klipper/multiace/ace_mode_switch.sh
+                stock_feed=/home/lava/klipper/klippy/extras/filament_feed_pre_multiace.py
+                if [ -f "$ace_mode" ] && [ -f "$stock_feed" ]; then
+                  bash "$ace_mode" normal
+                fi
+                rm -f /oem/printer_data/config/extended/klipper/ace.cfg
+                echo "Experimental MultiACE-derived ACE integration disabled. Restarting Klipper..."
+                /etc/init.d/S60klipper restart
+        default: disabled
+
+actions:
+  troubleshooting:
+    items:
+      anycubic-ace-experimental-refresh:
+        label: Refresh experimental ACE connection
+        description: Refresh the ACE device list without changing configuration.
+        cmd:
+          - bash
+          - -ec
+          - |
+            curl -sS -X POST -H 'Content-Type: application/json' -d '{"script":"ACE_LIST"}' http://127.0.0.1:7125/printer/gcode/script
+        message: "Refreshing the experimental ACE device list..."

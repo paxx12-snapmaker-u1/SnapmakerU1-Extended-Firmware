@@ -38,6 +38,14 @@ not personal ones.
    with each other and with maintained mods, e.g.
    `extended-<username>-devel`.
 
+### CI test builds
+
+CI builds the profile configured in
+`.github/workflows/pull_request.yaml`. It defaults to the unmodded `extended`
+profile. To test one mod, change `BUILD_PROFILE` to `extended-<username>`; to
+combine mods, append their profile names in order, such as
+`extended-<mod1>-<mod2>`. The uploaded artifact uses the selected profile name.
+
 ### Directory layout
 
 A mod is just a directory of numbered overlays under your username, same as
