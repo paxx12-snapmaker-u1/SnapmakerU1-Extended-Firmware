@@ -1,0 +1,264 @@
+--- a/klippy/extras/spoollink.py
++++ b/klippy/extras/spoollink.py
+@@ -5,13 +5,220 @@
+ import logging
+ 
+ from . import filament_protocol
++import json
++
++def is_auto_pa_enabled():
++    try:
++        import configparser
++        cfg = configparser.ConfigParser()
++        cfg.read('/oem/printer_data/config/extended/extended2.cfg')
++        if cfg.has_section('spoolman'):
++            return cfg.get('spoolman', 'auto_pa', fallback='true').strip().lower() in ('true', '1', 'yes')
++    except Exception:
++        pass
++    return True
+ 
+ class SpoolLink:
+     def __init__(self, config):
+         self.printer = config.get_printer()
+         self.gcode = self.printer.lookup_object('gcode')
++        self.channel_spools = {}
++        self.channel_pa_matrix = {}
++        self.calibrated_channels = set()
++        self.calibration_attempts = {}
++        self.auto_pa_timer = None
++        self._calibration_running = False
+         self.printer.lookup_object('webhooks').register_endpoint(
+             'spoollink/set', self._handle_set)
++        self.printer.register_event_handler('klippy:ready', self._handle_ready)
++
++    def _handle_ready(self):
++        msm = self.printer.lookup_object('machine_state_manager', None)
++        if msm and hasattr(msm, 'post_hooks'):
++            msm.post_hooks.append(self._on_machine_state_change)
++            logging.info("[spoollink] registered post_hook with machine_state_manager")
++        else:
++            logging.warning("[spoollink] machine_state_manager post_hooks not available")
++
++    def _nozzle_key_for_channel(self, channel):
++        # Build the per-nozzle matrix key "<nozzle_diameter>_<nozzle_volume_type>"
++        # (e.g. "0.4_standard") using the raw values exposed by the extruder.
++        extruder_name = "extruder" if channel == 0 else f"extruder{channel}"
++        extruder = self.printer.lookup_object(extruder_name, None)
++        if extruder is None:
++            return None
++        nozzle_diameter = getattr(extruder, 'nozzle_diameter', None)
++        if nozzle_diameter is None:
++            return None
++        nozzle_volume_type = getattr(extruder, 'nozzle_volume_type', 'standard')
++        return f"{nozzle_diameter}_{nozzle_volume_type}"
++
++    def _pa_for_current_nozzle(self, channel):
++        # Resolve the Pressure Advance stored for the channel's current nozzle.
++        matrix = self.channel_pa_matrix.get(channel) or {}
++        key = self._nozzle_key_for_channel(channel)
++        if not key:
++            return None, None
++        raw = matrix.get(key)
++        if raw is None:
++            return None, key
++        try:
++            val = float(raw)
++        except (TypeError, ValueError):
++            return None, key
++        if val <= 0:
++            return None, key
++        return val, key
++
++    def _apply_pa(self, channel, pa_val):
++        extruder_name = "extruder" if channel == 0 else f"extruder{channel}"
++        extruder = self.printer.lookup_object(extruder_name, None)
++        if extruder and hasattr(extruder, 'extruder_stepper'):
++            estepper = extruder.extruder_stepper
++            estepper._set_pressure_advance(pa_val, estepper.config_smooth_time)
++            return extruder_name
++        return None
++
++    def _filament_feed_ready(self, channel):
++        # Verify the filament feed module for the target channel reports
++        # 'load_finish' before allowing calibration. This guards against
++        # triggering FLOW_CALIBRATE during error-recovery states where the
++        # machine briefly goes IDLE before restarting the feed sequence.
++        if channel in (0, 1):
++            feed = self.printer.lookup_object('filament_feed left', None)
++            ext_key = 'extruder0' if channel == 0 else 'extruder1'
++        else:
++            feed = self.printer.lookup_object('filament_feed right', None)
++            ext_key = 'extruder2' if channel == 2 else 'extruder3'
++        if feed is None:
++            return True  # object not present, assume OK
++        try:
++            status = feed.get_status(self.printer.get_reactor().monotonic())
++            ch_status = status.get(ext_key, {})
++            state = ch_status.get('channel_state', '')
++            if state != 'load_finish':
++                logging.info("[spoollink] ch%d: feed state is '%s', not ready for calibration", channel, state)
++                return False
++            return True
++        except Exception as e:
++            logging.warning("[spoollink] _filament_feed_ready ch%d error: %s", channel, e)
++            return True
++
++    def update_calibrated_pa(self, channel, nozzle_key, pa_val):
++        try:
++            matrix = self.channel_pa_matrix.setdefault(channel, {})
++            if nozzle_key:
++                matrix[nozzle_key] = pa_val
++            self.calibrated_channels.add(channel)
++            self._calibration_running = False
++            extruder_name = self._apply_pa(channel, pa_val)
++            if extruder_name:
++                logging.info("[spoollink] ch%d (%s): updated in-memory PA to %.5f (%s) after calibration", channel, extruder_name, pa_val, nozzle_key)
++        except Exception as e:
++            logging.warning("[spoollink] update_calibrated_pa error: %s", e)
++
++    def _on_machine_state_change(self, old_state, new_state):
++        try:
++            old_s, new_s = str(old_state), str(new_state)
++            if ('LOAD' in old_s and 'UNLOAD' not in old_s and 'IDLE' in new_s) or ('FLOW_CALIBRATION' in old_s and 'IDLE' in new_s):
++                logging.info("[spoollink] load state transition %s -> %s, scheduling auto PA check", old_s, new_s)
++                self._schedule_auto_pa_check(delay=12.0)
++        except Exception as e:
++            logging.warning("[spoollink] state change hook exception: %s", e)
++
++    def _schedule_auto_pa_check(self, delay=12.0):
++        reactor = self.printer.get_reactor()
++        if self.auto_pa_timer:
++            reactor.unregister_timer(self.auto_pa_timer)
++            self.auto_pa_timer = None
++        self.auto_pa_timer = reactor.register_timer(self._check_and_run_auto_pa, reactor.monotonic() + delay)
++
++    def _check_and_run_auto_pa(self, eventtime):
++        self.auto_pa_timer = None
++        try:
++            if not is_auto_pa_enabled():
++                return self.printer.get_reactor().NEVER
++
++            msm = self.printer.lookup_object('machine_state_manager', None)
++            if msm:
++                m_sta = str(msm.get_status().get('main_state', '')).upper()
++                if 'IDLE' not in m_sta:
++                    logging.info("[spoollink] printer state %s is not IDLE, rescheduling auto PA check", m_sta)
++                    return eventtime + 5.0
++
++            target_channel = None
++            target_spool_id = None
++
++            for ch in range(4):
++                spool_id = self.channel_spools.get(ch)
++                if spool_id and isinstance(spool_id, int) and spool_id > 0:
++                    if ch in self.calibrated_channels:
++                        continue
++                    if self.calibration_attempts.get(ch, 0) >= 1:
++                        logging.info("[spoollink] ch%d (Spool #%s): max calibration attempts reached in this session, skipping", ch, spool_id)
++                        continue
++
++                    pa_val, nozzle_key = self._pa_for_current_nozzle(ch)
++                    if nozzle_key is None:
++                        # Extruder object not available yet -- skip, don't calibrate
++                        logging.info("[spoollink] ch%d: extruder not available, skipping auto PA", ch)
++                        continue
++                    if pa_val is None:
++                        if not self._filament_feed_ready(ch):
++                            logging.info("[spoollink] ch%d: feed not ready, skipping auto PA for now", ch)
++                            continue
++                        target_channel = ch
++                        target_spool_id = spool_id
++                        break
++
++            if target_channel is not None and target_spool_id is not None:
++                if self._calibration_running:
++                    logging.info("[spoollink] calibration already in progress, rescheduling check")
++                    return eventtime + 5.0
++                self.calibration_attempts[target_channel] = self.calibration_attempts.get(target_channel, 0) + 1
++                extruder_name = "extruder" if target_channel == 0 else f"extruder{target_channel}"
++                flow_cal = self.printer.lookup_object('flow_calibrator', None)
++                if flow_cal:
++                    logging.info("[spoollink] ch%d (%s): starting auto FLOW_CALIBRATE for Spool #%s (attempt %d)", target_channel, extruder_name, target_spool_id, self.calibration_attempts[target_channel])
++                    self.gcode.respond_raw(f"// [spoollink] ch{target_channel} (Spool #{target_spool_id}): Starting automatic Pressure Advance calibration...")
++                    self._trigger_flow_calibrate(target_channel, extruder_name)
++                else:
++                    logging.warning("[spoollink] flow_calibrator component not found, cannot run auto PA calibration")
++        except Exception as e:
++            logging.error("[spoollink] error in _check_and_run_auto_pa: %s", e, exc_info=True)
++        return self.printer.get_reactor().NEVER
++
++    def _trigger_flow_calibrate(self, target_channel, extruder_name):
++        # Re-verify machine state immediately before executing gcode (guard against
++        # race condition between the earlier IDLE check and the actual command dispatch).
++        msm = self.printer.lookup_object('machine_state_manager', None)
++        if msm:
++            m_sta = str(msm.get_status().get('main_state', '')).upper()
++            if 'IDLE' not in m_sta:
++                logging.warning("[spoollink] ch%d (%s): aborting auto PA trigger -- machine not IDLE (%s)", target_channel, extruder_name, m_sta)
++                # Decrement attempt counter so it can be retried after next IDLE transition
++                self.calibration_attempts[target_channel] = max(0, self.calibration_attempts.get(target_channel, 1) - 1)
++                return
++        if not self._filament_feed_ready(target_channel):
++            logging.warning("[spoollink] ch%d (%s): feed not in load_finish, aborting auto PA trigger", target_channel, extruder_name)
++            self.calibration_attempts[target_channel] = max(0, self.calibration_attempts.get(target_channel, 1) - 1)
++            return
++        self._calibration_running = True
++        try:
++            toolhead = self.printer.lookup_object('toolhead', None)
++            if toolhead:
++                active_ext = toolhead.get_extruder()
++                if active_ext and active_ext.extruder_index != target_channel:
++                    logging.info("[spoollink] active toolhead is extruder%d, switching to T%d before calibration", active_ext.extruder_index, target_channel)
++                    self.gcode.respond_raw(f"// [spoollink] Switching active toolhead to T{target_channel} for calibration...")
++                    self.gcode.run_script_from_command(f"T{target_channel}")
++
++            logging.info("[spoollink] executing FLOW_CALIBRATE EXTRUDER=%s", extruder_name)
++            self.gcode.run_script_from_command(f"FLOW_CALIBRATE EXTRUDER={extruder_name}")
++        except Exception as e:
++            logging.error("[spoollink] FLOW_CALIBRATE execution error: %s", e, exc_info=True)
++        finally:
++            self._calibration_running = False
+ 
+     def _handle_set(self, web_request):
+         wh = self.printer.lookup_object('webhooks')
+@@ -34,6 +241,40 @@
+             logging.info('[spoollink] ch%d: %s', channel, message)
+         ptc = self.printer.lookup_object('print_task_config')
+         ptc._rfid_filament_info_update_cb(channel, info, is_clear=True)
++
++        spool_id = info.get('SPOOL_ID')
++        has_spoolman = spool_id is not None and isinstance(spool_id, int) and spool_id > 0
++        extruder_name = "extruder" if channel == 0 else f"extruder{channel}"
++
++        pa_matrix = {}
++        raw_matrix = info.get('SPOOLMAN_PA_MATRIX')
++        if raw_matrix:
++            try:
++                parsed = json.loads(raw_matrix)
++                if isinstance(parsed, dict):
++                    pa_matrix = parsed
++            except (ValueError, TypeError):
++                logging.warning("[spoollink] ch%d: invalid SPOOLMAN_PA_MATRIX, ignoring", channel)
++
++        if has_spoolman:
++            self.channel_spools[channel] = spool_id
++            self.channel_pa_matrix[channel] = pa_matrix
++            self.calibrated_channels.discard(channel)
++            self.calibration_attempts[channel] = 0
++
++        pa_val, nozzle_key = self._pa_for_current_nozzle(channel)
++        if pa_val is not None:
++            applied = self._apply_pa(channel, pa_val)
++            if applied:
++                logging.info("[spoollink] ch%d (%s): applied pressure_advance %.5f (%s) from Spoolman spool #%s", channel, applied, pa_val, nozzle_key, spool_id)
++                self.gcode.respond_raw(f"// [spoollink] ch{channel} ({applied}): Applied Pressure Advance {pa_val:.5f} ({nozzle_key}) from Spoolman spool #{spool_id}")
++        elif has_spoolman and is_auto_pa_enabled():
++            logging.info("[spoollink] ch%d (%s): Spool #%s has no PA for nozzle %s, queued for auto calibration after load", channel, extruder_name, spool_id, nozzle_key)
++            self.gcode.respond_raw(f"// [spoollink] ch{channel} (Spool #{spool_id}): No Pressure Advance stored for nozzle {nozzle_key}, queued for automatic calibration after load")
++            # Schedule a check immediately -- covers the case where filament is
++            # already loaded at boot and no LOAD->IDLE transition will ever fire.
++            self._schedule_auto_pa_check(delay=5.0)
++
+         self.gcode.respond_raw('// %s' % message)
+         web_request.send({})
+ 

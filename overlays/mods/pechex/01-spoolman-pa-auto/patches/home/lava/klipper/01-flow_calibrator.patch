@@ -1,0 +1,28 @@
+--- a/klippy/extras/flow_calibrator.py
++++ b/klippy/extras/flow_calibrator.py
+@@ -956,6 +956,25 @@
+                     self._current_k[extruder.get_name()] = measure_success_k
+                     self._save_config()
+ 
++                    if self._task_config:
++                        try:
++                            task_status = self._task_config.get_status()
++                            spool_ids = task_status.get('filament_spool_id', [])
++                            if extruder_index < len(spool_ids):
++                                spool_id = spool_ids[extruder_index]
++                                if spool_id and spool_id > 0:
++                                    nozzle_diameter = getattr(extruder, 'nozzle_diameter', 0.4)
++                                    nozzle_volume_type = getattr(extruder, 'nozzle_volume_type', 'standard')
++                                    nozzle_key = f'{nozzle_diameter}_{nozzle_volume_type}'
++                                    wh = self._printer.lookup_object('webhooks')
++                                    wh.call_remote_method('spoollink_save_pa', spool_id=spool_id, nozzle_key=nozzle_key, pa_value=measure_success_k)
++                                    gcmd.respond_info(f'[flow_calibrate] Saved Pressure Advance {measure_success_k} ({nozzle_key}) to Spoolman Spool #{spool_id}')
++                                    spoollink = self._printer.lookup_object('spoollink', None)
++                                    if spoollink and hasattr(spoollink, 'update_calibrated_pa'):
++                                        spoollink.update_calibrated_pa(extruder_index, nozzle_key, measure_success_k)
++                        except Exception as e:
++                            logging.warning(f'[flow_calibrate] Failed to save PA to Spoolman: {e}')
++
+                     if print_stats and print_stats.state == 'printing':
+                         self._calibrated_in_printing[extruder.get_name()] = True
+                     self._end_of_calibration(extruder)

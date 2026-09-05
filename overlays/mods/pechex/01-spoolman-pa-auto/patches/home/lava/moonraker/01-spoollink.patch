@@ -1,0 +1,125 @@
+--- a/moonraker/components/spoollink.py
++++ b/moonraker/components/spoollink.py
+@@ -48,6 +48,39 @@
+     return "Basic" if vendor.lower() == "snapmaker" else ""
+ 
+ 
++def _parse_pa_matrix(raw: Any) -> Dict[str, float]:
++    if not raw:
++        return {}
++    if isinstance(raw, dict):
++        return raw
++    if isinstance(raw, str):
++        s = raw.strip()
++        if not s:
++            return {}
++        try:
++            val = json.loads(s)
++            if isinstance(val, dict):
++                return val
++            if isinstance(val, str):
++                val2 = json.loads(val)
++                if isinstance(val2, dict):
++                    return val2
++        except (ValueError, TypeError):
++            pass
++        try:
++            unquoted = _unquote(s)
++            val = json.loads(unquoted)
++            if isinstance(val, dict):
++                return val
++            if isinstance(val, str):
++                val2 = json.loads(val)
++                if isinstance(val2, dict):
++                    return val2
++        except (ValueError, TypeError):
++            pass
++    return {}
++
++
+ class SpoolLink:
+     def __init__(self, config: ConfigHelper) -> None:
+         self.server = config.get_server()
+@@ -65,6 +98,7 @@
+         self._active_spool_id: Optional[int] = None
+ 
+         self.server.register_remote_method(RESOLVE_METHOD, self._resolve_spool)
++        self.server.register_remote_method("spoollink_save_pa", self._handle_remote_save_pa)
+         self.server.register_event_handler(
+             "server:klippy_ready", self._handle_klippy_ready)
+         self.server.register_event_handler(
+@@ -278,6 +312,7 @@
+     async def _ensure_fields(self) -> None:
+         await self._ensure_field("spool", "card_uids", "Card UIDs")
+         await self._ensure_field("filament", "variant", "Variant")
++        await self._ensure_field("spool", "pressure_advance_matrix", "Pressure Advance Matrix")
+ 
+     async def _ensure_field(self, entity_type: str, key: str, name: str) -> None:
+         base = f"{self._spoolman_url}/api/v1/field/{entity_type}"
+@@ -310,6 +345,47 @@
+                 "[spoollink] custom fields check failed (%s/%s): %s",
+                 entity_type, key, e)
+ 
++    async def _spoolman_get_spool(self, spool_id: int) -> dict:
++        resp = await self.http_client.get(
++            f"{self._spoolman_url}/api/v1/spool/{spool_id}", enable_cache=False)
++        if resp.status_code == 200:
++            return resp.json()
++        raise RuntimeError(f"HTTP {resp.status_code}: {resp.text()}")
++
++    async def _spoolman_save_pa(self, spool_id: int, nozzle_key: str, pa_value: float) -> dict:
++        # Persist the calibrated Pressure Advance into a per-nozzle JSON matrix
++        # stored in the spool's `extra.pressure_advance_matrix` field. The matrix
++        # is keyed by "<nozzle_diameter>_<nozzle_volume_type>" (e.g. "0.4_standard").
++        # Existing entries are preserved (merge, not overwrite).
++        await self._ensure_fields()
++        matrix: dict = {}
++        try:
++            spool = await self._spoolman_get_spool(spool_id)
++            extra = spool.get("extra") or {}
++            matrix = _parse_pa_matrix(extra.get("pressure_advance_matrix"))
++        except Exception as e:
++            logging.warning("[spoollink] could not read existing PA matrix for spool #%d: %s", spool_id, e)
++        matrix[nozzle_key] = round(float(pa_value), 6)
++        encoded = json.dumps(json.dumps(matrix))
++        resp = await self.http_client.request(
++            "PATCH", f"{self._spoolman_url}/api/v1/spool/{spool_id}",
++            body={"extra": {"pressure_advance_matrix": encoded}})
++        if resp.status_code == 200:
++            logging.info("[spoollink] saved pressure_advance %.6f (%s) to spool #%d", pa_value, nozzle_key, spool_id)
++            return resp.json()
++        raise RuntimeError(f"HTTP {resp.status_code}: {resp.text}")
++
++    async def _handle_remote_save_pa(self, spool_id: Any = None, nozzle_key: Any = None, pa_value: Any = None, **kwargs) -> None:
++        try:
++            spool_id_int = int(spool_id)
++            pa_val_float = float(pa_value)
++            key = str(nozzle_key or "").strip()
++            if not key:
++                raise ValueError("missing nozzle_key")
++            await self._retry(self._spoolman_save_pa, spool_id_int, key, pa_val_float)
++        except Exception as e:
++            logging.error("[spoollink] save PA failed for spool %s (%s): %s", spool_id, nozzle_key, e, exc_info=True)
++
+     async def _spoolman_get_by_id(self, spool_id: int) -> Optional[dict]:
+         resp = await self.http_client.get(
+             f"{self._spoolman_url}/api/v1/spool/{spool_id}", enable_cache=False)
+@@ -451,6 +527,10 @@
+         vendor = (filament.get("vendor") or {}).get("name", "Generic")
+         variant = _parse_variant(vendor, filament)
+ 
++        extra = spool.get("extra") or {}
++        matrix = _parse_pa_matrix(extra.get("pressure_advance_matrix"))
++        pa_matrix = json.dumps(matrix) if matrix else ""
++
+         raw_multi = filament.get("multi_color_hexes") or ""
+         colors = [c.strip().upper()[:6] for c in raw_multi.split(",") if c.strip()]
+         color_hex = colors[0] if colors else (filament.get("color_hex") or "FFFFFF")[:6].upper()
+@@ -465,6 +545,7 @@
+         alpha = 0xFF
+         info = {
+             "VENDOR": vendor,
++            "SPOOLMAN_PA_MATRIX": pa_matrix,
+             "MAIN_TYPE": material,
+             "SUB_TYPE": variant,
+             "RGB_1": int(color_list[0], 16),
