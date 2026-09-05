@@ -28,6 +28,7 @@ RUN apt-get update -y && \
       golang-go \
       ffmpeg \
       u-boot-tools \
+      python3 \
     && apt-get -y install ccache \
     && git config --global --add safe.directory '*' \
     && rm -rf /var/lib/apt/lists/*

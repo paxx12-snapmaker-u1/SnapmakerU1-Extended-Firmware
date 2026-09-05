@@ -1,0 +1,77 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-PackageHomePage: https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware
+# SPDX-FileCopyrightText: Copyright (c) 2026 @paxx12
+#
+# Starts a dummy_at32f403a MCU simulator process for each toolhead whose
+# real MCU has been marked dead/disconnected via the "Bypass MCU
+# (Disconnected)" firmware-config option. Must run before S60klipper so
+# the pty each process opens exists before Klippy tries to connect.
+
+PATH=/sbin:/bin:/usr/sbin:/usr/bin
+export PATH
+
+DAEMON=/usr/local/bin/klipper-dummy-at32f403a
+PINS_CONF=/usr/local/share/toolhead-sim/pins.conf
+CONFIG_DIR=/oem/printer_data/config/extended/klipper
+
+# Toolhead number -> MCU name (matches [mcu e0]..[mcu e3] in printer.cfg)
+TOOLHEADS="1:e0 2:e1 3:e2 4:e3"
+
+start() {
+    for pair in $TOOLHEADS; do
+        n="${pair%%:*}"
+        mcu="${pair##*:}"
+        marker="$CONFIG_DIR/faulty_toolhead${n}_mcu.cfg"
+        pidfile="/var/run/toolhead-sim-${mcu}.pid"
+        sock="/tmp/klipper_host_${mcu}"
+
+        if [ ! -e "$marker" ]; then
+            continue
+        fi
+
+        printf "Starting toolhead-sim (%s): " "$mcu"
+        if [ -f "$pidfile" ] && kill -0 "$(cat "$pidfile")" 2>/dev/null; then
+            echo "already running"
+            continue
+        fi
+
+        start-stop-daemon -S -b -m -u lava -p "$pidfile" -x "$DAEMON" \
+            -- -I "$sock" -c "$PINS_CONF"
+        echo "OK"
+    done
+}
+
+stop() {
+    for pair in $TOOLHEADS; do
+        mcu="${pair##*:}"
+        pidfile="/var/run/toolhead-sim-${mcu}.pid"
+
+        if [ -f "$pidfile" ]; then
+            printf "Stopping toolhead-sim (%s): " "$mcu"
+            start-stop-daemon -K -p "$pidfile" -s TERM
+            rm -f "$pidfile"
+            echo "OK"
+        fi
+    done
+}
+
+case "$1" in
+    start)
+        start
+        ;;
+    stop)
+        stop
+        ;;
+    restart|reload)
+        stop
+        sleep 1
+        start
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|restart}"
+        exit 1
+        ;;
+esac
+
+exit $?

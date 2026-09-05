@@ -7,12 +7,19 @@ settings:
     items:
       toolhead3:
         label: Toolhead 3
-        description: Temporary thermistor and heating bypass for Toolhead 3.
+        description: Temporary thermistor, heating, and MCU bypass for Toolhead 3.
         help_url: http://snapmakeru1-extended-firmware.pages.dev/faulty_toolhead
         get_cmd:
           - bash
           - -c
-          - test -e /oem/printer_data/config/extended/klipper/faulty_toolhead3.cfg && echo "bypass_thermistor" || echo "enabled"
+          - |
+            if test -e /oem/printer_data/config/extended/klipper/faulty_toolhead3_mcu.cfg; then
+              echo "bypass_mcu"
+            elif test -e /oem/printer_data/config/extended/klipper/faulty_toolhead3.cfg; then
+              echo "bypass_thermistor"
+            else
+              echo "enabled"
+            fi
         options:
           enabled:
             label: Normal
@@ -20,8 +27,10 @@ settings:
               - bash
               - -xc
               - |
-                rm -f /oem/printer_data/config/extended/klipper/faulty_toolhead3.cfg &&
-                echo "Toolhead 3 thermistor bypass disabled. Restarting Klipper..." &&
+                rm -f /oem/printer_data/config/extended/klipper/faulty_toolhead3.cfg \
+                      /oem/printer_data/config/extended/klipper/faulty_toolhead3_mcu.cfg &&
+                echo "Toolhead 3 bypass disabled. Restarting Klipper..." &&
+                /etc/init.d/S59toolhead-sim restart &&
                 /etc/init.d/S60klipper restart
           bypass_thermistor:
             label: Bypass Thermistor
@@ -31,7 +40,22 @@ settings:
               - -xc
               - |
                 mkdir -p /oem/printer_data/config/extended/klipper &&
+                rm -f /oem/printer_data/config/extended/klipper/faulty_toolhead3_mcu.cfg &&
                 ln -sf /usr/local/share/firmware-config/tweaks/klipper/faulty_toolhead3.cfg /oem/printer_data/config/extended/klipper/faulty_toolhead3.cfg &&
                 echo "Toolhead 3 faulty toolhead bypass enabled. Restarting Klipper..." &&
+                /etc/init.d/S59toolhead-sim restart &&
+                /etc/init.d/S60klipper restart
+          bypass_mcu:
+            label: Bypass MCU (Disconnected)
+            confirm: "Apply the MCU bypass to Toolhead 3? Use this only if Toolhead 3's board is dead or its cable is disconnected. This makes Toolhead 3's stepper and heater fully inert - it cannot move, extrude, or heat at all - but lets the printer boot and keep using the other toolheads."
+            cmd:
+              - bash
+              - -xc
+              - |
+                mkdir -p /oem/printer_data/config/extended/klipper &&
+                rm -f /oem/printer_data/config/extended/klipper/faulty_toolhead3.cfg &&
+                ln -sf /usr/local/share/firmware-config/tweaks/klipper/faulty_toolhead3_mcu.cfg /oem/printer_data/config/extended/klipper/faulty_toolhead3_mcu.cfg &&
+                echo "Toolhead 3 MCU bypass enabled. Restarting toolhead simulator and Klipper..." &&
+                /etc/init.d/S59toolhead-sim restart &&
                 /etc/init.d/S60klipper restart
         default: enabled

@@ -1,0 +1,1498 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-PackageHomePage: https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware
+# SPDX-FileCopyrightText: Copyright (c) 2026 @paxx12
+diff --git a/src/Kconfig b/src/Kconfig
+index 8432f33f..0d0eb380 100644
+--- a/src/Kconfig
++++ b/src/Kconfig
+@@ -30,6 +30,8 @@ choice
+         bool "Allwinner A64 AR100"
+     config MACH_LINUX
+         bool "Linux process"
++    config MACH_DUMMY_AT32F403A
++        bool "Dummy AT32F403A toolhead simulator"
+     config MACH_SIMU
+         bool "Host simulator"
+ endchoice
+@@ -44,6 +46,7 @@ source "src/rp2040/Kconfig"
+ source "src/pru/Kconfig"
+ source "src/ar100/Kconfig"
+ source "src/linux/Kconfig"
++source "src/dummy_at32f403a/Kconfig"
+ source "src/simulator/Kconfig"
+ 
+ # Generic configuration options for serial ports
+diff --git a/src/dummy_at32f403a/Kconfig b/src/dummy_at32f403a/Kconfig
+new file mode 100644
+index 00000000..8895f982
+--- /dev/null
++++ b/src/dummy_at32f403a/Kconfig
+@@ -0,0 +1,31 @@
++# SPDX-License-Identifier: GPL-3.0-or-later
++# SPDX-PackageHomePage: https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware
++# SPDX-FileCopyrightText: Copyright (c) 2026 @paxx12
++#
++# Kconfig settings for the dummy AT32F403A toolhead simulator
++#
++# This board runs as a normal Linux process (like src/linux) so Klippy can
++# connect to a stand-in MCU when a toolhead's real AT32F403A board is dead
++# or its cable is disconnected. It declares the same pin and I2C bus names
++# as the real toolhead firmware (src/stm32, MACH_AT32F403A) so a printer.cfg
++# override only needs to repoint [mcu eN]'s serial path - no pin renaming.
++
++if MACH_DUMMY_AT32F403A
++
++config DUMMY_AT32F403A_SELECT
++    bool
++    default y
++    select HAVE_GPIO
++    select HAVE_GPIO_ADC
++    select HAVE_GPIO_I2C
++    select HAVE_GPIO_SPI
++
++config BOARD_DIRECTORY
++    string
++    default "dummy_at32f403a"
++
++config CLOCK_FREQ
++    int
++    default 50000000
++
++endif
+diff --git a/src/dummy_at32f403a/Makefile b/src/dummy_at32f403a/Makefile
+new file mode 100644
+index 00000000..4cc8b4fe
+--- /dev/null
++++ b/src/dummy_at32f403a/Makefile
+@@ -0,0 +1,38 @@
++# SPDX-License-Identifier: GPL-3.0-or-later
++# SPDX-PackageHomePage: https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware
++# SPDX-FileCopyrightText: Copyright (c) 2026 @paxx12
++#
++# Additional build rules for the dummy AT32F403A toolhead simulator
++
++dirs-y += src/dummy_at32f403a src/generic
++
++src-y += dummy_at32f403a/main.c dummy_at32f403a/timer.c
++src-y += dummy_at32f403a/console.c dummy_at32f403a/watchdog.c
++src-y += dummy_at32f403a/gpio.c dummy_at32f403a/adc.c dummy_at32f403a/i2c.c
++src-y += dummy_at32f403a/spi.c
++src-y += dummy_at32f403a/pinvalues.c
++src-y += generic/crc16_ccitt.c generic/alloc.c
++
++# Every toolhead's [inductance_coil extruderN] (Z-offset probing) makes
++# klippy validate these commands against the MCU dictionary at connect
++# time, regardless of which MCU backs the toolhead - see inductance_coil.c.
++src-y += dummy_at32f403a/inductance_coil.c
++
++# Every toolhead's [power_loss_check eN] makes klippy validate these
++# commands against the MCU dictionary at connect time too - see
++# power_loss_check.c.
++src-y += dummy_at32f403a/power_loss_check.c
++
++# Toolhead 1's [sensor_accelerometer_identify e0_accelerometer] sensor_list
++# includes "sc7a20 e0_sc7a20", so klippy needs the query_sc7a20 command
++# too. sensor_sc7a20.c (src/sensor_sc7a20.c) is generic, board-independent
++# Klipper code - built only against basecmd/command/sched/spicmds, no
++# AT32-specific register access - so it's reused as-is rather than
++# reimplemented, same as spicmds.c. Real hardware pulls it in via
++# CONFIG_WANT_SC7A20=y set directly in lava/at32f403a_config; upstream
++# src/Kconfig never defines a WANT_SC7A20 option to select it through the
++# normal Kconfig tree, so it's added directly here instead of relying on
++# that (missing) select.
++src-y += sensor_sc7a20.c
++
++CFLAGS_klipper.elf += -lutil -lrt -lpthread
+diff --git a/src/dummy_at32f403a/adc.c b/src/dummy_at32f403a/adc.c
+new file mode 100644
+index 00000000..d0d1a69f
+--- /dev/null
++++ b/src/dummy_at32f403a/adc.c
+@@ -0,0 +1,58 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++// SPDX-PackageHomePage: https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware
++// SPDX-FileCopyrightText: Copyright (c) 2026 @paxx12
++//
++// Dummy analog-in backend for the AT32F403A toolhead simulator
++//
++// This file may be distributed under the terms of the GNU GPLv3 license.
++//
++// Analog pins reuse the same "PA0".."PI15" pin namespace gpio.c declares
++// (matching the real toolhead firmware, where a thermistor's sensor_pin is
++// just a regular port pin, e.g. "PC5"), plus the chip's internal
++// temperature sensor pseudo-pin. Reads return a configured value from
++// pinvalues.c if set, else a fixed mid-range default so an unconfigured
++// analog pin can never look like an open/shorted thermistor and trip a
++// MINTEMP/MAXTEMP fault.
++
++#include "command.h" // DECL_ENUMERATION
++#include "gpio.h" // gpio_adc_setup
++#include "internal.h" // GPIO
++
++// Matches the real toolhead MCU (also a 12-bit ADC) - klippy looks this
++// constant up to interpret raw readings, so it must be present even though
++// this backend never samples real hardware.
++DECL_CONSTANT("ADC_MAX", 4095);
++
++#define ADC_TEMPERATURE_PIN 0xffffffff
++DECL_ENUMERATION("pin", "ADC_TEMPERATURE", ADC_TEMPERATURE_PIN);
++
++// Default raw ADC reading (12-bit) when a pin has no configured value.
++// Chosen to decode to a plausible room-temperature reading for the
++// thermistor curves used on this printer's toolheads.
++#define DEFAULT_ADC_RAW 1024
++
++struct gpio_adc
++gpio_adc_setup(uint32_t pin)
++{
++    return (struct gpio_adc){ .pin = pin };
++}
++
++uint32_t
++gpio_adc_sample(struct gpio_adc g)
++{
++    return 0;
++}
++
++uint16_t
++gpio_adc_read(struct gpio_adc g)
++{
++    uint16_t val;
++    if (pinvalues_get_analog(g.pin, &val))
++        return val;
++    return DEFAULT_ADC_RAW;
++}
++
++void
++gpio_adc_cancel_sample(struct gpio_adc g)
++{
++}
+diff --git a/src/dummy_at32f403a/console.c b/src/dummy_at32f403a/console.c
+new file mode 100644
+index 00000000..900bb704
+--- /dev/null
++++ b/src/dummy_at32f403a/console.c
+@@ -0,0 +1,198 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++// SPDX-PackageHomePage: https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware
++// SPDX-FileCopyrightText: Copyright (c) 2026 @paxx12
++//
++// TTY based IO for the dummy AT32F403A toolhead simulator
++//
++// Adapted from src/linux/console.c (unchanged - not chip-specific)
++// Copyright (C) 2017-2021  Kevin O'Connor <kevin@koconnor.net>
++//
++// This file may be distributed under the terms of the GNU GPLv3 license.
++
++#define _GNU_SOURCE
++#include <errno.h> // errno
++#include <fcntl.h> // fcntl
++#include <poll.h> // ppoll
++#include <pty.h> // openpty
++#include <stdio.h> // fprintf
++#include <string.h> // memmove
++#include <sys/stat.h> // chmod
++#include <time.h> // struct timespec
++#include <unistd.h> // ttyname
++#include "board/irq.h" // irq_wait
++#include "board/misc.h" // console_sendf
++#include "command.h" // command_find_block
++#include "internal.h" // console_setup
++#include "sched.h" // sched_wake_task
++
++static struct pollfd main_pfd[1];
++#define MP_TTY_IDX   0
++
++// Report 'errno' in a message written to stderr
++void
++report_errno(char *where, int rc)
++{
++    int e = errno;
++    fprintf(stderr, "Got error %d in %s: (%d)%s\n", rc, where, e, strerror(e));
++}
++
++
++/****************************************************************
++ * Setup
++ ****************************************************************/
++
++int
++set_non_blocking(int fd)
++{
++    int flags = fcntl(fd, F_GETFL);
++    if (flags < 0) {
++        report_errno("fcntl getfl", flags);
++        return -1;
++    }
++    int ret = fcntl(fd, F_SETFL, flags | O_NONBLOCK);
++    if (ret < 0) {
++        report_errno("fcntl setfl", flags);
++        return -1;
++    }
++    return 0;
++}
++
++int
++set_close_on_exec(int fd)
++{
++    int ret = fcntl(fd, F_SETFD, FD_CLOEXEC);
++    if (ret < 0) {
++        report_errno("fcntl set cloexec", ret);
++        return -1;
++    }
++    return 0;
++}
++
++int
++console_setup(char *name)
++{
++    // Open pseudo-tty
++    struct termios ti;
++    memset(&ti, 0, sizeof(ti));
++    int mfd, sfd, ret = openpty(&mfd, &sfd, NULL, &ti, NULL);
++    if (ret) {
++        report_errno("openpty", ret);
++        return -1;
++    }
++    ret = set_non_blocking(mfd);
++    if (ret)
++        return -1;
++    ret = set_close_on_exec(mfd);
++    if (ret)
++        return -1;
++    ret = set_close_on_exec(sfd);
++    if (ret)
++        return -1;
++    main_pfd[MP_TTY_IDX].fd = mfd;
++    main_pfd[MP_TTY_IDX].events = POLLIN;
++
++    // Create symlink to tty
++    unlink(name);
++    char *tname = ttyname(sfd);
++    if (!tname) {
++        report_errno("ttyname", 0);
++        return -1;
++    }
++    ret = symlink(tname, name);
++    if (ret) {
++        report_errno("symlink", ret);
++        return -1;
++    }
++    ret = chmod(tname, 0666);
++    if (ret) {
++        report_errno("chmod", ret);
++        return -1;
++    }
++
++    // Make sure stderr is non-blocking
++    ret = set_non_blocking(STDERR_FILENO);
++    if (ret)
++        return -1;
++
++    return 0;
++}
++
++
++/****************************************************************
++ * Console handling
++ ****************************************************************/
++
++static struct task_wake console_wake;
++static uint8_t receive_buf[4096];
++static int receive_pos;
++
++void *
++console_receive_buffer(void)
++{
++    return receive_buf;
++}
++
++// Process any incoming commands
++void
++console_task(void)
++{
++    if (!sched_check_wake(&console_wake))
++        return;
++
++    // Read data
++    int ret = read(main_pfd[MP_TTY_IDX].fd, &receive_buf[receive_pos]
++                   , sizeof(receive_buf) - receive_pos);
++    if (ret < 0) {
++        if (errno == EWOULDBLOCK) {
++            ret = 0;
++        } else {
++            report_errno("read", ret);
++            return;
++        }
++    }
++    if (ret == 15 && receive_buf[receive_pos+14] == '\n'
++        && memcmp(&receive_buf[receive_pos], "FORCE_SHUTDOWN\n", 15) == 0)
++        shutdown("Force shutdown command");
++
++    // Find and dispatch message blocks in the input
++    int len = receive_pos + ret;
++    uint_fast8_t pop_count, msglen = len > MESSAGE_MAX ? MESSAGE_MAX : len;
++    ret = command_find_and_dispatch(receive_buf, msglen, &pop_count);
++    if (ret) {
++        len -= pop_count;
++        if (len) {
++            memmove(receive_buf, &receive_buf[pop_count], len);
++            sched_wake_task(&console_wake);
++        }
++    }
++    receive_pos = len;
++}
++DECL_TASK(console_task);
++
++// Encode and transmit a "response" message
++void
++console_sendf(const struct command_encoder *ce, va_list args)
++{
++    // Generate message
++    uint8_t buf[MESSAGE_MAX];
++    uint_fast8_t msglen = command_encode_and_frame(buf, ce, args);
++
++    // Transmit message
++    int ret = write(main_pfd[MP_TTY_IDX].fd, buf, msglen);
++    if (ret < 0)
++        report_errno("write", ret);
++}
++
++// Sleep until a signal received (waking early for console input if needed)
++void
++console_sleep(sigset_t *sigset)
++{
++    int ret = ppoll(main_pfd, ARRAY_SIZE(main_pfd), NULL, sigset);
++    if (ret <= 0) {
++        if (errno != EINTR)
++            report_errno("ppoll main_pfd", ret);
++        return;
++    }
++    if (main_pfd[MP_TTY_IDX].revents)
++        sched_wake_task(&console_wake);
++}
+diff --git a/src/dummy_at32f403a/gpio.c b/src/dummy_at32f403a/gpio.c
+new file mode 100644
+index 00000000..39968c45
+--- /dev/null
++++ b/src/dummy_at32f403a/gpio.c
+@@ -0,0 +1,98 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++// SPDX-PackageHomePage: https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware
++// SPDX-FileCopyrightText: Copyright (c) 2026 @paxx12
++//
++// Dummy digital GPIO backend for the AT32F403A toolhead simulator
++//
++// This file may be distributed under the terms of the GNU GPLv3 license.
++//
++// Declares the same pin names as the real toolhead firmware
++// (src/stm32/gpio.c, MACH_AT32F403A) so a printer.cfg override for a dead
++// toolhead needs no pin renaming - PA8, PB5, PC5, etc. all keep working.
++// Every access is tracked in memory only; nothing here ever touches real
++// hardware. A digital input returns the value configured for it via
++// pinvalues.c, if any, else the state last written to that same pin
++// (loopback), which is a safe default for step/dir/enable-style pins.
++
++#include "command.h" // DECL_ENUMERATION_RANGE
++#include "gpio.h" // gpio_out_setup
++#include "internal.h" // GPIO
++#include "sched.h" // sched_shutdown
++
++DECL_ENUMERATION_RANGE("pin", "PA0", GPIO('A', 0), MAX_GPIO_LINES);
++DECL_ENUMERATION_RANGE("pin", "PB0", GPIO('B', 0), MAX_GPIO_LINES);
++DECL_ENUMERATION_RANGE("pin", "PC0", GPIO('C', 0), MAX_GPIO_LINES);
++DECL_ENUMERATION_RANGE("pin", "PD0", GPIO('D', 0), MAX_GPIO_LINES);
++DECL_ENUMERATION_RANGE("pin", "PE0", GPIO('E', 0), MAX_GPIO_LINES);
++DECL_ENUMERATION_RANGE("pin", "PF0", GPIO('F', 0), MAX_GPIO_LINES);
++DECL_ENUMERATION_RANGE("pin", "PG0", GPIO('G', 0), MAX_GPIO_LINES);
++DECL_ENUMERATION_RANGE("pin", "PH0", GPIO('H', 0), MAX_GPIO_LINES);
++DECL_ENUMERATION_RANGE("pin", "PI0", GPIO('I', 0), MAX_GPIO_LINES);
++
++#define NUM_PORTS 9
++static struct gpio_line gpio_lines[NUM_PORTS * MAX_GPIO_LINES];
++
++static struct gpio_line *
++gpio_line_lookup(uint32_t pin)
++{
++    if (pin >= ARRAY_SIZE(gpio_lines))
++        shutdown("Not a valid pin");
++    struct gpio_line *line = &gpio_lines[pin];
++    line->pin = pin;
++    return line;
++}
++
++struct gpio_out
++gpio_out_setup(uint32_t pin, uint32_t val)
++{
++    struct gpio_line *line = gpio_line_lookup(pin);
++    line->state = !!val;
++    return (struct gpio_out){ .line = line };
++}
++
++void
++gpio_out_reset(struct gpio_out g, uint32_t val)
++{
++    g.line->state = !!val;
++}
++
++void
++gpio_out_toggle_noirq(struct gpio_out g)
++{
++    g.line->state = !g.line->state;
++}
++
++void
++gpio_out_toggle(struct gpio_out g)
++{
++    gpio_out_toggle_noirq(g);
++}
++
++void
++gpio_out_write(struct gpio_out g, uint32_t val)
++{
++    g.line->state = !!val;
++}
++
++struct gpio_in
++gpio_in_setup(uint32_t pin, int32_t pull_up)
++{
++    struct gpio_line *line = gpio_line_lookup(pin);
++    return (struct gpio_in){ .line = line };
++}
++
++void
++gpio_in_reset(struct gpio_in g, int32_t pull_up)
++{
++}
++
++uint8_t
++gpio_in_read(struct gpio_in g)
++{
++    uint8_t val;
++    if (pinvalues_get_digital(g.line->pin, &val))
++        return val;
++    // No configured value - loop back whatever this pin was last set to
++    // (safe default for step/dir/enable pins that are also read back).
++    return g.line->state;
++}
+diff --git a/src/dummy_at32f403a/gpio.h b/src/dummy_at32f403a/gpio.h
+new file mode 100644
+index 00000000..a8f341cd
+--- /dev/null
++++ b/src/dummy_at32f403a/gpio.h
+@@ -0,0 +1,55 @@
++#ifndef __DUMMY_AT32F403A_GPIO_H
++#define __DUMMY_AT32F403A_GPIO_H
++// SPDX-License-Identifier: GPL-3.0-or-later
++// SPDX-PackageHomePage: https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware
++// SPDX-FileCopyrightText: Copyright (c) 2026 @paxx12
++
++#include <stdint.h> // uint32_t
++
++struct gpio_line {
++    uint32_t pin;
++    uint8_t state;
++};
++
++struct gpio_out {
++    struct gpio_line *line;
++};
++struct gpio_out gpio_out_setup(uint32_t pin, uint32_t val);
++void gpio_out_reset(struct gpio_out g, uint32_t val);
++void gpio_out_toggle_noirq(struct gpio_out g);
++void gpio_out_toggle(struct gpio_out g);
++void gpio_out_write(struct gpio_out g, uint32_t val);
++
++struct gpio_in {
++    struct gpio_line *line;
++};
++struct gpio_in gpio_in_setup(uint32_t pin, int32_t pull_up);
++void gpio_in_reset(struct gpio_in g, int32_t pull_up);
++uint8_t gpio_in_read(struct gpio_in g);
++
++struct gpio_adc {
++    uint32_t pin;
++};
++struct gpio_adc gpio_adc_setup(uint32_t pin);
++uint32_t gpio_adc_sample(struct gpio_adc g);
++uint16_t gpio_adc_read(struct gpio_adc g);
++void gpio_adc_cancel_sample(struct gpio_adc g);
++
++struct i2c_config {
++    uint8_t bus;
++    uint8_t addr;
++};
++struct i2c_config i2c_setup(uint32_t bus, uint32_t rate, uint8_t addr);
++void i2c_write(struct i2c_config config, uint8_t write_len, uint8_t *write);
++void i2c_read(struct i2c_config config, uint8_t reg_len, uint8_t *reg
++              , uint8_t read_len, uint8_t *read);
++
++struct spi_config {
++    uint32_t bus;
++};
++struct spi_config spi_setup(uint32_t bus, uint8_t mode, uint32_t rate);
++void spi_prepare(struct spi_config config);
++void spi_transfer(struct spi_config config, uint8_t receive_data
++                   , uint8_t data_len, uint8_t *data);
++
++#endif // gpio.h
+diff --git a/src/dummy_at32f403a/i2c.c b/src/dummy_at32f403a/i2c.c
+new file mode 100644
+index 00000000..d444e230
+--- /dev/null
++++ b/src/dummy_at32f403a/i2c.c
+@@ -0,0 +1,50 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++// SPDX-PackageHomePage: https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware
++// SPDX-FileCopyrightText: Copyright (c) 2026 @paxx12
++//
++// Dummy I2C backend for the AT32F403A toolhead simulator
++//
++// This file may be distributed under the terms of the GNU GPLv3 license.
++//
++// Declares the same named I2C buses as the real toolhead firmware
++// (src/stm32/i2c.c). Nothing on this printer's toolheads uses I2C today,
++// but the buses are declared for forward compatibility. Writes are
++// discarded; reads return a value configured per (bus, register) via
++// pinvalues.c, else 0xff.
++
++#include "command.h" // DECL_ENUMERATION
++#include "gpio.h" // i2c_setup
++#include "internal.h" // pinvalues_get_i2c
++
++DECL_ENUMERATION("i2c_bus", "i2c1", 0);
++DECL_ENUMERATION("i2c_bus", "i2c1a", 1);
++DECL_ENUMERATION("i2c_bus", "i2c2", 2);
++DECL_ENUMERATION("i2c_bus", "i2c3", 3);
++DECL_ENUMERATION("i2c_bus", "i2c2a", 4);
++DECL_ENUMERATION("i2c_bus", "i2c3a", 5);
++
++struct i2c_config
++i2c_setup(uint32_t bus, uint32_t rate, uint8_t addr)
++{
++    return (struct i2c_config){ .bus = (uint8_t)bus, .addr = addr };
++}
++
++void
++i2c_write(struct i2c_config config, uint8_t write_len, uint8_t *write)
++{
++}
++
++void
++i2c_read(struct i2c_config config, uint8_t reg_len, uint8_t *reg
++         , uint8_t read_len, uint8_t *read)
++{
++    uint8_t register_id = reg_len ? reg[0] : 0;
++    uint8_t i;
++    for (i = 0; i < read_len; i++) {
++        uint8_t val;
++        if (pinvalues_get_i2c(config.bus, (uint8_t)(register_id + i), &val))
++            read[i] = val;
++        else
++            read[i] = 0xff;
++    }
++}
+diff --git a/src/dummy_at32f403a/inductance_coil.c b/src/dummy_at32f403a/inductance_coil.c
+new file mode 100644
+index 00000000..17e60ffa
+--- /dev/null
++++ b/src/dummy_at32f403a/inductance_coil.c
+@@ -0,0 +1,78 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++// SPDX-PackageHomePage: https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware
++// SPDX-FileCopyrightText: Copyright (c) 2026 @paxx12
++//
++// Dummy inductance_coil backend for the AT32F403A toolhead simulator
++//
++// This file may be distributed under the terms of the GNU GPLv3 license.
++//
++// Every toolhead's printer.cfg has an [inductance_coil extruderN] section
++// (used for Z-offset probing), so klippy's inductance_coil.py always looks
++// up these commands during MCU config, regardless of which MCU backs the
++// toolhead. This is a from-scratch no-op implementation - not a reuse of
++// Snapmaker's src/stm32/inductance_coil.c - matching only the command
++// names and argument/response formats that klippy validates against the
++// MCU's identify dictionary. Since this toolhead never actually probes
++// (it's fully inert while this simulator is in use), no real frequency
++// measurement or triggering logic is implemented.
++
++#include "basecmd.h" // oid_alloc
++#include "board/misc.h" // timer_read_time
++#include "command.h" // DECL_COMMAND
++#include "sensor_bulk.h" // sensor_bulk_status
++
++struct inductance_coil_dev {
++    struct sensor_bulk sb;
++};
++
++void
++command_inductance_coil_config(uint32_t *args)
++{
++    struct inductance_coil_dev *dev = oid_alloc(
++        args[0], command_inductance_coil_config, sizeof(*dev));
++    sensor_bulk_reset(&dev->sb);
++}
++DECL_COMMAND(command_inductance_coil_config,
++             "inductance_coil_config oid=%c cal_mode=%u capture_over_cnt=%u freq_cal_cycle=%u cal_time_out=%u"
++             " trigger_mode=%u trigger_invert=%u trg_freq_ht=%u trg_freq_lt=%u cal_window_size=%u");
++
++void
++command_virtual_gpio_trigger(uint32_t *args)
++{
++}
++DECL_COMMAND(command_virtual_gpio_trigger,
++             "virtual_gpio_trigger oid=%c absolute_mode=%u trigger_mode=%u trigger_invert=%u"
++             " trg_freq_ht=%u trg_freq_lt=%u force_update=%u");
++
++void
++command_virtual_gpio_trigger_with_timer(uint32_t *args)
++{
++}
++DECL_COMMAND(command_virtual_gpio_trigger_with_timer,
++             "virtual_gpio_trigger_with_timer oid=%c absolute_mode=%u trigger_mode=%u trigger_invert=%u"
++             " trg_freq_ht=%u trg_freq_lt=%u force_update=%u clock=%u");
++
++void
++command_query_inductance_coil(uint32_t *args)
++{
++    // rest_ticks==0 (klippy's config-time call) intentionally arms nothing -
++    // this toolhead never actually reports live frequency samples.
++}
++DECL_COMMAND(command_query_inductance_coil, "query_inductance_coil oid=%c rest_ticks=%u");
++
++void
++command_query_inductance_coil_status(uint32_t *args)
++{
++    struct inductance_coil_dev *dev = oid_lookup(args[0], command_inductance_coil_config);
++    sensor_bulk_status(&dev->sb, args[0], timer_read_time(), 0, 0);
++}
++DECL_COMMAND(command_query_inductance_coil_status, "query_inductance_coil_status oid=%c");
++
++void
++command_query_inductance_coil_config_info(uint32_t *args)
++{
++    sendf("inductance_coil_info oid=%c cal_mode=%u capture_over_cnt=%u freq_cal_cycle=%u cal_time_out=%u"
++          " trigger_mode=%u trigger_invert=%u trg_freq_ht=%u trg_freq_lt=%u capture_freq=%u virtual_gpio=%u",
++          args[0], 0, 0, 0, 0, 0, 0, 0, 0, 0, 1);
++}
++DECL_COMMAND(command_query_inductance_coil_config_info, "query_inductance_coil_config_info oid=%c");
+diff --git a/src/dummy_at32f403a/internal.h b/src/dummy_at32f403a/internal.h
+new file mode 100644
+index 00000000..47f62d12
+--- /dev/null
++++ b/src/dummy_at32f403a/internal.h
+@@ -0,0 +1,48 @@
++#ifndef __DUMMY_AT32F403A_INTERNAL_H
++#define __DUMMY_AT32F403A_INTERNAL_H
++// SPDX-License-Identifier: GPL-3.0-or-later
++// SPDX-PackageHomePage: https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware
++// SPDX-FileCopyrightText: Copyright (c) 2026 @paxx12
++//
++// Local definitions for the dummy AT32F403A toolhead simulator
++//
++// Adapted from src/linux/internal.h
++// Copyright (C) 2017-2021  Kevin O'Connor <kevin@koconnor.net>
++//
++// This file may be distributed under the terms of the GNU GPLv3 license.
++
++#include <signal.h> // sigset_t
++#include <stdint.h> // uint32_t
++#include "autoconf.h" // CONFIG_CLOCK_FREQ
++
++// Ports 'A'-'I' (matches the real at32f403a/stm32 pin naming: PA0-PI15)
++#define MAX_GPIO_LINES    16
++#define GPIO(PORT, NUM) (((PORT) - 'A') * MAX_GPIO_LINES + (NUM))
++#define GPIO2PORT(PIN) ((PIN) / MAX_GPIO_LINES + 'A')
++#define GPIO2PIN(PIN) ((PIN) % MAX_GPIO_LINES)
++
++#define NSECS 1000000000
++#define NSECS_PER_TICK (NSECS / CONFIG_CLOCK_FREQ)
++
++// console.c
++void report_errno(char *where, int rc);
++int set_non_blocking(int fd);
++int set_close_on_exec(int fd);
++int console_setup(char *name);
++void console_sleep(sigset_t *sigset);
++
++// timer.c
++int timer_check_periodic(uint32_t *ts);
++void timer_disable_signals(void);
++void timer_enable_signals(void);
++
++// watchdog.c
++int watchdog_setup(void);
++
++// pinvalues.c
++void pinvalues_load(const char *path);
++int pinvalues_get_digital(uint32_t pin, uint8_t *val);
++int pinvalues_get_analog(uint32_t pin, uint16_t *val);
++int pinvalues_get_i2c(uint8_t bus, uint8_t reg, uint8_t *val);
++
++#endif // internal.h
+diff --git a/src/dummy_at32f403a/main.c b/src/dummy_at32f403a/main.c
+new file mode 100644
+index 00000000..6144311e
+--- /dev/null
++++ b/src/dummy_at32f403a/main.c
+@@ -0,0 +1,126 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++// SPDX-PackageHomePage: https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware
++// SPDX-FileCopyrightText: Copyright (c) 2026 @paxx12
++//
++// Main starting point for the dummy AT32F403A toolhead simulator
++//
++// Adapted from src/linux/main.c
++// Copyright (C) 2017  Kevin O'Connor <kevin@koconnor.net>
++//
++// This file may be distributed under the terms of the GNU GPLv3 license.
++//
++// Runs as a normal Linux process, standing in for a toolhead's real
++// AT32F403A MCU when it's dead or its cable is disconnected, so Klippy can
++// still connect to something and the printer boots with its other
++// toolheads intact. Adds a "-c <path>" option (not present in src/linux)
++// pointing at a plain text file of canned pin/I2C return values - see
++// pinvalues.c.
++
++#include <sched.h> // sched_setscheduler sched_get_priority_max
++#include <stdio.h> // fprintf
++#include <string.h> // memset
++#include <unistd.h> // getopt
++#include <sys/mman.h> // mlockall MCL_CURRENT MCL_FUTURE
++#include "board/misc.h" // console_sendf
++#include "command.h" // DECL_CONSTANT
++#include "internal.h" // console_setup, pinvalues_load
++#include "sched.h" // sched_main
++
++DECL_CONSTANT_STR("MCU", "dummy_at32f403a");
++
++
++/****************************************************************
++ * Real-time setup
++ ****************************************************************/
++
++static int
++realtime_setup(void)
++{
++    struct sched_param sp;
++    memset(&sp, 0, sizeof(sp));
++    sp.sched_priority = sched_get_priority_max(SCHED_FIFO) / 2;
++    int ret = sched_setscheduler(0, SCHED_FIFO, &sp);
++    if (ret < 0) {
++        report_errno("sched_setscheduler", ret);
++        return -1;
++    }
++    // Lock ourselves into memory
++    ret = mlockall(MCL_CURRENT | MCL_FUTURE);
++    if (ret) {
++        report_errno("mlockall", ret);
++        return -1;
++    }
++    return 0;
++}
++
++
++/****************************************************************
++ * Restart
++ ****************************************************************/
++
++static char **orig_argv;
++
++void
++command_config_reset(uint32_t *args)
++{
++    if (! sched_is_shutdown())
++        shutdown("config_reset only available when shutdown");
++    int ret = execv(orig_argv[0], orig_argv);
++    report_errno("execv", ret);
++}
++DECL_COMMAND_FLAGS(command_config_reset, HF_IN_SHUTDOWN, "config_reset");
++
++
++/****************************************************************
++ * Startup
++ ****************************************************************/
++
++int
++main(int argc, char **argv)
++{
++    // Parse program args
++    orig_argv = argv;
++    int opt, watchdog = 0, realtime = 0;
++    char *serial = "/tmp/klipper_host_mcu";
++    char *pinvalues_path = NULL;
++    while ((opt = getopt(argc, argv, "wrI:c:")) != -1) {
++        switch (opt) {
++        case 'w':
++            watchdog = 1;
++            break;
++        case 'r':
++            realtime = 1;
++            break;
++        case 'I':
++            serial = optarg;
++            break;
++        case 'c':
++            pinvalues_path = optarg;
++            break;
++        default:
++            fprintf(stderr, "Usage: %s [-w] [-r] [-I path] [-c pinvalues-path]\n",
++                    argv[0]);
++            return -1;
++        }
++    }
++
++    // Initial setup
++    if (realtime) {
++        int ret = realtime_setup();
++        if (ret)
++            return ret;
++    }
++    pinvalues_load(pinvalues_path);
++    int ret = console_setup(serial);
++    if (ret)
++        return -1;
++    if (watchdog) {
++        int ret = watchdog_setup();
++        if (ret)
++            return ret;
++    }
++
++    // Main loop
++    sched_main();
++    return 0;
++}
+diff --git a/src/dummy_at32f403a/pinvalues.c b/src/dummy_at32f403a/pinvalues.c
+new file mode 100644
+index 00000000..7831f399
+--- /dev/null
++++ b/src/dummy_at32f403a/pinvalues.c
+@@ -0,0 +1,149 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++// SPDX-PackageHomePage: https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware
++// SPDX-FileCopyrightText: Copyright (c) 2026 @paxx12
++//
++// Configurable canned return values for the dummy AT32F403A simulator
++//
++// This file may be distributed under the terms of the GNU GPLv3 license.
++//
++// Loads a plain text file (one entry per line) that lets an operator pick
++// what a "dead" toolhead's pins/I2C registers report, without recompiling:
++//
++//   PC5 analog 1800      # gpio_adc_read() on pin PC5 returns 1800
++//   PA15 digital 1        # gpio_in_read() on pin PA15 returns 1
++//   i2c1 0x30 0xAB         # i2c_read() reg 0x30 on bus i2c1 returns 0xAB
++//
++// Lines starting with '#' and blank lines are ignored. Unlisted pins fall
++// back to a safe default (see gpio.c/adc.c/i2c.c).
++
++#include <ctype.h> // isdigit
++#include <stdio.h> // fopen
++#include <stdlib.h> // strtol
++#include <string.h> // strcmp
++#include "internal.h" // pinvalues_load
++
++#define MAX_ENTRIES 128
++
++struct pin_entry {
++    uint32_t pin;
++    uint8_t is_analog;
++    uint16_t val;
++};
++
++struct i2c_entry {
++    uint8_t bus;
++    uint8_t reg;
++    uint8_t val;
++};
++
++static struct pin_entry pin_entries[MAX_ENTRIES];
++static int pin_entry_count;
++static struct i2c_entry i2c_entries[MAX_ENTRIES];
++static int i2c_entry_count;
++
++static const char *i2c_bus_names[] = {
++    "i2c1", "i2c1a", "i2c2", "i2c3", "i2c2a", "i2c3a",
++};
++#define I2C_BUS_COUNT (int)(sizeof(i2c_bus_names) / sizeof(i2c_bus_names[0]))
++
++// Parse a pin name like "PC5" into the same id gpio.c's GPIO() macro uses
++static int
++parse_pin_name(const char *name, uint32_t *pin)
++{
++    if (name[0] != 'P' || name[1] < 'A' || name[1] > 'I')
++        return -1;
++    const char *digits = &name[2];
++    if (!digits[0] || !isdigit((unsigned char)digits[0]))
++        return -1;
++    int num = atoi(digits);
++    if (num < 0 || num >= MAX_GPIO_LINES)
++        return -1;
++    *pin = GPIO(name[1], num);
++    return 0;
++}
++
++static int
++parse_i2c_bus_name(const char *name)
++{
++    int i;
++    for (i = 0; i < I2C_BUS_COUNT; i++)
++        if (strcmp(name, i2c_bus_names[i]) == 0)
++            return i;
++    return -1;
++}
++
++void
++pinvalues_load(const char *path)
++{
++    if (!path)
++        return;
++    FILE *f = fopen(path, "r");
++    if (!f)
++        return;
++
++    char line[128];
++    while (fgets(line, sizeof(line), f)) {
++        char tok0[32], tok1[32], tok2[32];
++        int n = sscanf(line, " %31s %31s %31s", tok0, tok1, tok2);
++        if (n != 3 || tok0[0] == '#')
++            continue;
++
++        uint32_t pin;
++        if (parse_pin_name(tok0, &pin) == 0) {
++            if (pin_entry_count >= MAX_ENTRIES)
++                continue;
++            struct pin_entry *e = &pin_entries[pin_entry_count++];
++            e->pin = pin;
++            e->is_analog = strcmp(tok1, "analog") == 0;
++            e->val = (uint16_t)strtol(tok2, NULL, 0);
++            continue;
++        }
++
++        int bus = parse_i2c_bus_name(tok0);
++        if (bus >= 0) {
++            if (i2c_entry_count >= MAX_ENTRIES)
++                continue;
++            struct i2c_entry *e = &i2c_entries[i2c_entry_count++];
++            e->bus = (uint8_t)bus;
++            e->reg = (uint8_t)strtol(tok1, NULL, 0);
++            e->val = (uint8_t)strtol(tok2, NULL, 0);
++        }
++    }
++    fclose(f);
++}
++
++int
++pinvalues_get_digital(uint32_t pin, uint8_t *val)
++{
++    int i;
++    for (i = 0; i < pin_entry_count; i++)
++        if (pin_entries[i].pin == pin && !pin_entries[i].is_analog) {
++            *val = (uint8_t)pin_entries[i].val;
++            return 1;
++        }
++    return 0;
++}
++
++int
++pinvalues_get_analog(uint32_t pin, uint16_t *val)
++{
++    int i;
++    for (i = 0; i < pin_entry_count; i++)
++        if (pin_entries[i].pin == pin && pin_entries[i].is_analog) {
++            *val = pin_entries[i].val;
++            return 1;
++        }
++    return 0;
++}
++
++int
++pinvalues_get_i2c(uint8_t bus, uint8_t reg, uint8_t *val)
++{
++    int i;
++    for (i = 0; i < i2c_entry_count; i++)
++        if (i2c_entries[i].bus == bus && i2c_entries[i].reg == reg) {
++            *val = i2c_entries[i].val;
++            return 1;
++        }
++    return 0;
++}
+diff --git a/src/dummy_at32f403a/power_loss_check.c b/src/dummy_at32f403a/power_loss_check.c
+new file mode 100644
+index 00000000..b7ccd88e
+--- /dev/null
++++ b/src/dummy_at32f403a/power_loss_check.c
+@@ -0,0 +1,73 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++// SPDX-PackageHomePage: https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware
++// SPDX-FileCopyrightText: Copyright (c) 2026 @paxx12
++//
++// Dummy power_loss_check backend for the AT32F403A toolhead simulator
++//
++// This file may be distributed under the terms of the GNU GPLv3 license.
++//
++// Every toolhead's printer.cfg has a [power_loss_check eN] section, so
++// klippy's power_loss_check.py always looks up these commands during MCU
++// config, regardless of which MCU backs the toolhead. This is a
++// from-scratch no-op implementation - not a reuse of Snapmaker's
++// src/stm32/power_loss_check.c - matching only the command names and
++// argument/response formats that klippy validates against the MCU's
++// identify dictionary. Since this toolhead is fully inert while this
++// simulator is in use, no real voltage-duty detection or flash-backed
++// stepper-position save/restore is implemented; queries report a
++// permanently "no power loss, nothing saved" state.
++
++#include "basecmd.h" // oid_alloc
++#include "command.h" // DECL_COMMAND
++
++struct power_loss_check_dev {
++    uint8_t unused;
++};
++
++void
++command_config_power_loss_check(uint32_t *args)
++{
++    oid_alloc(args[0], command_config_power_loss_check,
++              sizeof(struct power_loss_check_dev));
++}
++DECL_COMMAND(command_config_power_loss_check,
++             "config_power_loss_check oid=%c clock=%u power_loss_trigger_time=%u report_interval=%u duty_threshold=%u"
++             " debounce_threshold=%u type_confirm_threshold=%u");
++
++void
++command_update_report_interval(uint32_t *args)
++{
++}
++DECL_COMMAND(command_update_report_interval, "update_report_interval oid=%c report_interval=%u");
++
++void
++command_enable_power_loss(uint32_t *args)
++{
++}
++DECL_COMMAND(command_enable_power_loss,
++             "enable_power_loss oid=%c enable=%u print_flag=%u move_line=%u");
++
++void
++command_query_power_loss_stepper_info(uint32_t *args)
++{
++    // No flash-saved stepper positions to report - this toolhead's stepper
++    // never actually moves while this simulator is in use.
++    sendf("power_loss_stepper_info_result oid=%c result=%u", args[0], 1);
++}
++DECL_COMMAND(command_query_power_loss_stepper_info, "query_power_loss_stepper_info oid=%c type=%u index=%u");
++
++void
++command_query_power_loss_flash_valid(uint32_t *args)
++{
++    sendf("power_loss_flash_valid oid=%c last_seq=%u valid_sector_count=%u env_flag=%u save_stepper_num=%u",
++          args[0], 0, 0, 0, 0);
++}
++DECL_COMMAND(command_query_power_loss_flash_valid, "query_power_loss_flash_valid oid=%c");
++
++void
++command_query_power_loss_status(uint32_t *args)
++{
++    sendf("power_loss_status oid=%c high_level=%u low_level=%u voltage_type=%u power_loss_flag=%u initialized=%u",
++          args[0], 0xffffffff, 0xffffffff, 0xff, 0, 1);
++}
++DECL_COMMAND(command_query_power_loss_status, "query_power_loss_status oid=%c");
+diff --git a/src/dummy_at32f403a/spi.c b/src/dummy_at32f403a/spi.c
+new file mode 100644
+index 00000000..77735235
+--- /dev/null
++++ b/src/dummy_at32f403a/spi.c
+@@ -0,0 +1,51 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++// SPDX-PackageHomePage: https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware
++// SPDX-FileCopyrightText: Copyright (c) 2026 @paxx12
++//
++// Dummy SPI backend for the AT32F403A toolhead simulator
++//
++// This file may be distributed under the terms of the GNU GPLv3 license.
++//
++// Toolhead e0's [sensor_accelerometer_identify e0_accelerometer] probes
++// spi1 for a lis2dw/sc7a20 chip at klippy connect time regardless of which
++// MCU backs the toolhead, so klippy needs the "spi_send"/"spi_transfer"
++// commands (declared generically in src/spicmds.c, auto-included whenever
++// HAVE_GPIO_SPI is selected) to find a matching MCU. This backend declares
++// the same spi_bus names as the real toolhead firmware
++// (src/stm32/spi.c, MACH_AT32F403A) but every transfer is a no-op that
++// reads back zero bytes - since nothing is really connected, the WHO_AM_I
++// identify reads never match a known chip and
++// sensor_accelerometer_identify just logs "No sensor identified", which is
++// not fatal.
++
++#include <string.h> // memset
++#include "command.h" // DECL_ENUMERATION
++#include "gpio.h" // spi_setup
++
++DECL_ENUMERATION("spi_bus", "spi1", 0);
++DECL_CONSTANT_STR("BUS_PINS_spi1", "PA6,PA7,PA5");
++DECL_ENUMERATION("spi_bus", "spi1a", 1);
++DECL_CONSTANT_STR("BUS_PINS_spi1a", "PB4,PB5,PB3");
++DECL_ENUMERATION("spi_bus", "spi2", 2);
++DECL_CONSTANT_STR("BUS_PINS_spi2", "PB14,PB15,PB13");
++DECL_ENUMERATION("spi_bus", "spi3", 3);
++DECL_CONSTANT_STR("BUS_PINS_spi3", "PB4,PB5,PB3");
++
++struct spi_config
++spi_setup(uint32_t bus, uint8_t mode, uint32_t rate)
++{
++    return (struct spi_config){ .bus = bus };
++}
++
++void
++spi_prepare(struct spi_config config)
++{
++}
++
++void
++spi_transfer(struct spi_config config, uint8_t receive_data
++             , uint8_t data_len, uint8_t *data)
++{
++    if (receive_data)
++        memset(data, 0, data_len);
++}
+diff --git a/src/dummy_at32f403a/timer.c b/src/dummy_at32f403a/timer.c
+new file mode 100644
+index 00000000..dd705dce
+--- /dev/null
++++ b/src/dummy_at32f403a/timer.c
+@@ -0,0 +1,290 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++// SPDX-PackageHomePage: https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware
++// SPDX-FileCopyrightText: Copyright (c) 2026 @paxx12
++//
++// Handling of timers for the dummy AT32F403A toolhead simulator
++//
++// Adapted from src/linux/timer.c (unchanged - not chip-specific)
++// Copyright (C) 2017-2021  Kevin O'Connor <kevin@koconnor.net>
++//
++// This file may be distributed under the terms of the GNU GPLv3 license.
++
++#include <time.h> // struct timespec
++#include "autoconf.h" // CONFIG_CLOCK_FREQ
++#include "board/io.h" // readl
++#include "board/irq.h" // irq_disable
++#include "board/misc.h" // timer_from_us
++#include "command.h" // DECL_CONSTANT
++#include "internal.h" // console_sleep
++#include "sched.h" // DECL_INIT
++
++// Global storage for timer handling
++static struct {
++    // Last time reported by timer_read_time()
++    uint32_t last_read_time;
++    // Fields for converting from a systime to ticks
++    time_t start_sec;
++    // Flags for tracking irq_enable()/irq_disable()
++    uint32_t must_wake_timers;
++    // Time of next software timer (also used to convert from ticks to systime)
++    uint32_t next_wake_counter;
++    struct timespec next_wake;
++    // Unix signal tracking
++    timer_t t_alarm;
++    sigset_t ss_alarm, ss_sleep;
++} TimerInfo;
++
++
++/****************************************************************
++ * Timespec helpers
++ ****************************************************************/
++
++// Convert a 'struct timespec' to a counter value
++static inline uint32_t
++timespec_to_time(struct timespec ts)
++{
++    return ((ts.tv_sec - TimerInfo.start_sec) * CONFIG_CLOCK_FREQ
++            + ts.tv_nsec / NSECS_PER_TICK);
++}
++
++// Convert an internal time counter to a 'struct timespec'
++static inline struct timespec
++timespec_from_time(uint32_t time)
++{
++    int32_t counter_diff = time - TimerInfo.next_wake_counter;
++    struct timespec ts;
++    ts.tv_sec = TimerInfo.next_wake.tv_sec;
++    ts.tv_nsec = TimerInfo.next_wake.tv_nsec + counter_diff * NSECS_PER_TICK;
++    if ((unsigned long)ts.tv_nsec >= NSECS) {
++        if (ts.tv_nsec < 0) {
++            ts.tv_sec--;
++            ts.tv_nsec += NSECS;
++        } else {
++            ts.tv_sec++;
++            ts.tv_nsec -= NSECS;
++        }
++    }
++    return ts;
++}
++
++// Return the current time
++static struct timespec
++timespec_read(void)
++{
++    struct timespec ts;
++    clock_gettime(CLOCK_MONOTONIC, &ts);
++    return ts;
++}
++
++
++/****************************************************************
++ * Timers
++ ****************************************************************/
++
++DECL_CONSTANT("CLOCK_FREQ", CONFIG_CLOCK_FREQ);
++
++// Check if a given time has past
++int
++timer_check_periodic(uint32_t *ts)
++{
++    uint32_t lrt = TimerInfo.last_read_time;
++    if (timer_is_before(lrt, *ts))
++        return 0;
++    *ts = lrt + timer_from_us(2000000);
++    return 1;
++}
++
++// Return the number of clock ticks for a given number of microseconds
++uint32_t
++timer_from_us(uint32_t us)
++{
++    return us * (CONFIG_CLOCK_FREQ / 1000000);
++}
++
++// Return true if time1 is before time2.  Always use this function to
++// compare times as regular C comparisons can fail if the counter
++// rolls over.
++uint8_t
++timer_is_before(uint32_t time1, uint32_t time2)
++{
++    return (int32_t)(time1 - time2) < 0;
++}
++
++// Return the current time (in clock ticks)
++uint32_t
++timer_read_time(void)
++{
++    uint32_t t = timespec_to_time(timespec_read());
++    TimerInfo.last_read_time = t;
++    return t;
++}
++
++// Activate timer dispatch as soon as possible
++void
++timer_kick(void)
++{
++    struct itimerspec it = { .it_interval = {0, 0}, .it_value = {0, 1} };
++    timer_settime(TimerInfo.t_alarm, TIMER_ABSTIME, &it, NULL);
++}
++
++#define TIMER_IDLE_REPEAT_COUNT 100
++#define TIMER_REPEAT_COUNT 20
++
++#define TIMER_MIN_TRY_TICKS timer_from_us(2)
++
++// Invoke timers
++static void
++timer_dispatch(void)
++{
++    uint32_t repeat_count = TIMER_REPEAT_COUNT, next;
++    for (;;) {
++        // Run the next software timer
++        next = sched_timer_dispatch();
++
++        repeat_count--;
++        uint32_t lrt = TimerInfo.last_read_time;
++        if (!timer_is_before(lrt, next) && repeat_count)
++            // Can run next timer without overhead of calling timer_read_time()
++            continue;
++
++        uint32_t now = timer_read_time();
++        int32_t diff = next - now;
++        if (diff > (int32_t)TIMER_MIN_TRY_TICKS)
++            // Schedule next timer normally.
++            break;
++
++        if (unlikely(!repeat_count)) {
++            // Check if there are too many repeat timers
++            if (diff < (int32_t)(-timer_from_us(100000)))
++                try_shutdown("Rescheduled timer in the past");
++            if (sched_tasks_busy())
++                return;
++            repeat_count = TIMER_IDLE_REPEAT_COUNT;
++        }
++
++        // Next timer in the past or near future - wait for it to be ready
++        while (unlikely(diff > 0))
++            diff = next - timer_read_time();
++    }
++
++    // Schedule SIGALRM signal
++    struct itimerspec it;
++    it.it_interval = (struct timespec){0, 0};
++    TimerInfo.next_wake = it.it_value = timespec_from_time(next);
++    TimerInfo.next_wake_counter = next;
++    TimerInfo.must_wake_timers = 0;
++    timer_settime(TimerInfo.t_alarm, TIMER_ABSTIME, &it, NULL);
++}
++
++// OS signal handler
++static void
++timer_signal(int signal)
++{
++    TimerInfo.must_wake_timers = 1;
++}
++
++void
++timer_init(void)
++{
++    // Initialize ss_alarm signal set
++    int ret = sigemptyset(&TimerInfo.ss_alarm);
++    if (ret < 0) {
++        report_errno("sigemptyset", ret);
++        return;
++    }
++    ret = sigaddset(&TimerInfo.ss_alarm, SIGALRM);
++    if (ret < 0) {
++        report_errno("sigaddset", ret);
++        return;
++    }
++    // Initialize ss_sleep signal set
++    ret = sigprocmask(0, NULL, &TimerInfo.ss_sleep);
++    if (ret < 0) {
++        report_errno("sigprocmask ss_sleep", ret);
++        return;
++    }
++    ret = sigdelset(&TimerInfo.ss_sleep, SIGALRM);
++    if (ret < 0) {
++        report_errno("sigdelset", ret);
++        return;
++    }
++    // Initialize timespec_to_time() and timespec_from_time()
++    struct timespec curtime = timespec_read();
++    TimerInfo.start_sec = curtime.tv_sec + 1;
++    TimerInfo.next_wake = curtime;
++    TimerInfo.next_wake_counter = timespec_to_time(curtime);
++    // Initialize t_alarm signal based timer
++    ret = timer_create(CLOCK_MONOTONIC, NULL, &TimerInfo.t_alarm);
++    if (ret < 0) {
++        report_errno("timer_create", ret);
++        return;
++    }
++    struct sigaction act = {.sa_handler = timer_signal, .sa_flags = SA_RESTART};
++    ret = sigaction(SIGALRM, &act, NULL);
++    if (ret < 0) {
++        report_errno("sigaction", ret);
++        return;
++    }
++    timer_kick();
++}
++DECL_INIT(timer_init);
++
++// Block SIGALRM signal
++void
++timer_disable_signals(void)
++{
++    sigprocmask(SIG_BLOCK, &TimerInfo.ss_alarm, NULL);
++}
++
++// Restore reception of SIGALRM signal
++void
++timer_enable_signals(void)
++{
++    sigprocmask(SIG_UNBLOCK, &TimerInfo.ss_alarm, NULL);
++}
++
++
++/****************************************************************
++ * Interrupt wrappers
++ ****************************************************************/
++
++void
++irq_disable(void)
++{
++}
++
++void
++irq_enable(void)
++{
++}
++
++irqstatus_t
++irq_save(void)
++{
++    return 0;
++}
++
++void
++irq_restore(irqstatus_t flag)
++{
++}
++
++void
++irq_wait(void)
++{
++    // Must atomically sleep until signaled
++    if (!readl(&TimerInfo.must_wake_timers)) {
++        timer_disable_signals();
++        if (!TimerInfo.must_wake_timers)
++            console_sleep(&TimerInfo.ss_sleep);
++        timer_enable_signals();
++    }
++    irq_poll();
++}
++
++void
++irq_poll(void)
++{
++    if (readl(&TimerInfo.must_wake_timers))
++        timer_dispatch();
++}
+diff --git a/src/dummy_at32f403a/watchdog.c b/src/dummy_at32f403a/watchdog.c
+new file mode 100644
+index 00000000..e298465b
+--- /dev/null
++++ b/src/dummy_at32f403a/watchdog.c
+@@ -0,0 +1,41 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++// SPDX-PackageHomePage: https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware
++// SPDX-FileCopyrightText: Copyright (c) 2026 @paxx12
++//
++// Support for Linux watchdog, for the dummy AT32F403A toolhead simulator
++//
++// Adapted from src/linux/watchdog.c (unchanged - not chip-specific)
++// Copyright (C) 2017  Kevin O'Connor <kevin@koconnor.net>
++//
++// This file may be distributed under the terms of the GNU GPLv3 license.
++
++#include <fcntl.h> // open
++#include <unistd.h> // write
++#include "internal.h" // report_errno
++#include "sched.h" // DECL_TASK
++
++static int watchdog_fd = -1;
++
++int
++watchdog_setup(void)
++{
++    int ret = open("/dev/watchdog", O_RDWR|O_CLOEXEC);
++    if (ret < 0) {
++        report_errno("watchdog open", ret);
++        return -1;
++    }
++    watchdog_fd = ret;
++    return set_non_blocking(watchdog_fd);
++}
++
++void
++watchdog_task(void)
++{
++    static uint32_t next_watchdog_time;
++    if (watchdog_fd < 0 || !timer_check_periodic(&next_watchdog_time))
++        return;
++    int ret = write(watchdog_fd, ".", 1);
++    if (ret <= 0)
++        report_errno("watchdog write", ret);
++}
++DECL_TASK(watchdog_task);
