@@ -1,18 +1,6 @@
-From 490df1c9397bbd16c4543e7d71c7f737eb4a7c70 Mon Sep 17 00:00:00 2001
-From: jimmyjon711 <jcmadill1@gmail.com>
-Date: Thu, 23 Jul 2026 22:11:52 -0700
-Subject: [PATCH 10/10] Fixing thumbnails to work for fluidd/mainsail and for
- screen
-
----
- moonraker/components/file_manager/metadata.py | 215 ++++++++++++------
- 1 file changed, 149 insertions(+), 66 deletions(-)
-
-diff --git a/moonraker/components/file_manager/metadata.py b/moonraker/components/file_manager/metadata.py
-index d1b868f..df3fa41 100644
 --- a/moonraker/components/file_manager/metadata.py
 +++ b/moonraker/components/file_manager/metadata.py
-@@ -248,6 +248,18 @@ class BaseSlicer(object):
+@@ -248,6 +248,18 @@
      def parse_filament_weights(self) -> Optional[List[float]]:
          return None
  
@@ -31,7 +19,7 @@ index d1b868f..df3fa41 100644
      def parse_filament_retract_length_toolchange(self) -> Optional[List[float]]:
          return None
  
-@@ -260,6 +272,9 @@ class BaseSlicer(object):
+@@ -260,6 +272,9 @@
      def parse_filament_colors(self) -> Optional[List[str]]:
          return None
  
@@ -41,7 +29,7 @@ index d1b868f..df3fa41 100644
      def parse_extruder_colors(self) -> Optional[List[str]]:
          return None
  
-@@ -288,51 +303,83 @@ class BaseSlicer(object):
+@@ -288,51 +303,83 @@
          return None
  
      def parse_thumbnails(self) -> Optional[List[Dict[str, Any]]]:
@@ -66,8 +54,7 @@ index d1b868f..df3fa41 100644
 +        # expect when resolving a thumbnail's relative_path.
          file_dir = os.path.dirname(self.path)
 +        thumb_dir = os.path.join(file_dir, ".thumbs")
- 
--        # Look for "gcodes" directory in the path as root_dir
++
 +        if not os.path.exists(thumb_dir):
 +            try:
 +                os.mkdir(thumb_dir)
@@ -77,7 +64,8 @@ index d1b868f..df3fa41 100644
 +
 +        def rel_thumb_path_for(name: str) -> str:
 +            return os.path.join(".thumbs", name)
-+
+ 
+-        # Look for "gcodes" directory in the path as root_dir
 +        # The Snapmaker U1 screens don't consistently resolve thumbnails via
 +        # the JSON relative_path - the file-selection screen looks for a
 +        # 96x96 and the Filament Setup screen looks for a 300x300, both
@@ -149,7 +137,7 @@ index d1b868f..df3fa41 100644
              info = regex_find_ints(r"(%D)", lines[0])
              data = "".join(lines[1:-1])
              if len(info) != 3:
-@@ -345,54 +392,85 @@ class BaseSlicer(object):
+@@ -345,54 +392,85 @@
                      f"MetadataError: Thumbnail Size Mismatch: "
                      f"detected {info[2]}, actual {len(data)}")
                  continue
@@ -157,12 +145,11 @@ index d1b868f..df3fa41 100644
 +            dest_ext = FMT_CONV_MAP.get(ext, ext)
 +            thumb_name = f"{thumb_base}-{info[0]}x{info[1]}.{dest_ext}"
              thumb_path = os.path.join(thumb_dir, thumb_name)
--
++            rel_thumb_path = rel_thumb_path_for(thumb_name)
+ 
 -            # Calculate the thumbnail path relative to the gcode file's directory
 -            if file_dir == root_dir:
 -                rel_thumb_path = os.path.join(".thumbs", thumb_name)
-+            rel_thumb_path = rel_thumb_path_for(thumb_name)
-+
 +            raw = base64.b64decode(data.encode())
 +            if dest_ext != ext:
 +                # Convert image. Format is determined by destination file
@@ -269,7 +256,7 @@ index d1b868f..df3fa41 100644
              except Exception as e:
                  logger.info(str(e))
          return parsed_matches
-@@ -535,14 +613,7 @@ class PrusaSlicer(BaseSlicer):
+@@ -538,14 +616,7 @@
          return None
  
      def parse_filament_type(self) -> Optional[str]:
@@ -283,9 +270,9 @@ index d1b868f..df3fa41 100644
 -        return None
 +        return regex_find_string(r";\sfilament_type\s=\s(%S)", self.footer_data)
  
-     def parse_filament_retract_length_toolchange(self) -> Optional[List[float]]:
-         # Use (.*)$ to capture empty values as well
-@@ -654,6 +725,18 @@ class PrusaSlicer(BaseSlicer):
+     def parse_filament_volume_type(self) -> Optional[str]:
+         result = regex_find_string(r";\sfilament_volume_type\s=\s(%S)", self.footer_data)
+@@ -672,6 +743,18 @@
              return res
          return regex_find_int(r"; total filament change = (%D)", self.footer_data)
  
@@ -304,5 +291,3 @@ index d1b868f..df3fa41 100644
      def parse_line_width(self) -> Optional[float]:
          return regex_find_float(r";\sline_width\s=\s(%F)", self.footer_data)
  
--- 
-2.55.0

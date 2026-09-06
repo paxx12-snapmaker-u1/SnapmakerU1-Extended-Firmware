@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-PackageHomePage: https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware
+# SPDX-FileCopyrightText: Copyright (c) 2026 @paxx12
 
 import sys
 import json
@@ -43,7 +46,8 @@ def cmd_get(host):
         if ch < len(fd_info):
             i = fd_info[ch]
             official = i.get("OFFICIAL", False)
-            print(f"  RFID:   {i.get('VENDOR','')} {i.get('MAIN_TYPE','')} {i.get('SUB_TYPE','')}  [official: {'yes' if official else 'no'}]")
+            event_time = i.get("CARD_EVENT_TIME", 0)
+            print(f"  RFID:   {i.get('VENDOR','')} {i.get('MAIN_TYPE','')} {i.get('SUB_TYPE','')}  [official: {'yes' if official else 'no'}, detected: {event_time:.3f}]")
         else:
             print("  RFID:   (no data)")
 

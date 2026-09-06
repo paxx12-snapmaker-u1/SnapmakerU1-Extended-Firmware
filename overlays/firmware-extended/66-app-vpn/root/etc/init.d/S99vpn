@@ -1,4 +1,7 @@
 #!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-PackageHomePage: https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware
+# SPDX-FileCopyrightText: Copyright (c) 2026 @paxx12
 
 TAILSCALE_DAEMON="/usr/local/sbin/tailscaled"
 TAILSCALE_PIDFILE="/var/run/tailscaled.pid"
@@ -14,12 +17,15 @@ start_tailscale() {
         return 0
     fi
 
+    . /usr/local/sbin/limits-helper.sh
+    limits_enter vpn 80M
+
     insmod /lib/modules/tun.ko
 
     printf "Starting tailscaled: "
     mkdir -p "$TAILSCALE_STATE_DIR"
 
-    GOMEMLIMIT=256MiB \
+    GOMEMLIMIT=64MiB \
     GOGC=70 \
     start-stop-daemon -S -b -m \
         -p "$TAILSCALE_PIDFILE" \

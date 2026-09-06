@@ -1,0 +1,34 @@
+--- a/home/lava/moonraker/moonraker/components/zeroconf.py
++++ b/home/lava/moonraker/moonraker/components/zeroconf.py
+@@ -211,7 +211,14 @@
+ 
+     async def _update_service(self, network: Dict[str, Any]) -> None:
+         if self.bound_all:
+-            await self.runner.unregister_services([self.service_info])
++            # component_init() may not have had an address to register
++            # with yet, in which case this is the first registration
++            # rather than a refresh of an existing one. Only unregister
++            # if something was actually registered, otherwise this
++            # raises and _update_service() never reaches
++            # register_services() below.
++            if self.runner.aiozc is not None:
++                await self.runner.unregister_services([self.service_info])
+             addresses = [x for x in self._extract_ip_addresses(network)]
+             for addr_bytes in addresses:
+                 try:
+@@ -219,7 +226,14 @@
+                     self.zc_service_props["ip"] = str(ip_addr)
+                 except ValueError:
+                     pass
+-            self.service_info.addresses = addresses
++            # The line below must set self.addresses (not just mutate the
++            # old, about-to-be-replaced service_info object) since the
++            # AsyncServiceInfo constructed just below reads addresses from
++            # self.addresses. Without this, the new service_info silently
++            # keeps whatever address list was set at component_init() time
++            # (empty, on first boot) instead of the current one just
++            # computed above.
++            self.addresses = addresses
+             self.service_info = AsyncServiceInfo(
+                     ZC_SERVICE_TYPE,
+                     self.zc_service_name,

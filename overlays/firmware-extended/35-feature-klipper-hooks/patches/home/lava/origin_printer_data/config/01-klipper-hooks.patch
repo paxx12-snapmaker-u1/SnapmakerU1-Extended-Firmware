@@ -1,6 +1,6 @@
 --- a/fluidd.cfg
 +++ b/fluidd.cfg
-@@ -200,6 +200,9 @@
+@@ -204,6 +204,9 @@
      M84
      G92 E0
      M220 S100
@@ -8,25 +8,26 @@
 +        { section[12:] }
 +    {% endfor %}
 
- [gcode_macro PRINT_STRAT]
+ [gcode_macro PRINT_PRESTART_CHECK]
  gcode:
-@@ -208,6 +211,9 @@
+@@ -215,6 +215,9 @@
 
  [gcode_macro PRINT_END]
  gcode:
 +    {% for section in printer.configfile.config if section.startswith("gcode_macro _PRINT_END_") %}
 +        { section[12:] }
 +    {% endfor %}
-     M220 S100
      ##### get user parameters or use default #####
      {% set client = printer['gcode_macro _CLIENT_VARIABLE'] | default({}) %}
-@@ -267,6 +273,9 @@
+     {% set retract = client.cancel_retract | default(5.0) | abs %}
+@@ -279,7 +279,10 @@
  description: Cancel the actual running print
  rename_existing: CANCEL_PRINT_BASE
  gcode:
 +    {% for section in printer.configfile.config if section.startswith("gcode_macro _CANCEL_PRINT_") %}
 +        { section[12:] }
 +    {% endfor %}
-     M220 S100
      ##### get user parameters or use default #####
      {% set client = printer['gcode_macro _CLIENT_VARIABLE'] | default({}) %}
+     {% set retract = client.cancel_retract | default(5.0) | abs %}
+     {% set move_z_max_heigh = client.move_z_max_heigh | default(270.5) | abs %}

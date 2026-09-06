@@ -1,0 +1,361 @@
+--- a/klippy/extras/purifier.py
++++ b/klippy/extras/purifier.py
+@@ -1,10 +1,5 @@
+ import logging, os, threading
+-from . import pulse_counter
+ 
+-FAN_STATE_TURN_ON                                   = 0
+-FAN_STATE_TURN_OFF                                  = 1
+-FAN_STATE_TURNING_OFF                               = 2
+-
+ # Mode definitions
+ MODE_IDLE                                           = 0 # Idle mode - original functionality
+ MODE_COOL_CHAMBER                                   = 1 # Cool chamber mode - exhaust fan + temperature detection + dynamic fan control
+@@ -44,94 +39,35 @@
+ 
+ FAN_MIN_TIME = 0.200
+ 
+-class PurifierFanTachometer:
+-    def __init__(self, printer, pin, ppr, sample_time, poll_time):
+-        self._frequence = pulse_counter.FrequencyCounter(printer, pin, sample_time, poll_time)
+-        self._ppr = ppr
++class PurifierFanRouter:
++    # Wraps the fan.Fan instance owned by a [fan_generic] object and reroutes
++    # set_speed_from_command() into the Purifier.
++    #
++    # PrinterFanGeneric.cmd_SET_FAN_SPEED() and its control/generic_fan webhook
++    # both drive the fan through fan.set_speed_from_command(), as does the
++    # M106/M107 fan id mapping in extras/fan.py. Routing that one method means
++    # every generic entry point goes through the same path as SET_PURIFIER and
++    # keeps the power enable pin, the delay-off timers, the presence gate and
++    # the inner fan work time accounting in sync.
++    #
++    # Everything else - set_speed(), get_mcu(), last_fan_value, max_power,
++    # get_status() - delegates to the real fan.Fan, so PrinterFanGeneric and
++    # extras/fan.py see the object they expect. Purifier.set_*_fan_speed()
++    # calls set_speed() directly, which delegates, so there is no recursion.
++    def __init__(self, fan, set_speed_cb, is_available_cb):
++        self._fan = fan
++        self._set_speed_cb = set_speed_cb
++        self._is_available = is_available_cb
+ 
+-    def get_status(self, eventtime=None):
+-        rpm = None
+-        if self._frequence is not None:
+-            rpm = self._frequence.get_frequency()  * 30. / self._ppr
+-        return {'rpm': rpm}
+-
+-class PurifierFan:
+-    def __init__(self,
+-                 config,
+-                 fan_pin,
+-                 max_power=1.,
+-                 kick_start_time=0.1,
+-                 off_below=0.,
+-                 cycle_time=0.010,
+-                 hardware_pwm=False,
+-                 shutdown_speed=0.,
+-                 tach_pin=None,
+-                 tach_ppr=2,
+-                 tach_sample_time=1.,
+-                 tach_poll_time=0.0015,
+-                 ):
+-        self.printer = config.get_printer()
+-        self.reactor = self.printer.get_reactor()
+-
+-        self.last_fan_value = 0.
+-        self.last_fan_time = 0.
+-
+-        self.max_power = max_power
+-        self.kick_start_time = kick_start_time
+-        self.off_below = off_below
+-
+-        # Setup pwm object
+-        ppins = self.printer.lookup_object('pins')
+-        self.mcu_fan = ppins.setup_pin('pwm', fan_pin)
+-        self.mcu_fan.setup_max_duration(0.)
+-        self.mcu_fan.setup_cycle_time(cycle_time, hardware_pwm)
+-        self.mcu_fan.setup_start_value(0., max(0., min(self.max_power, shutdown_speed)))
+-
+-        # Setup tachometer
+-        self.tachometer = None
+-        if tach_pin is not None:
+-            self.tachometer = PurifierFanTachometer(self.printer, tach_pin,
+-                                        tach_ppr, tach_sample_time, tach_poll_time)
+-
+-    def get_mcu(self):
+-        return self.mcu_fan.get_mcu()
+-
+-    def set_speed(self, print_time, value):
+-        if value < self.off_below:
+-            value = 0.
+-        value = max(0., min(self.max_power, value * self.max_power))
+-
+-        if value == self.last_fan_value:
++    def set_speed_from_command(self, value, control_enable=True):
++        if value > 0 and not self._is_available():
++            logging.error("[purifier] purifier not exist!")
+             return
++        self._set_speed_cb(value)
+ 
+-        system_time = self.reactor.monotonic()
+-        system_time += FAN_MIN_TIME
+-        print_time = self.get_mcu().estimated_print_time(system_time)
+-        print_time = max(self.last_fan_time + FAN_MIN_TIME, print_time)
+-        if (value and value < self.max_power and self.kick_start_time
+-            and (not self.last_fan_value or value - self.last_fan_value > .5)):
+-            # Run fan at full speed for specified kick_start_time
+-            self.mcu_fan.set_pwm(print_time, self.max_power)
+-            print_time += self.kick_start_time
+-        self.mcu_fan.set_pwm(print_time, value)
+-        self.last_fan_time = print_time
+-        self.last_fan_value = value
++    def __getattr__(self, name):
++        return getattr(self._fan, name)
+ 
+-    def get_speed(self):
+-        return self.last_fan_value
+-
+-    def get_max_power(self):
+-        return self.max_power
+-
+-    def get_status(self, eventtime):
+-        status_dict = {
+-            'speed': self.last_fan_value,
+-        }
+-        if self.tachometer is not None:
+-            status_dict.update(self.tachometer.get_status(eventtime))
+-
+-        return status_dict
+-
+ class Purifier:
+     def __init__(self, config):
+         self.printer = config.get_printer()
+@@ -148,59 +84,13 @@
+             self.printer.update_snapmaker_config_file(self.config_path,
+                         self.config_info, DEFAULT_PURIFIER_CONFIG)
+ 
+-        # exhaust_fan
+-        self._exhaust_fan = None
+-        if config.get('exhaust_pin', None) is not None:
+-            fan_pin = config.get('exhaust_pin', None)
+-            max_power = config.getfloat('exhaust_max_power', 1., above=0., maxval=1.)
+-            kick_start_time = config.getfloat('exhaust_kick_start_time', 0.1, minval=0.)
+-            off_below = config.getfloat('exhaust_off_below', 0., minval=0., maxval=1.)
+-            cycle_time = config.getfloat('exhaust_cycle_time', 0.010, above=0.)
+-            hardware_pwm = config.getboolean('exhaust_hardware_pwm', False)
+-            shutdown_speed = config.getfloat('exhaust_shutdown_speed', 0, minval=0., maxval=1.)
+-            tach_pin = config.get('exhaust_tach_pin', None)
+-            tach_ppr = config.getint('exhaust_tach_ppr', 2, minval=1)
+-            tach_sample_time = config.getfloat('exhaust_tach_sample_time', 1., above=0.)
+-            tach_poll_time = config.getfloat('exhaust_tach_poll_interval', 0.0015, above=0.)
+-            self._exhaust_fan = PurifierFan(config,
+-                                            fan_pin,
+-                                            max_power,
+-                                            kick_start_time,
+-                                            off_below,
+-                                            cycle_time,
+-                                            hardware_pwm,
+-                                            shutdown_speed,
+-                                            tach_pin,
+-                                            tach_ppr,
+-                                            tach_sample_time,
+-                                            tach_poll_time)
++        # exhaust_fan and inner fan are [fan_generic] objects so they can be
++        # driven, queried, and previewed like any other printer fan
++        exhaust_fan_name = config.get('exhaust_fan_name')
++        self._exhaust_fan = self.printer.load_object(config, 'fan_generic ' + exhaust_fan_name)
+ 
+-        # inner fan
+-        self._inner_fan = None
+-        if config.get('inner_pin', None) is not None:
+-            fan_pin = config.get('inner_pin')
+-            max_power = config.getfloat('inner_max_power', 1., above=0., maxval=1.)
+-            kick_start_time = config.getfloat('inner_kick_start_time', 0.1, minval=0.)
+-            off_below = config.getfloat('inner_off_below', 0., minval=0., maxval=1.)
+-            cycle_time = config.getfloat('inner_cycle_time', 0.010, above=0.)
+-            hardware_pwm = config.getboolean('inner_hardware_pwm', False)
+-            shutdown_speed = config.getfloat('inner_shutdown_speed', 0, minval=0., maxval=1.)
+-            tach_pin = config.get('inner_tach_pin', None)
+-            tach_ppr = config.getint('inner_tach_ppr', 2, minval=1)
+-            tach_sample_time = config.getfloat('inner_tach_sample_time', 1., above=0.)
+-            tach_poll_time = config.getfloat('inner_tach_poll_interval', 0.0015, above=0.)
+-            self._inner_fan = PurifierFan(config,
+-                                            fan_pin,
+-                                            max_power,
+-                                            kick_start_time,
+-                                            off_below,
+-                                            cycle_time,
+-                                            hardware_pwm,
+-                                            shutdown_speed,
+-                                            tach_pin,
+-                                            tach_ppr,
+-                                            tach_sample_time,
+-                                            tach_poll_time)
++        inner_fan_name = config.get('inner_fan_name')
++        self._inner_fan = self.printer.load_object(config, 'fan_generic ' + inner_fan_name)
+ 
+         # power enable pin
+         self._power_enable_pin = None
+@@ -223,8 +113,6 @@
+         self._power_det_value = 1
+         self.last_print_time = 0
+ 
+-        self._exhaust_fan_state = FAN_STATE_TURN_OFF
+-        self._inner_fan_state = FAN_STATE_TURN_OFF
+         self._exhaust_delay_timer = self.reactor.register_timer(self._exhaust_delay_timer_cb)
+         self._inner_delay_timer = self.reactor.register_timer(self._inner_delay_timer_cb)
+         self._work_time_monitor_timer = self.reactor.register_timer(self._work_time_monitor_timer_cb)
+@@ -301,6 +189,14 @@
+         self.printer.register_event_handler('print_stats:stop', self._handle_stop_print_job)
+         self.printer.register_event_handler('print_stats:start', self._handle_start_print_job)
+ 
++        # Route the [fan_generic] control paths through this object
++        self._exhaust_fan.fan = PurifierFanRouter(
++            self._exhaust_fan.fan, self.set_exhaust_fan_speed,
++            lambda: self._power_detected)
++        self._inner_fan.fan = PurifierFanRouter(
++            self._inner_fan.fan, self.set_inner_fan_speed,
++            lambda: self._power_detected)
++
+     def _handle_ready(self):
+         self.timer_execution_counter = 0
+         self.reactor.update_timer(self._periodic_check_timer, self.reactor.NOW)
+@@ -371,7 +267,7 @@
+         try:
+             update_mode = 0
+ 
+-            if self._inner_fan_state != FAN_STATE_TURN_OFF:
++            if self._inner_fan is not None and self._inner_fan.fan.last_fan_value != 0:
+                 if self.print_stats is not None:
+                     if self.print_stats.state not in ['printing', 'paused']:
+                         if self.is_print_task_delay_turnoffing_inner == False:
+@@ -427,9 +323,9 @@
+         exhaust_fan_speed = 0
+         inner_fan_speed = 0
+         if self._exhaust_fan is not None:
+-            exhaust_fan_speed = self._exhaust_fan.get_speed()
++            exhaust_fan_speed = self._exhaust_fan.fan.last_fan_value
+         if self._inner_fan is not None:
+-            inner_fan_speed = self._inner_fan.get_speed()
++            inner_fan_speed = self._inner_fan.fan.last_fan_value
+ 
+         if exhaust_fan_speed > 0 or inner_fan_speed > 0:
+             self._power_enable_pin.set_digital(print_time, 1)
+@@ -449,18 +345,14 @@
+ 
+         if speed > 1.0:
+             speed = 1.0
+-            self._exhaust_fan_state = FAN_STATE_TURN_ON
+         elif speed < 0.0001:
+             speed = 0
+-            self._exhaust_fan_state = FAN_STATE_TURN_OFF
+-        else:
+-            self._exhaust_fan_state = FAN_STATE_TURN_ON
+ 
+         system_time = self.reactor.monotonic()
+         system_time += FAN_MIN_TIME
+-        print_time = self._exhaust_fan.get_mcu().estimated_print_time(system_time)
++        print_time = self._exhaust_fan.fan.get_mcu().estimated_print_time(system_time)
+         print_time = max(self.last_print_time + FAN_MIN_TIME, print_time)
+-        self._exhaust_fan.set_speed(print_time, speed)
++        self._exhaust_fan.fan.set_speed(print_time, speed)
+         print_time += 0.01
+         self._set_power_enable(print_time)
+         self.last_print_time = print_time
+@@ -479,24 +371,20 @@
+ 
+         if speed > 1.0:
+             speed = 1.0
+-            self._inner_fan_state = FAN_STATE_TURN_ON
+         elif speed < 0.0001:
+             speed = 0
+-            self._inner_fan_state = FAN_STATE_TURN_OFF
+-        else:
+-            self._inner_fan_state = FAN_STATE_TURN_ON
+ 
+         system_time = self.reactor.monotonic()
+         system_time += FAN_MIN_TIME
+-        print_time = self._inner_fan.get_mcu().estimated_print_time(system_time)
++        print_time = self._inner_fan.fan.get_mcu().estimated_print_time(system_time)
+         print_time = max(self.last_print_time + FAN_MIN_TIME, print_time)
+-        self._inner_fan.set_speed(print_time, speed)
++        self._inner_fan.fan.set_speed(print_time, speed)
+         print_time += 0.01
+         self._set_power_enable(print_time)
+         self.last_print_time = print_time
+         self.is_print_task_delay_turnoffing_inner = False
+ 
+-        if self._inner_fan_state == FAN_STATE_TURN_ON:
++        if speed != 0:
+             if self._inner_last_turn_on_time is None:
+                 if self.purifier_mode in [MODE_PREHEAT_CHAMBER, MODE_HOT_CHAMBER]:
+                     if self.print_stats is None or \
+@@ -564,7 +452,7 @@
+         return fault_detected
+     def _handle_hot_chamber_mode(self, eventtime):
+         # Automatically turn off exhaust fan if it's running in current mode
+-        if self._exhaust_fan is not None and self._exhaust_fan.get_speed() != 0:
++        if self._exhaust_fan is not None and self._exhaust_fan.fan.last_fan_value != 0:
+             self.set_exhaust_fan_speed(0)
+ 
+         fault_detected = self._check_inner_fan_rpm_fault(eventtime)
+@@ -623,9 +511,9 @@
+         if (self.external_temp_sensor is not None and
+             self.average_temperature is not None and
+             self._exhaust_fan is not None):
+-            exhaust_fan_speed = self._exhaust_fan.get_speed()
++            exhaust_fan_speed = self._exhaust_fan.fan.last_fan_value
+             target_speed = exhaust_fan_speed
+-            exhaust_fan_max_power = self._exhaust_fan.get_max_power()
++            exhaust_fan_max_power = self._exhaust_fan.fan.max_power
+             if self.desired_chamber_temp and self.desired_chamber_temp > 0:
+                 if not self.critical_temp_reported:
+                     # Initialize tracking variables on first run
+@@ -760,7 +648,7 @@
+         #                        f"\nInner Fan Speed: {inner_fan_speed}, Exhaust Fan Speed: {exhaust_fan_speed}, "
+         #                        f"\nDesired Temp: {self.desired_chamber_temp}°C, Preheat Wait: {self.preheat_wait_enabled}, "
+         #                        f"\nLast Check Temp: {self.preheat_check_last_temp}, Timeout: {self.preheat_check_timeout_time}")
+-        if self._exhaust_fan is not None and self._exhaust_fan.get_speed() != 0:
++        if self._exhaust_fan is not None and self._exhaust_fan.fan.last_fan_value != 0:
+             self.set_exhaust_fan_speed(0)
+ 
+         fault_detected = self._check_inner_fan_rpm_fault(eventtime)
+@@ -817,26 +705,24 @@
+         self.inner_fan_speed_threshold = 0
+ 
+     def set_exhaust_fan_delay_turn_off(self, delay):
+-        if self._exhaust_fan_state == FAN_STATE_TURN_OFF:
++        if self._exhaust_fan is None or self._exhaust_fan.fan.last_fan_value == 0:
+             self.is_print_task_delay_turnoffing_exhaust = False
+             return
+ 
+         if delay < 1:
+             self.set_exhaust_fan_speed(0)
+         else:
+-            self._exhaust_fan_state = FAN_STATE_TURNING_OFF
+             self.reactor.update_timer(self._exhaust_delay_timer, self.reactor.monotonic() + delay)
+             self.is_print_task_delay_turnoffing_exhaust = True
+ 
+     def set_inner_fan_delay_turn_off(self, delay):
+-        if self._inner_fan_state == FAN_STATE_TURN_OFF:
++        if self._inner_fan is None or self._inner_fan.fan.last_fan_value == 0:
+             self.is_print_task_delay_turnoffing_inner = False
+             return
+ 
+         if delay < 1:
+             self.set_inner_fan_speed(0)
+         else:
+-            self._inner_fan_state = FAN_STATE_TURNING_OFF
+             self.reactor.update_timer(self._inner_delay_timer, self.reactor.monotonic() + delay)
+             self.is_print_task_delay_turnoffing_inner = True
+ 
+@@ -857,7 +743,7 @@
+         }
+         if self._inner_fan is not None:
+             status_dict.update({'inner_fan_work_time': round(self.config_info['inner_work_time'], 1)})
+-            if 'rpm' in inner_fan_status:
++            if inner_fan_status.get('rpm') is not None:
+                 status_dict.update({'inner_fan_rpm': inner_fan_status['rpm']})
+ 
+         if exhaust_fan_status is not None:

@@ -1,0 +1,25 @@
+From 2d32c4677cc100c4a4181ae3290301c33a3b7d26 Mon Sep 17 00:00:00 2001
+From: jimmyjon711 <jcmadill1@gmail.com>
+Date: Fri, 15 May 2026 18:11:39 -0700
+Subject: [PATCH] Changing error to warning for extruder check
+
+---
+ klippy/kinematics/extruder.py | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/klippy/kinematics/extruder.py b/klippy/kinematics/extruder.py
+index e086be30..50067103 100644
+--- a/klippy/kinematics/extruder.py
++++ b/klippy/kinematics/extruder.py
+@@ -298,7 +298,7 @@ class ExtruderStepper:
+             num_str = extruder_name[8:]
+             return int(num_str) if num_str.isdigit() else 0
+         else:
+-            raise ValueError("Invalid extruder name")
++            logging.warning(f"Extruder index not found for {extruder_name}")
+     def get_status(self, eventtime):
+         return {'pressure_advance': self.pressure_advance,
+                 'smooth_time': self.pressure_advance_smooth_time,
+-- 
+2.47.3
+

@@ -164,6 +164,10 @@ it does not maintain its own WebSocket connection.
 6. On success, `spoollink` pushes the resolved filament info into Klipper by calling the
    `spoollink/set` endpoint (registered by the Klipper `[spoollink]` router), which merges
    it onto `filament_protocol.FILAMENT_INFO_STRUCT` and applies it to `print_task_config`.
-7. Klipper stores the metadata in `print_task_config` and notifies subscribers.
+7. When SpoolLink `force_generic_vendor` is enabled, non-Snapmaker filament metadata
+   sent to Klipper uses `Generic` as the vendor and clears the variant. The resolved
+   Spoolman object, spool ID, card UID, cache data, active spool tracking, and usage
+   reporting remain unchanged.
+8. Klipper stores the metadata in `print_task_config` and notifies subscribers.
    `AFC_lane.get_status()` surfaces `spool_id` to Fluidd/Mainsail.
 

@@ -1,0 +1,29 @@
+settings:
+  snapmaker_components:
+    items:
+      afc_full:
+        label: Enable AFC-Klipper-Add-On Plugin
+        description: Enables use of full AFC-Klipper-Add-On by copying over necessary files.
+        help_url: https://afcproject.dev/initial-startup/01-overview.html#snapmaker-u1
+        get_cmd:
+          - bash
+          - -c
+          - test -f /home/lava/klipper/klippy/extras/AFC_utils.py && echo "enabled" || echo "disabled"
+        options:
+          enabled:
+            label: Enabled
+            confirm: "Enable AFC-Klipper-Add-On? This adds support for full AFC-Klipper-Add-On."
+            cmd:
+            - bash
+            - -xc
+            - |
+              sh /home/lava/AFC-Klipper-Add-On/include/U1_extended_firmware_install.sh -e
+          disabled:
+            label: Disable
+            confirm: "Disable AFC-Klipper-Add-On?"
+            cmd:
+              - bash
+              - -xc
+              - |
+                sh /home/lava/AFC-Klipper-Add-On/include/U1_extended_firmware_install.sh -d
+        default: disabled

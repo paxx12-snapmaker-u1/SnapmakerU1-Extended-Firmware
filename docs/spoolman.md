@@ -7,6 +7,9 @@ title: Spoolman Integration
 Automatic filament metadata sync and spool tracking via
 [Spoolman](https://github.com/Donkie/Spoolman).
 
+> Setting this up for the first time? See the
+> [NFC Tags & Spoolman Setup Guide](nfc_spoolman_setup.md).
+
 ## What It Provides
 
 - Resolves a Spoolman spool by ID or RFID card UID and applies its
@@ -26,9 +29,10 @@ tag:
 
 ## Enabling
 
-Enable via Fluidd/Mainsail settings under
-**Snapmaker Components > Spoolman Integration**, set the Spoolman host,
-and reboot. Set the same toggle to **Disabled** to turn it off.
+Enable in the [firmware-config](firmware_config.md) web interface under
+**Settings > Snapmaker Components > Spoolman Integration**, and enter the Spoolman
+URL including scheme and port (e.g. `http://192.168.1.100:7912`). Set the same
+toggle to **Disabled** to turn it off.
 
 ## Apps
 
@@ -39,11 +43,11 @@ automatically when the filament is loaded:
 |-----|--------|----------|-------|--------------------|----------------|--------|---------------------|
 | [SpoolLink (Android)](https://github.com/paxx12-snapmaker-u1/spool-link-apps) | [paxx12](https://github.com/paxx12) | Android ([releases](https://github.com/paxx12-snapmaker-u1/spool-link-apps/releases/latest); or build from source) | OpenSpool; any tag by UID (NTAG, Mifare Classic) | Reference implementation — links tags to spools by UID, pre-fills from OpenSpool tags | ✅ (see notes) | [GitHub](https://github.com/paxx12-snapmaker-u1/spool-link-apps) (GPL-3.0) | — |
 | [SpoolLink (iOS)](https://github.com/paxx12-snapmaker-u1/spool-link-apps) | [paxx12](https://github.com/paxx12) | iOS ([releases](https://github.com/paxx12-snapmaker-u1/spool-link-apps/releases/latest) IPA — sideload via AltStore or similar; building from source requires a paid Apple Developer account for the NFC entitlement) | OpenSpool; any tag by UID (NTAG only — no Mifare Classic on iOS) | Reference implementation — links tags to spools by UID, pre-fills from OpenSpool tags | ✅ (see notes) | [GitHub](https://github.com/paxx12-snapmaker-u1/spool-link-apps) (GPL-3.0) | — |
-| [SpoolPainter](https://github.com/ni4223/SpoolPainter) | [ni4223](https://github.com/ni4223) | Android ([Google Play](https://play.google.com/store/apps/details?id=com.spoolpainter.app)) | OpenSpool; Bambu Lab, Snapmaker, QIDI, Anycubic, Elegoo, Creality (vendor decode + prefill; Bambu Lab and Creality need a per-brand key); any tag by UID for pairing | Links tags to spools; create-and-pair spools, multi-tag binding, vendor tag pairing | ✅ (see notes) | [GitHub](https://github.com/ni4223/SpoolPainter) (GPL-3.0) | [![US](https://img.shields.io/badge/Snapmaker%20US-00B2E3?logo=shopify&logoColor=white)](https://snapmaker-us.myshopify.com?ref=ni42) [![EU](https://img.shields.io/badge/Snapmaker%20EU-00B2E3?logo=shopify&logoColor=white)](https://snapmaker-eu.myshopify.com?ref=ni42) [![Global](https://img.shields.io/badge/Snapmaker%20Global-00B2E3?logo=shopify&logoColor=white)](https://test-snapmaker.myshopify.com?ref=ni42)<br>Referral Code: `ni42` |
+| [SpoolPainter](https://github.com/ni4223/SpoolPainter) | [ni4223](https://github.com/ni4223) | Android ([Google Play](https://play.google.com/store/apps/details?id=com.spoolpainter.app)) | OpenSpool; Bambu Lab, Snapmaker, QIDI, Anycubic, Elegoo, Creality (vendor decode + prefill; Bambu Lab and Creality need a per-brand key); any tag by UID for pairing | Links tags to spools; create-and-pair spools, multi-tag binding, vendor tag pairing | ✅ (see notes) | [GitHub](https://github.com/ni4223/SpoolPainter) (GPL-3.0) | [![Polymaker](https://img.shields.io/badge/Polymaker-108474?logo=shopify&logoColor=white)](https://shop.polymaker.com/NI42)<br>[![US](https://img.shields.io/badge/Snapmaker%20US-00B2E3?logo=shopify&logoColor=white)](https://snapmaker-us.myshopify.com?ref=ni42) [![EU](https://img.shields.io/badge/Snapmaker%20EU-00B2E3?logo=shopify&logoColor=white)](https://snapmaker-eu.myshopify.com?ref=ni42) [![Global](https://img.shields.io/badge/Snapmaker%20Global-00B2E3?logo=shopify&logoColor=white)](https://test-snapmaker.myshopify.com?ref=ni42)<br>Snapmaker Referral Code: `ni42` |
 | [SpoolKid](https://github.com/marko-p/SpoolKid) | [Marco](https://github.com/marko-p) | iOS ([TestFlight beta](https://testflight.apple.com/join/Y4BmejQk); build from source) | OpenSpool, OpenTag3D, ELEGOO, Anycubic ACE; any other tag by UID (including Mifare Classic) | Links tag UIDs to spools, including UID-only linking for Mifare Classic and other tags it can't otherwise read | – | [GitHub](https://github.com/marko-p/SpoolKid) (MIT) | [![Ko-fi](https://img.shields.io/badge/Ko--fi-FF5E5B?logo=kofi&logoColor=white)](https://ko-fi.com/spoolkid) |
 | [SpoolTagger](https://codeberg.org/NiftyBits/SpoolTagger) | [NiftyBits](https://codeberg.org/NiftyBits) | Windows, Linux (desktop, ACR122U USB NFC reader; [releases](https://codeberg.org/NiftyBits/SpoolTagger/releases/latest)) | OpenSpool (NTAG); Mifare Classic by UID only | Links tags to spools (up to 2 tags per spool) | ✅ (see notes) | [Codeberg](https://codeberg.org/NiftyBits/SpoolTagger) (MIT) | [![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-FFDD00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/NiftyBits) |
 | [3DMRP](https://github.com/MKloberg/3dmrp) | [MKloberg](https://github.com/MKloberg) | Self-hosted (Windows; [releases](https://github.com/MKloberg/3dmrp/releases/latest)), phone via Chrome on Android | Any tag by UID (Web NFC scan-to-select; no content parsing) | Print-farm manager — links tags to spools, NFC scan-to-select; also AFC lane control and U1 touchscreen mirror | – (see notes) | [GitHub](https://github.com/MKloberg/3dmrp) (source) | [![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-FFDD00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/mkloberg) |
-| [Spool Studio](https://github.com/GeorgHo/SpoolStudio) | [GeorgHo](https://github.com/GeorgHo) | Android | OpenSpool; Bambu Lab (with user-provided key); legacy Spool Studio tags (for conversion); any tag by UID | Links tags to spools via NFC card UID; writes Paxx12-compatible OpenSpool tags and shows the printer-reported toolhead status | ✅ (see notes) | [GitHub](https://github.com/GeorgHo/SpoolStudio) (MIT) | — |
+| [Spool Studio](https://github.com/GeorgHo/SpoolStudio) | [GeorgHo](https://github.com/GeorgHo) | Android ([v3.0.2 release](https://github.com/GeorgHo/SpoolStudio/releases/tag/v3.0.2)) | OpenSpool; Bambu Lab (with user-provided key); legacy Spool Studio tags (for conversion); any tag by UID | Links tags to spools via NFC card UID; writes Paxx12-compatible OpenSpool tags and shows the printer-reported toolhead status | ✅ (see notes) | [GitHub](https://github.com/GeorgHo/SpoolStudio) (MIT) | [![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-FFDD00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/georgho) |
 
 **Notes:**
 
@@ -86,9 +90,9 @@ Hardware and setup details for both readers are in
 
 ### `SET_SPOOL_ID`
 
-Assign a Spoolman spool to an AFC lane. Reads the lane's RFID card UID,
-binds it to the spool (so a later scan resolves automatically), and
-applies the filament metadata to the channel:
+Assign a Spoolman spool to an extruder channel. Reads the channel's RFID
+card UID, binds it to the spool (so a later scan resolves automatically),
+and applies the filament metadata to the channel:
 
 ```
 SET_SPOOL_ID LANE=E0 SPOOL_ID=5
@@ -96,8 +100,12 @@ SET_SPOOL_ID LANE=E0 SPOOL_ID=5
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `LANE` | — | AFC lane name (e.g. `E0`) |
+| `LANE` | — | Lane name (e.g. `E0`); resolved through [AFC-Lite](afc-lite.md) when enabled, otherwise from the name itself |
+| `CHANNEL` | — | Extruder channel index (`0`-`3`), used instead of `LANE` |
 | `SPOOL_ID` | `0` | Spoolman spool ID; `0` clears the assignment |
+
+The macro is provided by the Spoolman integration itself, so it is
+available whenever Spoolman is enabled, with or without AFC-Lite.
 
 ## Known Conflicts
 

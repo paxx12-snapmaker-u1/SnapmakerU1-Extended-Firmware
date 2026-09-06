@@ -56,6 +56,7 @@ Toggle settings directly from the web interface:
 | Tweaks | TMC AutoTune, TMC Reduced Current, Object Processing, AFC Stub | Experimental Klipper tweaks ([tweaks](tweaks.md)) |
 | Troubleshooting | Faulty Toolhead Bypass | Temporary toolhead thermistor bypass so the remaining toolheads can still be used ([faulty_toolhead](faulty_toolhead.md)) |
 | RFID Detection System | External, Snapmaker, OpenRFID, OpenRFID (force generic vendor) | Set how filament is detected ([RFID Format & Reader Design](design/rfid.md)) |
+| Spoolman Integration | Enabled, Disabled | Connect to a Spoolman server for filament tracking and tag-to-spool linking; prompts for the Spoolman URL ([Spoolman Integration](spoolman.md)) |
 
 ![Firmware Config settings](screenshots/firmware-config-settings.png)
 

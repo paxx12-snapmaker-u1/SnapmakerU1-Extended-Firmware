@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-PackageHomePage: https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware
+# SPDX-FileCopyrightText: Copyright (c) 2025-2026 @paxx12, @horzadome
+
 FROM debian:trixie
 
 # The ccache is installed separately
@@ -24,6 +28,7 @@ RUN apt-get update -y && \
       golang-go \
       ffmpeg \
       u-boot-tools \
+      python3 \
     && apt-get -y install ccache \
     && git config --global --add safe.directory '*' \
     && rm -rf /var/lib/apt/lists/*

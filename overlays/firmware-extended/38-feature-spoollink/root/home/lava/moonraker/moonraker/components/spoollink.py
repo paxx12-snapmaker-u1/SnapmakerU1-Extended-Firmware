@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-PackageHomePage: https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware
+# SPDX-FileCopyrightText: Copyright (c) 2026 @paxx12
+
 # SpoolLink — bridge between Spoolman and the Snapmaker AFC/RFID stack.
 #
 # Runs inside Moonraker as a component. It registers the
@@ -52,10 +56,12 @@ class SpoolLink:
             url = "http://" + url
         self._spoolman_url = url
         self._cache_dir: Optional[str] = config.get("cache_dir", None)
+        self._force_generic_vendor = config.getboolean(
+            "force_generic_vendor", False)
         self.http_client: HttpClient = self.server.lookup_component("http_client")
         self.klippy_apis: APIComp = self.server.lookup_component("klippy_apis")
 
-        self._channel_uids: Dict[int, str] = {}
+        self._channel_event_times: Dict[int, float] = {}
         self._toolhead_extruder: str = "extruder"
         self._ptc_spool_ids: List[int] = []
         self._active_spool_id: Optional[int] = None
@@ -70,8 +76,10 @@ class SpoolLink:
 
     async def component_init(self) -> None:
         logging.info(
-            "spoollink starting (spoolman: %s, cache: %s)",
-            self._spoolman_url, self._cache_dir or "disabled")
+            "spoollink starting (spoolman: %s, cache: %s, "
+            "force generic vendor: %s)",
+            self._spoolman_url, self._cache_dir or "disabled",
+            self._force_generic_vendor)
         await self._ensure_fields()
 
     # -- Klippy lifecycle ---------------------------------------------------
@@ -87,7 +95,7 @@ class SpoolLink:
 
     def _handle_klippy_disconnect(self) -> None:
         logging.info("[spoollink] Klippy disconnected")
-        self._channel_uids = {}
+        self._channel_event_times = {}
         self._ptc_spool_ids = []
         self._active_spool_id = None
 
@@ -130,12 +138,14 @@ class SpoolLink:
     def _handle_filament_detect_channel(self, ch: int, info: Any) -> None:
         if not isinstance(info, dict):
             return
+        event_time = info.get("CARD_EVENT_TIME") or 0
+        if event_time <= self._channel_event_times.get(ch, 0):
+            return
+        self._channel_event_times[ch] = event_time
         uid_hex = self._uid_to_hex(info.get("CARD_UID"))
-        prev = self._channel_uids.get(ch, "")
-        self._channel_uids[ch] = uid_hex
-        if uid_hex and uid_hex != prev:
-            logging.info("[spoollink] ch%d: card UID changed to %s, resolving",
-                         ch, uid_hex)
+        if uid_hex:
+            logging.info("[spoollink] ch%d: detected at %.3f (card %s), resolving",
+                         ch, event_time, uid_hex)
             self._fire(self._resolve_spool(ch, card_uid=uid_hex))
 
     # -- Active spool sync --------------------------------------------------
@@ -446,6 +456,11 @@ class SpoolLink:
         material = filament.get("material", "PLA")
         vendor = (filament.get("vendor") or {}).get("name", "Generic")
         variant = _parse_variant(vendor, filament)
+
+        if (self._force_generic_vendor
+                and vendor.strip().lower() != "snapmaker"):
+            vendor = "Generic"
+            variant = ""
 
         raw_multi = filament.get("multi_color_hexes") or ""
         colors = [c.strip().upper()[:6] for c in raw_multi.split(",") if c.strip()]

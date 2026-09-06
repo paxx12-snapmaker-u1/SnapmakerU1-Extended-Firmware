@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-PackageHomePage: https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware
+# SPDX-FileCopyrightText: Copyright (c) 2025 @paxx12
 
 if [[ $# -lt 3 ]]; then
   echo "Usage: $0 <upgrade.bin> <temp-dir> <output.bin> [overlays...]"
@@ -121,7 +124,7 @@ if FILES=$(find "$ROOTFS_DIR" -type f -exec file {} + | grep "ELF" | grep -v "AR
 fi
 
 echo ">> Create squash filesystem..."
-mksquashfs "$ROOTFS_DIR" "$BUILD_DIR/rk-unpacked/rootfs-v2.img" -comp gzip
+mksquashfs "$ROOTFS_DIR" "$BUILD_DIR/rk-unpacked/rootfs-v2.img" -comp zstd
 
 echo ">> Replace rootfs.img in firmware..."
 mv -v "$BUILD_DIR/rk-unpacked"/{rootfs-v2,rootfs}.img

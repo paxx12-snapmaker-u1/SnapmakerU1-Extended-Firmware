@@ -1,0 +1,55 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-PackageHomePage: https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware
+# SPDX-FileCopyrightText: Copyright (c) 2026 @paxx12, @plastikman
+
+settings:
+  snapmaker_components:
+    items:
+      chamber_heater:
+        options:
+          dragonbreath:
+            label: DragonBreath
+            confirm: |
+              WARNING: A chamber heater raises sustained enclosure temperatures, accelerating wear on electronics and motors beyond their rated conditions — likely NOT warranty-covered. Additional motherboard cooling is required (see docs).
+
+              DragonBreath is community open firmware for a MAINS-POWERED heater, flashed onto the same Panda Breath board. NO WARRANTY — a fault could cause overheating, fire, or damage. Use at your own risk; never run it unattended.
+
+              Before enabling:
+              1. Add active cooling to the motherboard (see docs).
+              2. Flash DragonBreath firmware onto the Panda Breath board and provision its Wi-Fi (see https://github.com/plastikman/DragonBreath).
+              3. Give the DragonBreath device a static DHCP lease — Klipper connects by IP.
+              4. Enter its IP below.
+
+              (If your Panda Breath is still running stock firmware, use the Panda Auto option above instead.)
+
+              Advanced: to use a device control token (NVS ctl_token), add a "token:" line to the DragonBreath config after enabling (see docs).
+            inputs:
+              - name: ACKNOWLEDGED
+                label: "Type \"I UNDERSTAND\" to confirm you have read the documentation and accept the warranty, safety, and longevity risks"
+                placeholder: "I UNDERSTAND"
+                regex: '^I UNDERSTAND$'
+              - name: DRAGONBREATH_IP
+                label: DragonBreath Device IP Address
+                placeholder: "192.168.1.100"
+                regex: '^((25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])$'
+            cmd:
+              - bash
+              - -ec
+              - |
+                CFG=/oem/printer_data/config/extended/klipper
+                if test -f "$CFG/panda_breath.cfg"; then
+                  echo "ERROR: Panda Breath is currently enabled. Set the chamber heater to"
+                  echo "       Disabled first, then enable DragonBreath."
+                  exit 1
+                fi
+
+                echo ""
+                echo ">> Writing DragonBreath configuration..."
+                mkdir -p "$CFG"
+                cp -n /usr/local/share/firmware-config/tweaks/klipper/dragonbreath.cfg "$CFG/dragonbreath.cfg"
+                /usr/local/bin/extended-config.py add "$CFG/dragonbreath.cfg" dragonbreath host "${DRAGONBREATH_IP}"
+                chown lava:lava "$CFG/dragonbreath.cfg"
+
+                echo ""
+                echo ">> DragonBreath enabled. Restarting Klipper..."
+                /etc/init.d/S60klipper restart

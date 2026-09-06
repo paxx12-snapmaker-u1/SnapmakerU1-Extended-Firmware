@@ -40,6 +40,7 @@ After installation, the printer will automatically reboot.
 - [Firmware Configuration](firmware_config.md) - Customize firmware behavior (Extended only)
 - [Camera Support](camera_support.md) - Configure WebRTC camera streaming (Extended only)
 - [Remote Screen](remote_screen.md) - Enable remote screen access (Extended only)
+- [NFC Tags & Spoolman Setup Guide](nfc_spoolman_setup.md) - Tag your spools so the printer recognises them, and track them in Spoolman (Extended only)
 
 ## Reverting to Stock Firmware
 

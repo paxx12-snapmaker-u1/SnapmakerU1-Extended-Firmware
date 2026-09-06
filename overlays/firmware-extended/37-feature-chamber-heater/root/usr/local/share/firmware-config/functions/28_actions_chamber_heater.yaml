@@ -1,0 +1,69 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-PackageHomePage: https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware
+# SPDX-FileCopyrightText: Copyright (c) 2026 @plastikman
+
+quick_actions:
+  chamber_heater:
+    items:
+      migrate-to-dragonbreath:
+        label: Migrate to DragonBreath
+        description: A Panda Breath chamber heater is configured. Optionally convert it to DragonBreath open firmware over Wi-Fi (no USB).
+        # Only shown while Panda Breath is the active chamber-heater integration and
+        # DragonBreath is not already enabled. Purely opt-in — nothing runs this
+        # automatically, and declining leaves Panda Breath untouched.
+        if_cmd: test -f /oem/printer_data/config/extended/klipper/panda_breath.cfg -a ! -f /oem/printer_data/config/extended/klipper/dragonbreath.cfg
+        confirm: |
+          MIGRATE YOUR CHAMBER HEATER TO DRAGONBREATH (over Wi-Fi — no USB)
+
+          This is entirely optional — Panda Breath keeps working as-is if you skip it. If you'd rather switch to DragonBreath open firmware on the same board, this flashes it over your local network — no USB cable, and neither the printer nor the Panda needs an internet connection.
+
+          What happens when you Confirm:
+          1. The bundled DragonBreath firmware is flashed to your Panda Breath over Wi-Fi. Your stock firmware is kept in the device's backup slot, so it can always revert to stock.
+          2. The device rejoins your Wi-Fi and Moonraker automatically (saved settings carry over — no re-provisioning).
+          3. Your Klipper config is switched to DragonBreath and Klipper restarts.
+
+          WARNING: A chamber heater raises sustained enclosure temperatures, accelerating wear on electronics and motors beyond their rated conditions — likely NOT warranty-covered. DragonBreath is community open firmware for a MAINS-POWERED heater with NO WARRANTY; never run it unattended. Additional motherboard cooling is required (see docs).
+
+          Confirm to migrate now. Cancel to keep using Panda Breath (you can migrate later, or flash DragonBreath yourself and use the DragonBreath option in the chamber heater setting).
+        message: "Migrating your Panda Breath to DragonBreath (do not power off the printer or the Panda)..."
+        cmd:
+          - bash
+          - -ec
+          - |
+            CFG=/oem/printer_data/config/extended/klipper
+
+            if ! test -f "$CFG/panda_breath.cfg"; then
+              echo "ERROR: No Panda Breath configuration found — nothing to migrate."
+              exit 1
+            fi
+            if test -f "$CFG/dragonbreath.cfg"; then
+              echo "ERROR: DragonBreath is already enabled."
+              exit 1
+            fi
+
+            HOST=$(/usr/local/bin/extended-config.py get "$CFG/panda_breath.cfg" panda_breath host 2>/dev/null || true)
+            if test -z "$HOST"; then
+              echo "ERROR: Could not read the Panda Breath host/IP from panda_breath.cfg."
+              exit 1
+            fi
+            echo ">> Panda Breath device: ${HOST}"
+
+            echo ""
+            echo ">> Flashing DragonBreath over Wi-Fi (this can take a minute; do not power off)..."
+            # Idempotent: if the device already reports DragonBreath (a prior run flashed
+            # but didn't finish the cfg swap) it skips the flash. Image is the bundled
+            # local copy — no internet.
+            /usr/local/bin/dragonbreath_migrate.py --host "${HOST}" migrate
+
+            echo ""
+            echo ">> Unbinding Panda Breath and switching Klipper to DragonBreath..."
+            /usr/local/bin/panda_breath_cli.py --host "${HOST}" unbind || true
+            mkdir -p "$CFG"
+            cp -n /usr/local/share/firmware-config/tweaks/klipper/dragonbreath.cfg "$CFG/dragonbreath.cfg"
+            /usr/local/bin/extended-config.py add "$CFG/dragonbreath.cfg" dragonbreath host "${HOST}"
+            chown lava:lava "$CFG/dragonbreath.cfg"
+            rm -f "$CFG/panda_breath.cfg"
+
+            echo ""
+            echo ">> Migration complete. Restarting Klipper..."
+            /etc/init.d/S60klipper restart

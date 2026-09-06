@@ -1,4 +1,7 @@
 #!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-PackageHomePage: https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware
+# SPDX-FileCopyrightText: Copyright (c) 2026 @paxx12
 
 OCTOEVERYWHERE_DAEMON="/usr/local/sbin/octoeverywhered"
 OCTOEVERYWHERE_PIDFILE="/var/run/octoeverywhere.pid"
@@ -14,6 +17,9 @@ start_octoeverywhere() {
         echo "moonraker_octoeverywhere already running"
         return 0
     fi
+
+    . /usr/local/sbin/limits-helper.sh
+    limits_enter octoeverywhere 80M
 
     printf "Starting moonraker_octoeverywhere: "
     mkdir -p "$OCTOEVERYWHERE_STATE_DIR"

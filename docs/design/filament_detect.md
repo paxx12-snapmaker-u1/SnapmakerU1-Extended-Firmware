@@ -41,6 +41,7 @@ Read-only fields (returned by query, not accepted by `set`):
 |---|---|
 | `ARGB_COLOR` | Derived: `(ALPHA << 24) \| RGB_1` |
 | `OFFICIAL` | `true` when `info` contains at least one filament field other than `CARD_UID` |
+| `CARD_EVENT_TIME` | `float`, `self.reactor.monotonic()` at the time this channel's record was last written, by `filament_detect/set` or a native M1/NTAG hardware read |
 | `MANUFACTURER` | |
 | `VERSION` | |
 | `TRAY` | |
@@ -295,6 +296,7 @@ Repository overlays:
 - `overlays/firmware-extended/13-patch-rfid/root/home/lava/klipper/klippy/extras/filament_protocol_ndef.py`
 - `overlays/firmware-extended/13-patch-rfid/patches/02-add-ndef-protocol.patch`
 - `overlays/firmware-extended/13-patch-rfid/patches/05-add-filament-detect-set-endpoint.patch`
+- `overlays/firmware-extended/13-patch-rfid/patches/09-add-card-event-time.patch`
 - `overlays/firmware-extended/64-app-openrfid/root/usr/local/share/openrfid/extended/openrfid_u1_base.cfg`
 
 Klipper source code:
