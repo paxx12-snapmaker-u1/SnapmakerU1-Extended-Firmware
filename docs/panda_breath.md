@@ -107,6 +107,10 @@ mDNS resolution can be unreliable. Set a static DHCP lease and use the IP addres
 
 This is a symptom of motherboard overheating. See [Motherboard Overheating](#motherboard-overheating) for cooling solutions.
 
+## Alternatives
+
+- [pandabreath-u1-bridge](https://github.com/djgringoboy2003/pandabreath-u1-bridge) — a community **external host-side bridge** (runs on a Raspberry Pi or similar, not in firmware) that drives the Panda Breath from Moonraker with automatic material→target mapping, an independent enclosure-temperature safety shutoff, and a status dashboard. An alternative to this firmware-native integration for setups that prefer host-side control — use one or the other, not both.
+
 ## Related Documentation
 
 - [Firmware Configuration](firmware_config.md) - Enable Panda Breath via the web interface under Snapmaker Components
