@@ -1,0 +1,57 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-PackageHomePage: https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware
+# SPDX-FileCopyrightText: Copyright (c) 2026 @paxx12
+
+settings:
+  snapmaker_components:
+    items:
+      firmware-upgrade-channel:
+        label: Firmware Upgrade
+        description: >-
+          Enable or disable the paxx12 firmware upgrade feature. Requires usage of Snapmaker Cloud.
+        help_url: https://snapmakeru1-extended-firmware.pages.dev/firmware_upgrade
+        get_cmd:
+          - /usr/local/bin/extended-config.py
+          - get
+          - /home/lava/printer_data/config/extended/extended2.cfg
+          - components
+          - upgrade
+          - none
+        options:
+          none:
+            label: Disabled
+            confirm: "Changing the firmware upgrade channel requires a reboot. Reboot now?"
+            cmd:
+              - bash
+              - -xc
+              - |
+                /usr/local/bin/extended-config.py add /home/lava/printer_data/config/extended/extended2.cfg components upgrade none &&
+                /sbin/reboot &
+          stable:
+            label: Stable (recommended)
+            confirm: "Changing the firmware upgrade channel requires a reboot. Reboot now?"
+            cmd:
+              - bash
+              - -xc
+              - |
+                /usr/local/bin/extended-config.py add /home/lava/printer_data/config/extended/extended2.cfg components upgrade stable &&
+                /sbin/reboot &
+          testing:
+            label: Testing (pre-releases)
+            confirm: "Changing the firmware upgrade channel requires a reboot. Reboot now?"
+            cmd:
+              - bash
+              - -xc
+              - |
+                /usr/local/bin/extended-config.py add /home/lava/printer_data/config/extended/extended2.cfg components upgrade testing &&
+                /sbin/reboot &
+          develop:
+            label: Develop (bleeding edge)
+            confirm: "Changing the firmware upgrade channel requires a reboot. Reboot now?"
+            cmd:
+              - bash
+              - -xc
+              - |
+                /usr/local/bin/extended-config.py add /home/lava/printer_data/config/extended/extended2.cfg components upgrade develop &&
+                /sbin/reboot &
+        default: none

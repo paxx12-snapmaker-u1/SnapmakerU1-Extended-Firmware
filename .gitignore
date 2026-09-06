@@ -1,4 +1,4 @@
-firmware/
+/firmware/
 tmp/
 *.o
 *.so

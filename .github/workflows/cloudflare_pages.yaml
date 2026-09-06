@@ -41,7 +41,8 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy _site --project-name=snapmakeru1-extended-firmware --branch=${{ github.ref_name }}
+          workingDirectory: docs
+          command: pages deploy ../_site --project-name=snapmakeru1-extended-firmware --branch=${{ github.ref_name }}
 
       - name: Add deployment comment
         if: github.event_name == 'push' && github.ref != 'refs/heads/main'
