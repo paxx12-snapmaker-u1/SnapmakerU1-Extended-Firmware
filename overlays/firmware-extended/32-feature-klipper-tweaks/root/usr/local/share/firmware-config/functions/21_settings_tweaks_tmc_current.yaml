@@ -21,6 +21,11 @@ settings:
               - bash
               - -xc
               - |
+                if test -f /oem/printer_data/config/extended/klipper/10_max_speed.cfg; then
+                  echo "ERROR: Max Speed is enabled. Lowering X/Y current to 1.0A is untested at its raised speed limits."
+                  echo "Disable Max Speed first, then enable TMC Reduced Current."
+                  exit 1
+                fi
                 cp -v /usr/local/share/firmware-config/tweaks/klipper/tmc_current.cfg /oem/printer_data/config/extended/klipper/tmc_current.cfg &&
                 echo "TMC Reduced Current enabled. Restarting Klipper..." &&
                 /etc/init.d/S60klipper restart

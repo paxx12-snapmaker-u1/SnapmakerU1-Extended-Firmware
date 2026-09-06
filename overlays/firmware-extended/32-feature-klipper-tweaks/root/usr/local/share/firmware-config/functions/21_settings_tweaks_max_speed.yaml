@@ -1,0 +1,68 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-PackageHomePage: https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware
+# SPDX-FileCopyrightText: Copyright (c) 2026 @paxx12, @ni4223
+
+# Both tiers install to the same extended/klipper/10_max_speed.cfg, so switching
+# between them is a single overwrite and the two tiers can never both be active.
+# The tier is read back from the `# tier:` marker in the installed file's header.
+
+settings:
+  tweaks:
+    items:
+      max_speed:
+        label: Max Speed
+        description: Raises the XY motion limits and speeds up tool changes. Balanced is the recommended starting point. Requires a calibrated printer.
+        help_url: http://snapmakeru1-extended-firmware.pages.dev/tweaks#max-speed
+        get_cmd:
+          - bash
+          - -c
+          - |
+            CFG=/oem/printer_data/config/extended/klipper/10_max_speed.cfg
+            if grep -q '^# tier: aggressive' "$CFG" 2>/dev/null; then
+              echo "aggressive"
+            elif grep -q '^# tier: balanced' "$CFG" 2>/dev/null; then
+              echo "balanced"
+            else
+              echo "disabled"
+            fi
+        options:
+          balanced:
+            label: Balanced
+            confirm: "Enable Max Speed (Balanced)? Sets XY velocity to 600 mm/s, tool change speed to 550 mm/s and dock grab speed to 30 mm/s. Only enable this if dock positions and belt tension are calibrated and tool changes are already reliable."
+            cmd:
+              - bash
+              - -xc
+              - |
+                if test -f /oem/printer_data/config/extended/klipper/tmc_current.cfg; then
+                  echo "ERROR: TMC Reduced Current is enabled and lowers the X/Y motor current."
+                  echo "Disable TMC Reduced Current first, then enable Max Speed."
+                  exit 1
+                fi
+                cp -v /usr/local/share/firmware-config/tweaks/klipper/max_speed_balanced.cfg /oem/printer_data/config/extended/klipper/10_max_speed.cfg &&
+                echo "Max Speed (Balanced) enabled. Restarting Klipper..." &&
+                /etc/init.d/S60klipper restart
+          aggressive:
+            label: Aggressive
+            confirm: "Enable Max Speed (Aggressive)? Sets XY velocity to 750 mm/s, tool change speed to 700 mm/s and dock grab speed to 50 mm/s. Only enable this if dock positions and belt tension are calibrated and tool changes are already reliable."
+            cmd:
+              - bash
+              - -xc
+              - |
+                if test -f /oem/printer_data/config/extended/klipper/tmc_current.cfg; then
+                  echo "ERROR: TMC Reduced Current is enabled and lowers the X/Y motor current."
+                  echo "Disable TMC Reduced Current first, then enable Max Speed."
+                  exit 1
+                fi
+                cp -v /usr/local/share/firmware-config/tweaks/klipper/max_speed_aggressive.cfg /oem/printer_data/config/extended/klipper/10_max_speed.cfg &&
+                echo "Max Speed (Aggressive) enabled. Restarting Klipper..." &&
+                /etc/init.d/S60klipper restart
+          disabled:
+            label: Disabled
+            cmd:
+              - bash
+              - -xc
+              - |
+                rm -vf /oem/printer_data/config/extended/klipper/10_max_speed.cfg &&
+                echo "Max Speed disabled. Restarting Klipper..." &&
+                /etc/init.d/S60klipper restart
+        default: disabled
