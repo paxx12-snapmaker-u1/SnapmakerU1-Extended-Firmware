@@ -40,7 +40,7 @@
  class SpoolLink:
      def __init__(self, config: ConfigHelper) -> None:
          self.server = config.get_server()
-@@ -65,6 +98,7 @@
+@@ -68,6 +101,7 @@
          self._active_spool_id: Optional[int] = None
  
          self.server.register_remote_method(RESOLVE_METHOD, self._resolve_spool)
@@ -48,7 +48,7 @@
          self.server.register_event_handler(
              "server:klippy_ready", self._handle_klippy_ready)
          self.server.register_event_handler(
-@@ -278,6 +312,7 @@
+@@ -284,6 +318,7 @@
      async def _ensure_fields(self) -> None:
          await self._ensure_field("spool", "card_uids", "Card UIDs")
          await self._ensure_field("filament", "variant", "Variant")
@@ -56,7 +56,7 @@
  
      async def _ensure_field(self, entity_type: str, key: str, name: str) -> None:
          base = f"{self._spoolman_url}/api/v1/field/{entity_type}"
-@@ -310,6 +345,47 @@
+@@ -316,6 +351,47 @@
                  "[spoollink] custom fields check failed (%s/%s): %s",
                  entity_type, key, e)
  
@@ -104,7 +104,7 @@
      async def _spoolman_get_by_id(self, spool_id: int) -> Optional[dict]:
          resp = await self.http_client.get(
              f"{self._spoolman_url}/api/v1/spool/{spool_id}", enable_cache=False)
-@@ -451,6 +527,10 @@
+@@ -458,6 +534,10 @@
          vendor = (filament.get("vendor") or {}).get("name", "Generic")
          variant = _parse_variant(vendor, filament)
  
@@ -112,10 +112,10 @@
 +        matrix = _parse_pa_matrix(extra.get("pressure_advance_matrix"))
 +        pa_matrix = json.dumps(matrix) if matrix else ""
 +
-         raw_multi = filament.get("multi_color_hexes") or ""
-         colors = [c.strip().upper()[:6] for c in raw_multi.split(",") if c.strip()]
-         color_hex = colors[0] if colors else (filament.get("color_hex") or "FFFFFF")[:6].upper()
-@@ -465,6 +545,7 @@
+         if (self._force_generic_vendor
+                 and vendor.strip().lower() != "snapmaker"):
+             vendor = "Generic"
+@@ -477,6 +557,7 @@
          alpha = 0xFF
          info = {
              "VENDOR": vendor,
