@@ -62,12 +62,20 @@ export async function onRequestGet(context) {
     ));
   }
 
-  const version = (release.name || release.tag_name).replace(/^(?:Rolling:\s*)?v/, "");
+  let version = (release.name || release.tag_name).replace(/^(?:Rolling:\s*)?v/, "");
+  let fullversion = version;
+
+  // The 1.6.0-paxx12-22 release was built with a different versioning scheme
+  // than the rest of the 1.6.x series, so we need to hardcode the fullversion
+  // for that one release.
+  if (version == "1.6.0-paxx12-22") {
+    fullversion = "1.6.0.267_20260815150420";
+  }
 
   const body = {
     name: release.name || release.tag_name,
     version,
-    fullversion: version,
+    fullversion,
     size: checksums.size,
     md5: checksums.md5,
     sha256: checksums.sha256,
