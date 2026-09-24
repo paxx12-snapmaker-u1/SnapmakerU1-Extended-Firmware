@@ -1,0 +1,64 @@
+--- a/klippy/extras/virtual_sdcard.py
++++ b/klippy/extras/virtual_sdcard.py
+@@ -59,6 +59,7 @@
+         self.next_file_position = 0
+         self.work_timer = None
+         self.print_task_config = None
++        self._waiting_for_idle_notified = False
+         # PL params
+         if not os.path.exists(PL_RECORD_FILE_DIR):
+             try:
+@@ -302,6 +303,7 @@
+             self.current_file = None
+         self.file_position = self.file_size = 0
+         self.print_stats.reset()
++        self._waiting_for_idle_notified = False
+         self.exit_to_idle(rm_pl_env_file)
+         self.printer.send_event("virtual_sdcard:reset_file")
+     cmd_SDCARD_RESET_FILE_help = "Clears a loaded SD File. Stops the print "\
+@@ -349,7 +351,6 @@
+                     level = 3)
+         self.rm_power_loss_info()
+         self._load_file(gcmd, filename, check_subdirs=True)
+-        self.gcode.run_script_from_command("TURN_OFF_HEATERS")
+         self.do_resume()
+ 
+     cmd_SDCARD_PRINT_FILE_WITH_PARAMETERS_help = "Loads a SD file and starts the print.  May "\
+@@ -393,7 +394,6 @@
+ 
+         self.rm_power_loss_info()
+         self._load_file(gcmd, filename, check_subdirs=True)
+-        self.gcode.run_script_from_command("TURN_OFF_HEATERS")
+         self.do_resume()
+ 
+     def cmd_M20(self, gcmd):
+@@ -531,6 +531,21 @@
+         return self.cmd_from_sd
+     # Background work timer
+     def work_handler(self, eventtime):
++        if self.must_pause_work:
++            self.reactor.unregister_timer(self.work_timer)
++            self.work_timer = None
++            return self.reactor.NEVER
++        msm = self.printer.lookup_object('machine_state_manager', None)
++        if msm is not None:
++            cur_sta = str(msm.get_status().get('main_state', '')).upper()
++            if 'IDLE' not in cur_sta and 'PRINTING' not in cur_sta:
++                if not self._waiting_for_idle_notified:
++                    self._waiting_for_idle_notified = True
++                    self.gcode.respond_raw(f"// [virtual_sdcard] Waiting for {cur_sta} to finish before starting print...")
++                    logging.info("virtual_sdcard: waiting for machine state %s to become IDLE before starting print", cur_sta)
++                return eventtime + 1.0
++
++        self._waiting_for_idle_notified = False
+         logging.info("Starting SD card print, file: %s, position %d",
+                      self.current_file.name, self.file_position)
+         self.reactor.unregister_timer(self.work_timer)
+@@ -552,6 +567,7 @@
+             logging.exception("virtual_sdcard seek")
+             self.work_timer = None
+             return self.reactor.NEVER
++        self.gcode.run_script_from_command("TURN_OFF_HEATERS")
+         try:
+             self.gcode.run_script_from_command("SET_MAIN_STATE MAIN_STATE=PRINTING")
+         except Exception as e:

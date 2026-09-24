@@ -26,11 +26,16 @@ Example `extra.pressure_advance_matrix` value:
    (via RFID card or UI), Klipper builds the key for the channel's current nozzle and,
    if the matrix has an entry for it, applies that Pressure Advance. If there is no
    entry for the current nozzle, the channel is queued for automatic calibration
-   (when `auto_pa` is enabled).
+   (when `auto_pa` is enabled and no print is in progress). If a print is active or paused,
+   calibration is safely skipped (and not queued for afterwards).
 3. **Auto-saves PA on calibration**: when automatic flow calibration (`FLOW_CALIBRATE`)
    completes, the calibrated K-factor is written back to the active spool under the key
    for the nozzle used during calibration. Existing entries for other nozzles are
    preserved (the matrix is merged, not overwritten).
+4. **Print Queueing during Calibration**: if a print job is sent while automatic flow
+   calibration is already running, the print startup safely waits for calibration to
+   complete before starting the print, allowing the print to use the newly calibrated PA
+   without interrupting nozzle heating or dropping the print job.
 
 ## Notes
 
