@@ -56,7 +56,7 @@ with JSON (MIME type `application/json`) also works.
 | [TigerTag Studio Manager](https://github.com/TigerTag-Project/TigerTag-Studio-Manager) | TigerSystem | Windows, macOS, Linux (desktop, ACR122U USB NFC reader recommended) | TigerTag | TigerTag | – | [GitHub](https://github.com/TigerTag-Project/TigerTag-Studio-Manager) (MIT) | — |
 | [TigerTag Connect](https://tigertag.io/) | TigerSystem | Android ([Google Play](https://play.google.com/store/apps/details?id=com.tigertag.connect)), iOS ([App Store](https://apps.apple.com/us/app/tigertag-rfid-connect/id6745437963)) | TigerTag | TigerTag | – | Closed source | — |
 | [SpoolSense iOS App](https://spoolsense.org/) | SpoolSense | iOS ([App Store](https://apps.apple.com/us/app/spoolsense-nfc-filament-tags/id6789256550)) | OpenPrintTag, OpenTag3D, OpenSpool, TigerTag | OpenPrintTag, OpenTag3D, OpenSpool, TigerTag | - | Closed source | - |
-| [SpoolFlux](https://spoolflux.dingdongclick.de/) | SpoolFlux | iOS ([App Store](https://spoolflux.dingdongclick.de/)) | OpenPrintTag, OpenTag3D, OpenSpool, TigerTag | OpenPrintTag, OpenTag3D, OpenSpool, TigerTag | - | Closed source | - |
+| [SpoolFlux](https://spoolflux.dingdongclick.de/) | SpoolFlux | iOS ([App Store](https://spoolflux.dingdongclick.de/)) | OpenPrintTag, OpenTag3D, OpenSpool, TigerTag, Anycubic ACE | OpenPrintTag, OpenTag3D, OpenSpool, TigerTag, Anycubic ACE | - | Closed source | - |
 
 **Notes:**
 
