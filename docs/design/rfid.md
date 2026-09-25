@@ -19,12 +19,12 @@ For the OpenSpool payload format and field reference, see
 
 What each detection system or hardware reader can identify.
 
-| Reader | Author | Hardware | Snapmaker | OpenSpool | Bambu | Creality | Anycubic | Elegoo | Qidi | TigerTag | SpoolEase | SpoolLink | Support |
-|--------|--------|----------|-----------|-----------|-------|----------|----------|--------|------|----------|-----------|-----------|---------|
-| Snapmaker (built-in, default) | [Snapmaker](https://github.com/Snapmaker) | Internal | ✅ | ✅ | – | – | – | – | – | – | – | ✅ | — |
-| [OpenRFID](https://github.com/suchmememanyskill/OpenRFID) | [suchmememanyskill](https://github.com/suchmememanyskill) | Internal | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — |
-| External - wasikuss: [snapmaker-u1-remote-rfid-reader](https://github.com/wasikuss/snapmaker-u1-remote-rfid-reader) | [wasikuss](https://github.com/wasikuss) | External — ESP32-C3 + PN532 | – | ✅ | – | – | – | – | – | – | – | – | — |
-| External - baze: [snapmaker-u1-drybox-nfc-reader](https://gitlab.com/baze/snapmaker-u1-drybox-nfc-reader) | [baze](https://gitlab.com/baze) | External — ESP32-C3 + PN532, browser-flashable, [printable case](https://www.printables.com/model/1637071-remote-nfc-rfid-reader-for-snapmaker-u1) | – | ✅ | – | – | – | – | – | – | – | ✅ | — |
+| Reader | Author | Hardware | Snapmaker | OpenSpool | Bambu | Creality | Anycubic | Elegoo | Qidi | OpenTag3D | TigerTag | SpoolEase | SpoolLink | Support |
+|--------|--------|----------|-----------|-----------|-------|----------|----------|--------|------|-----------|----------|-----------|-----------|---------|
+| Snapmaker (built-in, default) | [Snapmaker](https://github.com/Snapmaker) | Internal | ✅ | ✅ | – | – | – | – | – | - | – | – | ✅ | — |
+| [OpenRFID](https://github.com/suchmememanyskill/OpenRFID) | [suchmememanyskill](https://github.com/suchmememanyskill) | Internal | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — |
+| External - wasikuss: [snapmaker-u1-remote-rfid-reader](https://github.com/wasikuss/snapmaker-u1-remote-rfid-reader) | [wasikuss](https://github.com/wasikuss) | External — ESP32-C3 + PN532 | – | ✅ | – | – | – | - | – | – | – | – | – | — |
+| External - baze: [snapmaker-u1-drybox-nfc-reader](https://gitlab.com/baze/snapmaker-u1-drybox-nfc-reader) | [baze](https://gitlab.com/baze) | External — ESP32-C3 + PN532, browser-flashable, [printable case](https://www.printables.com/model/1637071-remote-nfc-rfid-reader-for-snapmaker-u1) | – | ✅ | – | – | - | – | – | – | – | – | ✅ | — |
 
 **Notes:**
 
@@ -52,9 +52,11 @@ with JSON (MIME type `application/json`) also works.
 | [SpoolKid](https://github.com/marko-p/SpoolKid) | [Marco](https://github.com/marko-p) | iOS ([TestFlight beta](https://testflight.apple.com/join/Y4BmejQk); build from source) | OpenSpool, OpenTag3D, ELEGOO, Anycubic ACE; UID-only for Mifare Classic and unrecognized tags | OpenSpool, OpenTag3D, ELEGOO, Anycubic ACE | ELEGOO, Anycubic ACE | [GitHub](https://github.com/marko-p/SpoolKid) (MIT) | [![Ko-fi](https://img.shields.io/badge/Ko--fi-FF5E5B?logo=kofi&logoColor=white)](https://ko-fi.com/spoolkid) [![Sponsor](https://img.shields.io/badge/Sponsor-EA4AAA?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/marko-p) |
 | [OpenSpool app](https://github.com/spuder/OpenSpoolMobile) | [spuder](https://github.com/spuder) | Android, iOS | OpenSpool (basic fields) | OpenSpool (basic fields) | – | [GitHub](https://github.com/spuder/OpenSpoolMobile) (source) | [![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-FFDD00?logo=buymeacoffee&logoColor=black)](https://www.buymeacoffee.com/openspool) |
 | [PrintTag-Web](https://printtag-web.pages.dev) | [paxx12](https://github.com/paxx12) | Android (Chrome, Web NFC) | OpenSpool, OpenPrintTag | OpenSpool, OpenPrintTag | – | [GitHub](https://github.com/paxx12/PrintTag-Web) (source) | [![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-FFDD00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/paxx12) |
-| [NFC Tools](https://www.wakdev.com/en/apps/nfc-tools.html) | [wakdev](https://github.com/wakdev) | Android ([Google Play](https://play.google.com/store/apps/details?id=com.wakdev.wdnfc)), iOS ([App Store](https://apps.apple.com/us/app/nfc-tools/id1252962749)) | Any NDEF | Any NDEF | – | Closed source | — |
+| [NFC Tools](https://www.wakdev.com/en/apps/nfc-tools.html) | [wakdev](https://github.com/wakdev) | Android ([Google Play](https://play.google.com/store/apps/details?id=com.wakdev.wdnfc)), iOS ([App Store](https://apps.apple.com/us/app/nfc-tools/id1252962749)) | OpenPrintTag, OpenTag3D, OpenSpool, Any NDEF | OpenPrintTag, OpenTag3D, OpenSpool, Any NDEF | – | Closed source | — |
 | [TigerTag Studio Manager](https://github.com/TigerTag-Project/TigerTag-Studio-Manager) | TigerSystem | Windows, macOS, Linux (desktop, ACR122U USB NFC reader recommended) | TigerTag | TigerTag | – | [GitHub](https://github.com/TigerTag-Project/TigerTag-Studio-Manager) (MIT) | — |
 | [TigerTag Connect](https://tigertag.io/) | TigerSystem | Android ([Google Play](https://play.google.com/store/apps/details?id=com.tigertag.connect)), iOS ([App Store](https://apps.apple.com/us/app/tigertag-rfid-connect/id6745437963)) | TigerTag | TigerTag | – | Closed source | — |
+| [SpoolSense iOS App](https://spoolsense.org/) | SpoolSense | iOS ([App Store](https://apps.apple.com/us/app/spoolsense-nfc-filament-tags/id6789256550)) | OpenPrintTag, OpenTag3D, OpenSpool, TigerTag | OpenPrintTag, OpenTag3D, OpenSpool, TigerTag | - | Closed source | - |
+| [SpoolFlux](https://spoolflux.dingdongclick.de/) | SpoolFlux | iOS ([App Store](https://spoolflux.dingdongclick.de/)) | OpenPrintTag, OpenTag3D, OpenSpool, TigerTag | OpenPrintTag, OpenTag3D, OpenSpool, TigerTag | - | Closed source | - |
 
 **Notes:**
 
@@ -87,6 +89,7 @@ interface, go to **Snapmaker Components > RFID Detection System**, and select
 | Snapmaker | Yes | - |
 | Elegoo | No | Elegoo spools tagged with RFID work unreliably |
 | [OpenSpool](https://openspool.io/) | Yes | - |
+| [OpenTag3D](https://opentag3d.info/) | Yes | - |
 | TigerTag | Yes | Fully offline implementation |
 | Qidi | Yes | - |
 | [SpoolEase](https://spoolease.io/) | No | NTAG NDEF tags; enable the processor to use |
