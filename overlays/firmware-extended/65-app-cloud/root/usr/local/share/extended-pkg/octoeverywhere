@@ -3,9 +3,9 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 @paxx12
 
 PKG_LABEL="OctoEverywhere"
-PKG_VERSION=5.3.5
+PKG_VERSION=5.4.0
 PKG_URL="https://github.com/QuinnDamerell/OctoPrint-OctoEverywhere/archive/refs/tags/${PKG_VERSION}.zip"
-PKG_SHA256=fc4e4b24dbf4ba0b50213a5b87676ce4a6af5067d28f67fb3ec7f2064908d8f2
+PKG_SHA256=9cf6601552fecf5b7a476d58fe89ff495ac904e962b4d6e883e664800e97e497
 # GitHub archives unpack to `OctoPrint-OctoEverywhere-<tag>`.
 PKG_PREFIX="OctoPrint-OctoEverywhere"
 
