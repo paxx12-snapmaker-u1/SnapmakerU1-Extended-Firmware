@@ -31,7 +31,7 @@ start() {
     fi
 
     . /usr/local/sbin/limits-helper.sh
-    limits_enter firmware-config 48M
+    limits_enter firmware-config 96M
 
     start-stop-daemon -S -b -m -p "$PIDFILE" -x /usr/bin/python3 -- \
         "$DAEMON" --bind "$BIND" --port "$PORT" \

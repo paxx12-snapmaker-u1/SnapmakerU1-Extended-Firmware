@@ -16,21 +16,28 @@ if [ "$1" = start ]; then
     CACHE_DIR="/oem/printer_data/config/extended/spoollink"
 
     SPOOLMAN_HOST=$(/usr/local/bin/extended-config.py get "$EXTENDED_CFG" spoolman host "" 2>/dev/null)
+    API_KEY=$(/usr/local/bin/extended-config.py get "$EXTENDED_CFG" spoolman api_key "" 2>/dev/null)
     FORCE_GENERIC_VENDOR=$(/usr/local/bin/extended-config.py get "$EXTENDED_CFG" spoolman force_generic_vendor false 2>/dev/null)
 
     if [ -n "$SPOOLMAN_HOST" ]; then
         mkdir -p "$(dirname "$MOONRAKER_CFG")" "$CACHE_DIR"
         chown lava:lava "$CACHE_DIR"
-        cat > "$MOONRAKER_CFG" <<EOF
-# Spoolman Integration (generated from extended2.cfg [spoolman] host).
-# See: https://moonraker.readthedocs.io/en/latest/configuration/#spoolman
-[spoolman]
+        API_KEY_LINE=""
+        SPOOLMAN_BLOCK=""
+        if [ -n "$API_KEY" ]; then
+            API_KEY_LINE="api_key: $API_KEY"
+        else
+            SPOOLMAN_BLOCK="[spoolman]
 server: $SPOOLMAN_HOST
 sync_rate: 5
-
-# SpoolLink component: bridges Spoolman to the Snapmaker AFC/RFID stack.
+"
+        fi
+        cat > "$MOONRAKER_CFG" <<EOF
+$SPOOLMAN_BLOCK
+# SpoolLink component: bridges FilaMan / Spoolman to the Snapmaker AFC/RFID stack.
 [spoollink]
 server: $SPOOLMAN_HOST
+$API_KEY_LINE
 cache_dir: $CACHE_DIR
 force_generic_vendor: $FORCE_GENERIC_VENDOR
 EOF
