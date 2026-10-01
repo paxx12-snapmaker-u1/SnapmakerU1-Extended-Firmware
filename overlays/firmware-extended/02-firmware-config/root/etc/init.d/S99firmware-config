@@ -11,6 +11,13 @@ SHAREDIR="/usr/local/share/firmware-config"
 PORT=9091
 BIND=127.0.0.1
 
+# Source optional extensions in lexical order before handling the action.
+for hook in /etc/hooks/firmware-config.d/*.sh; do
+    [ -r "$hook" ] || continue
+    . "$hook"
+done
+unset hook
+
 EXTENDED_CFG="/home/lava/printer_data/config/extended/extended2.cfg"
 FIRMWARE_CONFIG_ENABLED=$(/usr/local/bin/extended-config.py get "$EXTENDED_CFG" web firmware_config true)
 
@@ -36,7 +43,7 @@ start() {
     start-stop-daemon -S -b -m -p "$PIDFILE" -x /usr/bin/python3 -- \
         "$DAEMON" --bind "$BIND" --port "$PORT" \
         --html-dir "$SHAREDIR/html" \
-        --functions-dir "$SHAREDIR/functions"
+        --functions-dir "${FIRMWARE_CONFIG_FUNCTIONS_DIR:-$SHAREDIR/functions}"
     echo "OK"
 }
 
