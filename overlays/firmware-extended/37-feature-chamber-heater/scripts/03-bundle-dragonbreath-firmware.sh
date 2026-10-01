@@ -5,10 +5,10 @@
 #
 # Bundle the pinned DragonBreath device firmware at build time.
 
-VERSION=v1.1.12
+VERSION=v1.1.19
 FILENAME="dragonbreath-${VERSION}.bin"
 URL="https://github.com/plastikman/DragonBreath/releases/download/${VERSION}/dragonbreath-${VERSION}.bin"
-BIN_SHA256=8f21c98f9cdad6da4cf8e3f1aaad2453d3526ffbb30b16e79abf6f8f09e883ec
+BIN_SHA256=340e850125f43e5a181b6bf5caef97f75d466088e29d95e60d747d69218f4c78
 
 if [[ -z "$CREATE_FIRMWARE" ]]; then
   echo "Error: This script should be run within the create_firmware.sh environment."
