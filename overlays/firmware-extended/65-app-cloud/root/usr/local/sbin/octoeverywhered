@@ -31,8 +31,13 @@ moonraker_api_key() {
 import json, socket, sys, time
 
 SOCKET = "/oem/printer_data/comms/moonraker.sock"
+TIMEOUT = 300  # Moonraker can take a while to come up after boot.
+RETRY_DELAY = 5
 
-for attempt in range(30):
+deadline = time.monotonic() + TIMEOUT
+attempt = 0
+while True:
+    attempt += 1
     try:
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
             sock.settimeout(10)
@@ -50,11 +55,12 @@ for attempt in range(30):
                     if resp.get("id") == 1:
                         print(resp["result"])
                         sys.exit(0)
-    except (OSError, ValueError, KeyError):
-        pass
-    time.sleep(2)
-
-sys.exit(1)
+        print(f"Moonraker closed the connection (attempt {attempt})", file=sys.stderr)
+    except (OSError, ValueError, KeyError) as e:
+        print(f"Failed to get Moonraker API key (attempt {attempt}): {e}", file=sys.stderr)
+    if time.monotonic() + RETRY_DELAY > deadline:
+        sys.exit(1)
+    time.sleep(RETRY_DELAY)
 EOF
 }
 
@@ -78,7 +84,7 @@ EOF
 /usr/local/bin/extended-config.py add /home/lava/printer_data/config/octoeverywhere.conf companion port 7125
 
 if ! MOONRAKER_API_KEY=$(moonraker_api_key); then
-    echo "Warning: Failed to get Moonraker API key, authentication will not work"
+    echo "Warning: Failed to get Moonraker API key, authentication will not work" >&2
 fi
 
 mkdir -p "$STATE_DIR"
