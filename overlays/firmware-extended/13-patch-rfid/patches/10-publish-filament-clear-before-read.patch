@@ -1,0 +1,18 @@
+--- a/home/lava/klipper/klippy/extras/filament_detect.py
++++ b/home/lava/klipper/klippy/extras/filament_detect.py
+@@ -181,12 +181,14 @@
+         if channel < 0 or channel >= self._channel_nums:
+             return
+
++        # Publish the clear before a following read can cancel the reader's
++        # pending clear (runout with filament still in the feeder does both).
++        self._filament_info_update(channel, dict(filament_protocol.FILAMENT_INFO_STRUCT), True)
+         if self._fm175xx_reader is not None:
+             self._state[channel] = FILAMENT_DT_STATE_DETECTING
+             self._fm175xx_reader.request_clear_card_info(channel)
+         else:
+             self._state[channel] = FILAMENT_DT_STATE_IDLE
+-            self._filament_info_update(channel, dict(filament_protocol.FILAMENT_INFO_STRUCT), True)
+
+     def get_a_filament_info(self, channel):
+         error = FILAMENT_DT_ERR
