@@ -138,8 +138,9 @@ over CAN bus. It:
 
 - Clones `AFC-Klipper-Add-On` from upstream at build time into
   `/home/lava/AFC-Klipper-Add-On`.
-- Adds udev rules bringing up the onboard CAN bus chip at 1 Mbps so external
-  AFC MCUs can be reached — see
+- Adds udev rules bringing up CAN interfaces at 1 Mbps so external AFC MCUs
+  can be reached (the rear [add-on connector](add-on-extension-connector.md)
+  is fixed at 500 kbps) — see
   [`overlays/mods/afc/docs/canbus.md`](https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware/blob/develop/overlays/mods/afc/docs/canbus.md)
   for wiring and MCU flashing instructions.
 - Patches Moonraker's gcode metadata parser and Klipper's extruder handling
