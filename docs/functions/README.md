@@ -43,10 +43,12 @@ the workflow fills in with every PR merged into `develop` that isn't in
 `main` yet), before `.github/scripts/append_checksums.js` appends the
 `## Checksums` section `upgrade_desc.js` reads from, described below.
 
-`?build_profile=` (`extended` or `extended-afc`, defaulting to `extended`)
+`?build_profile=` (`extended`, `extended-afc`, or `extended-multiace`,
+defaulting to `extended`)
 picks which release asset to offer — `findAsset()` in
-`_lib/github-releases.js` matches on both the `U1_extended_`/`U1_extended-afc_`
-filename prefix CI gives each profile and the shared `_upgrade.bin` suffix.
+`_lib/github-releases.js` matches on the `U1_<profile>_` filename prefix CI
+gives each profile and the shared `_upgrade.bin` suffix. The
+`extended-multiace` image is rolling-only, like the experimental AFC image.
 `?build_version=` is the device's own `/etc/BUILD_VERSION`
 (`<fullversion>-<git abbrev>`, e.g. `1.4.1-paxx12-20-gabcdef1`); if it
 already starts with the resolved release's version, the device is already
@@ -78,8 +80,8 @@ When the device is already on this build, `data` is `null` instead (see
 above) — no `note`/`url` to follow.
 
 `url` points straight at the `.bin` GitHub release asset — `findAsset()` in
-`_lib/github-releases.js` matches it on the `U1_extended_`/`U1_extended-afc_`
-filename prefix CI gives each profile plus the `_upgrade.bin` suffix. `note`
+`_lib/github-releases.js` matches it on the `U1_<profile>_` filename prefix
+CI gives each profile plus the `_upgrade.bin` suffix. `note`
 points back at this same host's `GET /api/device/firmware/upgrade_desc`
 (below), carrying `?id=`/`?asset_id=` (`release.id`/`binAsset.id` — not
 `channel`/`build_profile` again) so it's pinned to the exact release and

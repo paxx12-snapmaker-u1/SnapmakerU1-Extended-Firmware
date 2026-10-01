@@ -11,18 +11,17 @@ composable overlay directory instead of carrying a whole separate fork.
 
 ## Naming
 
-Name your mod directory after your GitHub username, not after the feature
-it adds:
+For personal mods, name the directory after your GitHub username, not after
+the feature it adds:
 
 ```text
 overlays/mods/<username>/
 ```
 
-This keeps mods from different people from colliding on a name, and keeps
-`overlays/mods/` readable as "whose overlay is this" rather than a pile of
-similarly-named feature folders. `devel` and `qemu` are the exceptions to
-this: they're maintained mods used by the project's own dev environment,
-not personal ones.
+This keeps personal mods from colliding on a name and makes ownership clear.
+Maintained project mods may use a feature name where the project publishes a
+specific profile for them. These currently include `devel`, `qemu`, `afc`, and
+`multiace`.
 
 ## Adding a mod
 
@@ -116,11 +115,12 @@ file, which belongs in `root/` instead.
 
 ## Rules
 
-- Mods are not maintained by this project. Keeping a mod working against
-  the latest firmware is the mod author's responsibility.
+- Personal mods are not maintained by this project. Keeping them working
+  against the latest firmware is the mod author's responsibility.
 - Mods are not guaranteed to work together. If combining two mods breaks
   something, that's for the mods involved to sort out, not this repo.
-- Mods do not ship in public releases. They only exist for people who build
-  their own firmware from source.
+- Mods are excluded from stable releases by default. The maintained
+  `afc` and `multiace` profiles are available in rolling builds only; they
+  remain experimental and are separate firmware images.
 - A mod that reaches decent maturity can be promoted into
   `overlays/firmware-extended/` through a normal PR.
