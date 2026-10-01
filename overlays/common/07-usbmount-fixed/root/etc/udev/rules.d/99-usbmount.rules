@@ -1,0 +1,5 @@
+# Auto-mount fixed-disk USB storage and NVMe flash drives (removable=0)
+ACTION=="add", KERNEL=="sd*[!0-9]", SUBSYSTEMS=="usb", ATTRS{removable}=="0", RUN+="/usr/share/usbmount/usbmount add"
+ACTION=="remove", KERNEL=="sd*[!0-9]", SUBSYSTEMS=="usb", ATTRS{removable}=="0", RUN+="/usr/share/usbmount/usbmount remove"
+ACTION=="add", KERNEL=="sd*[0-9]", SUBSYSTEMS=="usb", ATTRS{removable}=="0", RUN+="/usr/share/usbmount/usbmount add"
+ACTION=="remove", KERNEL=="sd*[0-9]", SUBSYSTEMS=="usb", ATTRS{removable}=="0", RUN+="/usr/share/usbmount/usbmount remove"
