@@ -66,6 +66,19 @@ class SpoolLink:
         self._ptc_spool_ids: List[int] = []
         self._active_spool_id: Optional[int] = None
 
+        self._spool_usage: Dict[int, float] = {}
+        self._last_filament_used = 0.0
+        
+        from .history import HistoryFieldData
+        self.spool_usage_history = HistoryFieldData(
+            "spool_usage", "spoollink", "Spool usage breakdown (mm)", "value",
+            reset_callback=self._on_history_reset
+        )
+        history = self.server.lookup_component("history", None)
+        if history is not None:
+            history.register_auxiliary_field(self.spool_usage_history)
+
+
         self.server.register_remote_method(RESOLVE_METHOD, self._resolve_spool)
         self.server.register_event_handler(
             "server:klippy_ready", self._handle_klippy_ready)
@@ -73,6 +86,11 @@ class SpoolLink:
             "server:klippy_disconnect", self._handle_klippy_disconnect)
         self.server.register_event_handler(
             "spoolman:active_spool_set", self._handle_active_spool_set)
+
+    
+    def _on_history_reset(self) -> None:
+        self._spool_usage.clear()
+        self._last_filament_used = 0.0
 
     async def component_init(self) -> None:
         logging.info(
@@ -90,6 +108,7 @@ class SpoolLink:
             "filament_detect": None,
             "print_task_config": ["filament_spool_id"],
             "toolhead": ["extruder"],
+            "print_stats": ["filament_used", "state"],
         }, self._handle_status_update, {})
         self._handle_status_update(status, 0.)
 
@@ -109,6 +128,20 @@ class SpoolLink:
             self._fire(self._sync_active_spool())
 
     def _handle_status_update(self, status: Dict[str, Any], eventtime: float) -> None:
+        
+        ps = status.get("print_stats")
+        if ps is not None:
+            if "filament_used" in ps:
+                current_used = ps["filament_used"]
+                delta = current_used - self._last_filament_used
+                if delta > 0 and self._active_spool_id is not None:
+                    self._spool_usage[self._active_spool_id] = self._spool_usage.get(self._active_spool_id, 0.0) + delta
+                self._last_filament_used = current_used
+            if "state" in ps:
+                state = ps["state"]
+                if state in ["complete", "cancelled"]:
+                    self.spool_usage_history.tracker.update(dict(self._spool_usage))
+
         th = status.get("toolhead")
         if th is not None:
             extruder = th.get("extruder")
@@ -178,14 +211,14 @@ class SpoolLink:
         logging.info("[spoollink] set active spool: channel=%d spool_id=%s → %s",
                      channel, self._active_spool_id, spool_id)
         self._active_spool_id = spool_id
-        spoolman = self.server.lookup_component("spoolman", None)
-        if spoolman is None:
-            return
-        try:
-            spoolman.set_active_spool(spool_id or None)
-        except Exception:
-            self._active_spool_id = None
-            raise
+        spool_mgr = (self.server.lookup_component("filaman", None) or 
+                     self.server.lookup_component("spoolman", None))
+        if spool_mgr is not None:
+            try:
+                spool_mgr.set_active_spool(spool_id or None)
+            except Exception:
+                self._active_spool_id = None
+                raise
 
     # -- Klipper push -------------------------------------------------------
 
