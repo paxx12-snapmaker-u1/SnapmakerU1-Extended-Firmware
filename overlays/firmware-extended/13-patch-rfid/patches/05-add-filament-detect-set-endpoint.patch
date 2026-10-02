@@ -70,7 +70,7 @@
 +
 +            ptc = self.printer.lookup_object('print_task_config', None)
 +            if has_params or ptc is not None and ptc.print_task_config['filament_official'][channel]:
-+                self._filament_info_update(channel, filament_info, True)
++                self._filament_info_update(channel, filament_info, has_params)
 +            else:
 +                self._filament_info[channel] = filament_info
 +            web_request.send({'state': 'success'})
