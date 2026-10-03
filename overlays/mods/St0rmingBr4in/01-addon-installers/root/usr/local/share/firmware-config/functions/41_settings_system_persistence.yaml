@@ -1,0 +1,32 @@
+settings:
+  system:
+    label: System
+    items:
+      overlay-persistence:
+        label: Overlay Persistence
+        description: >-
+          Persist system-level changes (root overlay: /etc, /usr/local, ...)
+          across reboots via the /oem/.debug flag. Required by the Add-ons
+          installers. Firmware upgrades always clear it.
+        help_url: https://paxx12-snapmaker-u1.github.io/SnapmakerU1-Extended-Firmware/data_persistence.html
+        get_cmd:
+          - /bin/sh
+          - -c
+          - test -f /oem/.debug && echo true || echo false
+        options:
+          "true":
+            label: Enabled
+            cmd:
+              - /bin/touch
+              - /oem/.debug
+          "false":
+            label: Disabled
+            confirm: >-
+              Disable overlay persistence? All system-level changes on the
+              root overlay (including installed add-ons) will be wiped on the
+              next reboot.
+            cmd:
+              - /bin/rm
+              - -f
+              - /oem/.debug
+        default: "false"
