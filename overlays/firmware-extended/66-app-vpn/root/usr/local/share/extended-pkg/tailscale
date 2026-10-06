@@ -3,9 +3,9 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 @paxx12
 
 PKG_LABEL="Tailscale"
-PKG_VERSION=1.102.4
+PKG_VERSION=1.102.5
 PKG_URL="https://pkgs.tailscale.com/stable/tailscale_${PKG_VERSION}_arm64.tgz"
-PKG_SHA256=9dd1e6a592a014bbaea0103167ffe299adeda4ba14e078ce9c2895364f6c4c3f
+PKG_SHA256=60d60109e33d097318c66adc1f1b4e78e528fa1c0357e8bfe82af99f21a18b89
 PKG_BINARIES="tailscale tailscaled"
 PKG_CLEAN_PATHS="/home/lava/printer_data/tailscale"
 PKG_LEGACY_DIR="/oem/apps/tailscale-1.92.5"
