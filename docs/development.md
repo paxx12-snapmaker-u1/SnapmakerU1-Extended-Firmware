@@ -97,6 +97,8 @@ Overlays are organized into categories based on their scope and build mods. Each
   - e.g. `./dev.sh make build PROFILE=extended-qemu`
 - `extended-afc` - **Experimental.** Add the `afc` mod overlays from `overlays/mods/afc/`, integrating the full [AFC-Klipper-Add-On](https://github.com/AFCProject/AFC-Klipper-Add-On) for physical AFC hardware (hubs, buffers, lane control) over CAN bus. See [Experimental AFC Mod](#experimental-afc-mod) below.
   - e.g. `./dev.sh make build PROFILE=extended-afc`
+- `extended-multiace` - **Experimental; rolling release only.** Add the maintained `multiace` mod from `overlays/mods/multiace/` for PAXX-managed Anycubic ACE support. This is a separate profile from `extended-afc` and is not included in stable firmware releases.
+  - e.g. `./dev.sh make build PROFILE=extended-multiace`
 
 ### Devel Mod Features
 

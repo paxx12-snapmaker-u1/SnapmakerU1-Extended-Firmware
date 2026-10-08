@@ -101,6 +101,14 @@ jobs:
         name: extended-afc-build
         path: U1_extended-afc_*_upgrade.bin
 
+    - name: Build with Extended Fluidd + multiACE firmware (experimental, rolling only)
+      run: ./dev.sh make build PROFILE=extended-multiace OUTPUT_FILE=U1_extended-multiace_${{ env.GIT_VERSION }}_upgrade.bin
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: extended-multiace-build
+        path: U1_extended-multiace_*_upgrade.bin
+
     - name: Save PR info
       if: github.event_name == 'pull_request'
       run: |
@@ -114,6 +122,7 @@ jobs:
         echo "$(date +%s)" > pr-info/job_end
         echo extended-build >> pr-info/artifacts
         echo extended-afc-build >> pr-info/artifacts
+        echo extended-multiace-build >> pr-info/artifacts
 
     - name: Upload PR info
       if: github.event_name == 'pull_request'

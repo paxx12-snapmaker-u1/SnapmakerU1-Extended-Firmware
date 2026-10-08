@@ -1,0 +1,104 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-PackageHomePage: https://github.com/decay71/multiACE
+# SPDX-FileCopyrightText: Copyright (c) 2026 @decay71 and contributors
+
+NAME="multiace-web"
+PIDFILE="/tmp/multiace_web.pid"
+PORT="7126"
+
+. /usr/local/share/multiace/common.sh
+LOGFILE="$MULTIACE_PRINTER_DATA/logs/multiace_web.log"
+
+web_pid_alive() {
+    [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE" 2>/dev/null)" 2>/dev/null
+}
+
+start() {
+    if ! multiace_enabled; then
+        echo "$NAME disabled"
+        return 0
+    fi
+    if ! multiace_seed_config; then
+        echo "$NAME cannot prepare its persistent configuration" >&2
+        return 1
+    fi
+    if [ ! -f "$MULTIACE_APP_ROOT/web/backend/main.py" ]; then
+        echo "$NAME package is not installed" >&2
+        return 1
+    fi
+    if web_pid_alive; then
+        echo "$NAME already running"
+        return 0
+    fi
+    if netstat -tln 2>/dev/null | grep -q ":$PORT "; then
+        echo "$NAME cannot start: port $PORT is already in use" >&2
+        return 1
+    fi
+    if ! PYTHONPATH="$MULTIACE_WEB_VENDOR_DIR" HOME=/home/lava /usr/bin/python3 -c \
+        'import fastapi, uvicorn, httpx, pydantic, websockets, multipart, serial' \
+        2>/dev/null; then
+        echo "$NAME dependencies are missing; reinstall the pinned package" >&2
+        return 1
+    fi
+
+    mkdir -p "$(dirname "$LOGFILE")"
+    touch "$LOGFILE"
+    chown lava:lava "$LOGFILE" 2>/dev/null || true
+    multiace_export_environment
+    echo "Starting $NAME:"
+    start-stop-daemon -S -b -m -p "$PIDFILE" -x /bin/sh -- -c \
+        "export HOME=/home/lava PYTHONPATH='$MULTIACE_WEB_VENDOR_DIR' \
+        MULTIACE_MANAGED=1 \
+        MULTIACE_MANAGED_MARKER='$MULTIACE_MANAGED_MARKER' \
+        MULTIACE_APP_DIR='$MULTIACE_APP_DIR' \
+        MULTIACE_CONFIG_DIR='$MULTIACE_CONFIG_DIR' \
+        MULTIACE_PRINTER_DATA='$MULTIACE_PRINTER_DATA'; \
+        cd '$MULTIACE_APP_ROOT/web/backend' || exit 1; \
+        exec /usr/bin/python3 -m uvicorn main:app --host 127.0.0.1 \
+        --port $PORT --log-level warning >>'$LOGFILE' 2>&1"
+    sleep 2
+    if web_pid_alive; then
+        echo "$NAME started"
+        return 0
+    fi
+    echo "$NAME failed to start; inspect $LOGFILE" >&2
+    return 1
+}
+
+stop() {
+    if ! web_pid_alive; then
+        rm -f "$PIDFILE"
+        echo "$NAME not running"
+        return 0
+    fi
+    pid="$(cat "$PIDFILE")"
+    kill -TERM "$pid" 2>/dev/null || true
+    count=0
+    while kill -0 "$pid" 2>/dev/null && [ "$count" -lt 10 ]; do
+        sleep 1
+        count=$((count + 1))
+    done
+    if kill -0 "$pid" 2>/dev/null; then
+        kill -KILL "$pid" 2>/dev/null || true
+    fi
+    rm -f "$PIDFILE"
+    echo "$NAME stopped"
+}
+
+status() {
+    if web_pid_alive; then
+        echo "$NAME running (pid $(cat "$PIDFILE"))"
+        return 0
+    fi
+    echo "$NAME stopped"
+    return 1
+}
+
+case "${1:-}" in
+    start) start ;;
+    stop) stop ;;
+    restart|reload) stop; start ;;
+    status) status ;;
+    *) echo "Usage: $0 {start|stop|restart|status}" >&2; exit 1 ;;
+esac
