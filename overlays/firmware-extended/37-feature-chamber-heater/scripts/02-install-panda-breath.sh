@@ -4,7 +4,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 @paxx12
 
 GIT_URL=https://github.com/justinh-rahb/pandabreath-klipper.git
-GIT_SHA=2fc8c03b918519060f0a2cc6b40a56fbc232e74f
+GIT_SHA=2854155083b2a9fc5cf3d97d4cdc6835cefb2f67
 
 if [[ -z "$CREATE_FIRMWARE" ]]; then
   echo "Error: This script should be run within the create_firmware.sh environment."
