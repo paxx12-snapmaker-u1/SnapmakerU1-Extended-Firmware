@@ -11,6 +11,16 @@
 # spool in sync with the toolhead, and pushes the resolved filament info
 # back into Klipper via the `spoollink/set` endpoint.
 #
+# Card UIDs are bound to spools in up to two places, each toggled in the
+# config:
+#   use_spoolman_uid  - Spoolman's native tag API (`/spool/{id}/tag`,
+#                       `/spool?tag=`), used only when the server is
+#                       Spoolman v0.27.0 or newer.
+#   use_spoollink_uid - the legacy `card_uids` spool extra field, which works
+#                       with every Spoolman version.
+# When both are in use a native tag match is authoritative, and the other
+# store is kept in sync with it.
+#
 # This file may be distributed under the terms of the GNU GPLv3 license.
 
 from __future__ import annotations
@@ -18,7 +28,8 @@ import asyncio
 import json
 import logging
 import os
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+import re
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
 if TYPE_CHECKING:
     from ..confighelper import ConfigHelper
@@ -27,6 +38,7 @@ if TYPE_CHECKING:
 
 RESOLVE_METHOD = "spoollink_resolve_spool"
 SET_ENDPOINT = "spoollink/set"
+TAG_API_MIN_VERSION = (0, 27, 0)
 
 
 def _unquote(value: str) -> str:
@@ -39,6 +51,11 @@ def _unquote(value: str) -> str:
 def _parse_card_uids(spool: dict) -> List[str]:
     raw = _unquote((spool.get("extra") or {}).get("card_uids") or "")
     return [u.strip().upper() for u in raw.split(",") if u.strip()]
+
+
+def _parse_tag_uids(spool: dict) -> List[str]:
+    return [str(t["uid"]).upper() for t in spool.get("tags") or []
+            if t.get("uid")]
 
 
 def _parse_variant(vendor: str, filament: dict) -> str:
@@ -58,6 +75,9 @@ class SpoolLink:
         self._cache_dir: Optional[str] = config.get("cache_dir", None)
         self._force_generic_vendor = config.getboolean(
             "force_generic_vendor", False)
+        self._use_spoolman_uid = config.getboolean("use_spoolman_uid", True)
+        self._use_spoollink_uid = config.getboolean("use_spoollink_uid", True)
+        self._tag_api: bool = False
         self.http_client: HttpClient = self.server.lookup_component("http_client")
         self.klippy_apis: APIComp = self.server.lookup_component("klippy_apis")
 
@@ -77,9 +97,11 @@ class SpoolLink:
     async def component_init(self) -> None:
         logging.info(
             "spoollink starting (spoolman: %s, cache: %s, "
-            "force generic vendor: %s)",
+            "force generic vendor: %s, spoolman uid: %s, spoollink uid: %s)",
             self._spoolman_url, self._cache_dir or "disabled",
-            self._force_generic_vendor)
+            self._force_generic_vendor, self._use_spoolman_uid,
+            self._use_spoollink_uid)
+        await self._refresh_tag_api()
         await self._ensure_fields()
 
     # -- Klippy lifecycle ---------------------------------------------------
@@ -281,8 +303,33 @@ class SpoolLink:
 
     # -- Spoolman REST ------------------------------------------------------
 
+    async def _refresh_tag_api(self) -> None:
+        if not self._use_spoolman_uid:
+            self._tag_api = False
+            return
+        try:
+            resp = await self.http_client.get(
+                f"{self._spoolman_url}/api/v1/info", enable_cache=False)
+            if resp.status_code != 200:
+                raise RuntimeError(f"HTTP {resp.status_code}")
+            version = str(resp.json().get("version") or "")
+        except Exception as e:
+            logging.warning(
+                "[spoollink] could not detect Spoolman version (%s), "
+                "keeping tag API %s", e,
+                "enabled" if self._tag_api else "disabled")
+            return
+        m = re.match(r"v?(\d+)\.(\d+)\.(\d+)", version)
+        supported = bool(m) and tuple(
+            int(g) for g in m.groups()) >= TAG_API_MIN_VERSION
+        if supported != self._tag_api:
+            logging.info("[spoollink] Spoolman %s: tag API %s", version or "?",
+                         "enabled" if supported else "not supported")
+        self._tag_api = supported
+
     async def _ensure_fields(self) -> None:
-        await self._ensure_field("spool", "card_uids", "Card UIDs")
+        if self._use_spoollink_uid:
+            await self._ensure_field("spool", "card_uids", "Card UIDs")
         await self._ensure_field("filament", "variant", "Variant")
 
     async def _ensure_field(self, entity_type: str, key: str, name: str) -> None:
@@ -325,7 +372,15 @@ class SpoolLink:
             return None
         raise RuntimeError(f"HTTP {resp.status_code}: {resp.text()}")
 
-    async def _spoolman_find_by_card(self, card_uid: str) -> List[dict]:
+    async def _spoolman_find_by_tag(self, card_uid: str) -> List[dict]:
+        resp = await self.http_client.get(
+            f"{self._spoolman_url}/api/v1/spool?tag={card_uid.upper()}",
+            enable_cache=False)
+        if resp.status_code != 200:
+            raise RuntimeError(f"HTTP {resp.status_code}: {resp.text()}")
+        return resp.json()
+
+    async def _spoolman_find_by_card_uids(self, card_uid: str) -> List[dict]:
         resp = await self.http_client.get(
             f"{self._spoolman_url}/api/v1/spool?limit=1000", enable_cache=False)
         if resp.status_code != 200:
@@ -333,6 +388,42 @@ class SpoolLink:
         spools = resp.json()
         uid_upper = card_uid.upper()
         return [s for s in spools if uid_upper in _parse_card_uids(s)]
+
+    async def _spoolman_find_by_card(
+            self, card_uid: str) -> Tuple[List[dict], List[dict]]:
+        """Return the spools the card resolves to, and the spools whose
+        legacy `card_uids` still list it although a native tag says
+        otherwise."""
+        tagged: List[dict] = []
+        legacy: List[dict] = []
+        if self._tag_api:
+            tagged = await self._spoolman_find_by_tag(card_uid)
+        if self._use_spoollink_uid:
+            legacy = await self._spoolman_find_by_card_uids(card_uid)
+        if not tagged:
+            return legacy, []
+        tagged_ids = {s["id"] for s in tagged}
+        return tagged, [s for s in legacy if s["id"] not in tagged_ids]
+
+    async def _spoolman_link_tag(self, spool: dict, card_uid: str) -> None:
+        url = f"{self._spoolman_url}/api/v1/spool/{spool['id']}/tag"
+        resp = await self.http_client.post(url, body={"uid": card_uid})
+        if resp.status_code == 409:
+            holder = (resp.json() or {}).get("spool_id")
+            if holder is None or holder == spool["id"]:
+                raise RuntimeError(f"HTTP 409: {resp.text()}")
+            logging.info("[spoollink] moving tag %s from spool %s to %s",
+                         card_uid, holder, spool["id"])
+            await self._spoolman_unlink_tag({"id": holder}, card_uid)
+            resp = await self.http_client.post(url, body={"uid": card_uid})
+        if resp.status_code not in (200, 201):
+            raise RuntimeError(f"HTTP {resp.status_code}: {resp.text()}")
+
+    async def _spoolman_unlink_tag(self, spool: dict, card_uid: str) -> None:
+        resp = await self.http_client.delete(
+            f"{self._spoolman_url}/api/v1/spool/{spool['id']}/tag/{card_uid}")
+        if resp.status_code not in (200, 204, 404):
+            raise RuntimeError(f"HTTP {resp.status_code}: {resp.text()}")
 
     async def _spoolman_patch_card_uids(self, spool: dict, uids: List[str]) -> dict:
         encoded = json.dumps(",".join(uids))
@@ -358,6 +449,28 @@ class SpoolLink:
         return await self._spoolman_patch_card_uids(
             spool, [u for u in existing if u != uid_upper])
 
+    async def _spoolman_bind_card(self, spool: dict,
+                                  card_uid: str) -> Tuple[dict, bool]:
+        uid_upper = card_uid.upper()
+        changed = False
+        if self._tag_api and uid_upper not in _parse_tag_uids(spool):
+            await self._spoolman_link_tag(spool, uid_upper)
+            spool = dict(spool, tags=(spool.get("tags") or [])
+                         + [{"uid": uid_upper}])
+            changed = True
+        if self._use_spoollink_uid and uid_upper not in _parse_card_uids(spool):
+            spool = await self._spoolman_add_card_uid(spool, uid_upper)
+            changed = True
+        return spool, changed
+
+    async def _spoolman_unbind_card(self, spool: dict,
+                                    card_uid: str) -> None:
+        uid_upper = card_uid.upper()
+        if self._tag_api and uid_upper in _parse_tag_uids(spool):
+            await self._spoolman_unlink_tag(spool, uid_upper)
+        if self._use_spoollink_uid and uid_upper in _parse_card_uids(spool):
+            await self._spoolman_remove_card_uid(spool, uid_upper)
+
     # -- Resolution ---------------------------------------------------------
 
     async def _resolve_spool(self, channel: int, spool_id: Any = None,
@@ -371,7 +484,11 @@ class SpoolLink:
                       channel, spool_id, card_uid)
         spool_by_id = None
         spools_by_card: List[dict] = []
+        stale_by_card: List[dict] = []
         spoolman_ok = True
+
+        if card_uid is not None:
+            await self._refresh_tag_api()
 
         if spool_id is not None:
             try:
@@ -383,7 +500,7 @@ class SpoolLink:
 
         if card_uid is not None:
             try:
-                spools_by_card = await self._retry(
+                spools_by_card, stale_by_card = await self._retry(
                     self._spoolman_find_by_card, card_uid)
             except Exception as e:
                 logging.error("[spoollink] ch%d: fetch by card failed: %s",
@@ -420,29 +537,30 @@ class SpoolLink:
                         status="error")
                 return
 
-        if card_uid is not None and spool_by_id is not None:
-            if card_uid.upper() not in _parse_card_uids(spool_by_id):
-                try:
-                    spool = await self._retry(
-                        self._spoolman_add_card_uid, spool_by_id, card_uid)
-                    logging.info("[spoollink] ch%d: bound spool %s to card %s",
-                                 channel, spool_by_id["id"], card_uid)
-                except Exception as e:
-                    logging.error("[spoollink] ch%d: bind spool %s failed: %s",
-                                  channel, spool_by_id["id"], e)
-
-            for stale in spools_by_card:
-                if stale["id"] == spool_by_id["id"]:
-                    continue
+        bind_target = spool_by_id or spool_by_card
+        if card_uid is not None and bind_target is not None:
+            stale_spools = stale_by_card + [
+                s for s in spools_by_card if s["id"] != bind_target["id"]]
+            for stale in stale_spools:
                 try:
                     await self._retry(
-                        self._spoolman_remove_card_uid, stale, card_uid)
+                        self._spoolman_unbind_card, stale, card_uid)
                     logging.info("[spoollink] ch%d: unbound card %s from spool %s",
                                  channel, card_uid, stale["id"])
                 except Exception as e:
                     logging.error(
                         "[spoollink] ch%d: unbind card %s from spool %s failed: %s",
                         channel, card_uid, stale["id"], e)
+
+            try:
+                spool, changed = await self._retry(
+                    self._spoolman_bind_card, bind_target, card_uid)
+                if changed:
+                    logging.info("[spoollink] ch%d: bound spool %s to card %s",
+                                 channel, bind_target["id"], card_uid)
+            except Exception as e:
+                logging.error("[spoollink] ch%d: bind spool %s failed: %s",
+                              channel, bind_target["id"], e)
 
         if card_uid is not None and spoolman_ok:
             self._save_cache(card_uid, spool)
