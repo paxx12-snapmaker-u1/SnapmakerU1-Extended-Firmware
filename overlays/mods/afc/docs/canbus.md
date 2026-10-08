@@ -10,7 +10,7 @@ title: CAN Bus Enabled
 
 By default CAN bus is enabled to run at 1 Mhz, with 128 deep txqueuelen. These values have been picked since they are the same values as described in [esoterical CAN Bus guide](https://canbus.esoterical.online/Getting_Started.html). 
 
-Currently there is an onboard CAN bus chip that is connected to the rear connector, but currently we have not been able to get this to work.
+The rear add-on connector (`can0`) does work, but the bridge behind it runs at a fixed 500 kbit/s and ignores the bitrate set above, so MCUs on it need to be flashed for 500 kbit/s. See [Add-on Extension Connector](https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware/blob/develop/docs/add-on-extension-connector.md) for details.
 
 To be able to use CAN bus on your printer you will need to do one of the following:  
 - Use a USB to CAN bus adapter:
