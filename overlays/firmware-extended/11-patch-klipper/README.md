@@ -8,6 +8,9 @@
 4. [resonance_tester: Added a new sweeping_vibrations resonance test method](https://github.com/Klipper3d/klipper/commit/16b4b6b30)
 5. [toolhead: Reduce LOOKAHEAD_FLUSH_TIME to 0.150 seconds](https://github.com/Klipper3d/klipper/commit/16fc46fe5)
 6. snapmaker: Fix self.test references after upstream refactor
+7. aht10: Support mainline klipper aht10 sensor
+8. temperature_combined: Add set_read_tolerance method
+9. print_task_config: Fix mixed nozzle diameter validation check (issue #773)
 
 ## How patches were generated
 
