@@ -55,6 +55,7 @@ class SpoolLink:
         if "://" not in url:
             url = "http://" + url
         self._spoolman_url = url
+        self._api_key: Optional[str] = config.get("api_key", None)
         self._cache_dir: Optional[str] = config.get("cache_dir", None)
         self._force_generic_vendor = config.getboolean(
             "force_generic_vendor", False)
@@ -73,6 +74,8 @@ class SpoolLink:
             "server:klippy_disconnect", self._handle_klippy_disconnect)
         self.server.register_event_handler(
             "spoolman:active_spool_set", self._handle_active_spool_set)
+        self.server.register_event_handler(
+            "spoolman:connected", self._handle_spoolman_connected)
 
     async def component_init(self) -> None:
         logging.info(
@@ -98,6 +101,30 @@ class SpoolLink:
         self._channel_event_times = {}
         self._ptc_spool_ids = []
         self._active_spool_id = None
+
+    def _handle_spoolman_connected(self, *args, **kwargs) -> None:
+        logging.info("[spoollink] spoolman connected, scanning for recovery")
+        self._fire(self._recover_channels())
+
+    async def _recover_channels(self) -> None:
+        try:
+            status = await self.klippy_apis.query_objects({"filament_detect": None, "print_task_config": ["filament_spool_id"]})
+            fd = status.get("filament_detect", {})
+            ptc = status.get("print_task_config", {})
+            spool_ids = ptc.get("filament_spool_id", [])
+            info_list = fd.get("info", [])
+            for ch, info in enumerate(info_list):
+                if not isinstance(info, dict):
+                    continue
+                uid = self._uid_to_hex(info.get("CARD_UID"))
+                if not uid:
+                    continue
+                current_spool = spool_ids[ch] if ch < len(spool_ids) else 0
+                if current_spool == 0:
+                    logging.info("[spoollink] ch%d: recovering spool for card %s", ch, uid)
+                    await self._resolve_spool(ch, card_uid=uid)
+        except Exception as e:
+            logging.error("[spoollink] recovery scan failed: %s", e)
 
     # -- Remote method / subscription callbacks -----------------------------
 
@@ -310,11 +337,35 @@ class SpoolLink:
             else:
                 logging.warning(
                     "[spoollink] could not create field %s/%s: HTTP %s %s",
-                    entity_type, key, resp.status_code, resp.text())
+                    entity_type, key, resp.status_code, resp.text)
         except Exception as e:
             logging.warning(
                 "[spoollink] custom fields check failed (%s/%s): %s",
                 entity_type, key, e)
+
+
+    async def _filaman_find_by_card(self, card_uid: str) -> Optional[dict]:
+        if not self._api_key or not self._spoolman_url:
+            return None
+        headers = {"Authorization": f"ApiKey {self._api_key}"}
+        try:
+            resp = await self.http_client.get(
+                f"{self._spoolman_url}/api/v1/spools?limit=1000",
+                headers=headers, enable_cache=False)
+            if resp.status_code != 200:
+                return None
+            spools = resp.json()
+            if not isinstance(spools, list):
+                return None
+            uid_upper = card_uid.upper().replace(":", "")
+            for s in spools:
+                if str(s.get("rfid_uid", "")).upper().replace(":", "") == uid_upper:
+                    return s
+                if str(s.get("rfid_uid_2", "")).upper().replace(":", "") == uid_upper:
+                    return s
+        except Exception as e:
+            logging.error("[spoollink] filaman fallback query failed: %s", e)
+        return None
 
     async def _spoolman_get_by_id(self, spool_id: int) -> Optional[dict]:
         resp = await self.http_client.get(
@@ -323,13 +374,13 @@ class SpoolLink:
             return resp.json()
         if resp.status_code == 404:
             return None
-        raise RuntimeError(f"HTTP {resp.status_code}: {resp.text()}")
+        raise RuntimeError(f"HTTP {resp.status_code}: {resp.text}")
 
     async def _spoolman_find_by_card(self, card_uid: str) -> List[dict]:
         resp = await self.http_client.get(
             f"{self._spoolman_url}/api/v1/spool?limit=1000", enable_cache=False)
         if resp.status_code != 200:
-            raise RuntimeError(f"HTTP {resp.status_code}: {resp.text()}")
+            raise RuntimeError(f"HTTP {resp.status_code}: {resp.text}")
         spools = resp.json()
         uid_upper = card_uid.upper()
         return [s for s in spools if uid_upper in _parse_card_uids(s)]
@@ -341,7 +392,7 @@ class SpoolLink:
             body={"extra": {"card_uids": encoded}})
         if resp.status_code == 200:
             return resp.json()
-        raise RuntimeError(f"HTTP {resp.status_code}: {resp.text()}")
+        raise RuntimeError(f"HTTP {resp.status_code}: {resp.text}")
 
     async def _spoolman_add_card_uid(self, spool: dict, card_uid: str) -> dict:
         uid_upper = card_uid.upper()
@@ -389,6 +440,18 @@ class SpoolLink:
                 logging.error("[spoollink] ch%d: fetch by card failed: %s",
                               channel, e)
                 spoolman_ok = False
+
+            if not spools_by_card and spoolman_ok:
+                filaman_spool = await self._filaman_find_by_card(card_uid)
+                if filaman_spool:
+                    try:
+                        filaman_spool = await self._retry(
+                            self._spoolman_add_card_uid, filaman_spool, card_uid)
+                        spools_by_card = [filaman_spool]
+                        logging.info("[spoollink] ch%d: filaman fallback bound spool %s to card %s",
+                                     channel, filaman_spool["id"], card_uid)
+                    except Exception as e:
+                        logging.error("[spoollink] ch%d: filaman fallback bind failed: %s", channel, e)
 
         if len(spools_by_card) > 1:
             ids = ", ".join(f"#{s['id']}" for s in spools_by_card)
@@ -454,12 +517,20 @@ class SpoolLink:
         spool_id = spool.get("id", 0)
         filament = spool.get("filament", {})
         material = filament.get("material", "PLA")
+
+        # Material alias normalization
+        mat_upper = material.strip().upper().replace("-", "").replace("_", "").replace(" ", "")
+        if mat_upper in ("PLAPLUS", "PLA+"):
+            material = "PLA"
+
         vendor = (filament.get("vendor") or {}).get("name", "Generic")
         variant = _parse_variant(vendor, filament)
 
         if (self._force_generic_vendor
                 and vendor.strip().lower() != "snapmaker"):
             vendor = "Generic"
+
+        if vendor == "Generic" and variant.strip().lower() in ("basic", ""):
             variant = ""
 
         raw_multi = filament.get("multi_color_hexes") or ""
