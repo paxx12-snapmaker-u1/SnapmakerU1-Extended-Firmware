@@ -1,0 +1,69 @@
+#!/bin/sh
+#
+# helix-restore-panel-scanout - re-attach the U1 panel to /dev/fb0
+#
+# With HelixScreen pinned to the fbdev backend (Remote Screen compatibility,
+# see install-helixscreen.sh), nothing performs DRM commits once startup is
+# over: the VOP2 plane keeps scanning whatever buffer was committed last,
+# while helix-screen draws into /dev/fb0 invisibly. Left alone the panel
+# freezes on the U-Boot boot logo or on helix-splash's last frame (the splash
+# page-flips its own double-buffered GEM buffer, so even after it exits the
+# plane stays parked on that buffer - observed as plane offset 614400, i.e.
+# the second 480x320x4 page, in /sys/kernel/debug/dri/0/summary).
+#
+# A blank/unblank right after start loses the race: helix-splash keeps
+# page-flipping until helix-screen signals ready, and its next commit undoes
+# the restore. So: wait for helix-screen to be up, wait for helix-splash to
+# exit, then pan fb0 back to page 0 and force a set_par (FB_ACTIVATE_FORCE)
+# so the DRM fb helper mode-sets the fbdev buffer back onto the plane. Falls
+# back to a blank/unblank cycle if python3 is unavailable.
+#
+# Synchronous - callers that must not block (boot scripts) background it.
+
+[ -e /dev/fb0 ] || exit 0
+
+# Wait for helix-screen to come up (it may still be mid-launch).
+elapsed=0
+while ! pidof helix-screen >/dev/null 2>&1; do
+    [ "$elapsed" -ge 60 ] && exit 0
+    sleep 1
+    elapsed=$((elapsed + 1))
+done
+
+# Wait for the splash to exit - any restore done while it lives is undone by
+# its next page flip. It exits once helix-screen signals ready.
+elapsed=0
+while pidof helix-splash >/dev/null 2>&1; do
+    [ "$elapsed" -ge 120 ] && break
+    sleep 1
+    elapsed=$((elapsed + 1))
+done
+
+# Let helix-screen render its first frame into fb0.
+sleep 3
+
+if command -v python3 >/dev/null 2>&1 && python3 - <<'PYEOF'
+import fcntl, array
+FBIOGET, FBIOPUT, FBIOPAN = 0x4600, 0x4601, 0x4606
+f = open('/dev/fb0', 'r+b')
+buf = array.array('I', [0] * 40)
+fcntl.ioctl(f, FBIOGET, buf, True)
+buf[4] = buf[5] = 0  # xoffset/yoffset -> page 0
+fcntl.ioctl(f, FBIOPAN, buf, True)
+buf[21] = 0x80       # activate = FB_ACTIVATE_FORCE -> set_par -> DRM modeset
+fcntl.ioctl(f, FBIOPUT, buf, True)
+PYEOF
+then
+    echo "panel re-attached to /dev/fb0"
+    exit 0
+fi
+
+# Fallback: a blank/unblank cycle also forces the fbdev emulation to
+# mode-set fb0, it is just a coarser hammer (visible black flash).
+if [ -w /sys/class/graphics/fb0/blank ]; then
+    echo 1 > /sys/class/graphics/fb0/blank 2>/dev/null || true
+    sleep 1
+    echo 0 > /sys/class/graphics/fb0/blank 2>/dev/null || true
+    echo "panel re-attached to /dev/fb0 (blank/unblank fallback)"
+fi
+exit 0
