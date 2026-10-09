@@ -23,6 +23,12 @@ jobs:
         fetch-depth: 0
         submodules: recursive
 
+    - name: Test SpoolLink
+      run: >-
+        python3 -m unittest discover
+        overlays/firmware-extended/38-feature-spoollink/test
+        -p 'test_*.py'
+
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
 
@@ -86,7 +92,7 @@ jobs:
       run: ./dev.sh make firmware
 
     - name: Build with Extended Fluidd firmware
-      run: ./dev.sh make build PROFILE=extended OUTPUT_FILE=U1_extended_${{ env.GIT_VERSION }}_upgrade.bin
+      run: ./dev.sh make build PROFILE=extended-pechex OUTPUT_FILE=U1_extended_${{ env.GIT_VERSION }}_upgrade.bin
 
     - uses: actions/upload-artifact@v4
       with:
