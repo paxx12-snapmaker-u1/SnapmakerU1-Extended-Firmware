@@ -1,0 +1,77 @@
+# Bring /extended module activation into the Klipper service lifecycle. Sourced by
+# S60klipper (see /etc/hooks/klipper.d, overlays/firmware-extended/01-system-utils).
+# See docs/design/modules.md for the activation model this implements.
+#
+# Config lands in printer_data/config/extended/klipper/, which `02-firmware-config`
+# already globs into printer.cfg (`[include extended/klipper/*.cfg]`). Extras land
+# directly in klippy's own klippy/extras/ — Klipper's loader (klippy.py's load_object)
+# hard-checks os.path.exists() against that exact directory before ever importing
+# anything, so PYTHONPATH is never consulted and extras can't live anywhere else. The
+# rootfs overlay is writable at runtime (see docs/data_persistence.md), so a symlink
+# there works the same as 38-feature-spoollink's build-time file does today.
+
+_extended_klipper_config_dir=/home/lava/printer_data/config/extended/klipper
+_extended_klipper_extras_dir=/home/lava/klipper/klippy/extras
+
+# Drops any symlink in <dir> that is dangling, or whose target is under /extended/ —
+# every module that wants a file there recreates it below, so nothing that survives this
+# is stale.
+_extended_clean_dir() {
+	dir=$1
+	for link in "$dir"/*; do
+		[ -L "$link" ] || continue
+		if [ ! -e "$link" ]; then
+			rm -f "$link"
+			continue
+		fi
+		case "$(readlink "$link")" in
+			/extended/*) rm -f "$link" ;;
+		esac
+	done
+}
+
+# Symlinks <source> to <link>, refusing (and logging) rather than silently overwriting
+# anything already there that this pass's sweep didn't already clear — a real file (eg a
+# stock Klipper extra) or another mechanism's symlink under the same name.
+_extended_link() {
+	source=$1
+	link=$2
+	if [ -e "$link" ] || [ -L "$link" ]; then
+		logger -p user.err -t "extended[$$]" -- "refusing to overwrite existing $link"
+		echo "extended: refusing to overwrite existing $link" >&2
+		return 1
+	fi
+	ln -s "$source" "$link"
+}
+
+extended_activate_config() {
+	for source in "$MODULE_DIR"/share/klipper.d/config/*; do
+		[ -f "$source" ] || continue
+		link="$_extended_klipper_config_dir/$(basename "$source")"
+		_extended_link "$source" "$link" && chown -h lava:lava "$link"
+	done
+}
+
+extended_activate_extras() {
+	for source in "$MODULE_DIR"/share/klipper.d/extras/*; do
+		[ -f "$source" ] || continue
+		_extended_link "$source" "$_extended_klipper_extras_dir/$(basename "$source")"
+	done
+}
+
+if [ "$1" = start ]; then
+	mkdir -p "$_extended_klipper_config_dir"
+	_extended_clean_dir "$_extended_klipper_config_dir"
+	_extended_clean_dir "$_extended_klipper_extras_dir"
+fi
+
+for MODULE_DIR in /extended/*; do
+	[ -d "$MODULE_DIR" ] || continue
+	[ ! -e "$MODULE_DIR/disabled" ] || continue
+	MODULE=$(basename "$MODULE_DIR")
+	export MODULE MODULE_DIR
+	activate="$MODULE_DIR/share/klipper.d/activate"
+	[ -r "$activate" ] || continue
+	. "$activate" "$1"
+done
+unset MODULE_DIR MODULE activate
