@@ -1,0 +1,48 @@
+--- a/moonraker/components/file_manager/file_manager.py	2026-02-06 19:12:24.179575409 +0100
++++ b/moonraker/components/file_manager/file_manager.py	2026-02-06 19:13:16.448036223 +0100
+@@ -825,10 +825,12 @@
+             }
+             flist['disk_usage'] = disk_usage
+         else:
++            free, total = self.get_user_space("/oem", 0)
++            used = total - free
+             disk_usage = {
+-                'free': 0,
+-                'total': OEM_SPACE,
+-                'used': OEM_SPACE
++                'free': free,
++                'total': total,
++                'used': used
+             }
+         flist['disk_usage'] = disk_usage
+         flist['root_info'] = {
+@@ -876,15 +878,16 @@
+             TMP_GCODE_DIR,
+             f"moonraker.upload-{loop_time}.mru")
+ 
+-    def get_user_space(self) -> Any:
++    def get_user_space(self, dir: str = USER_DATA_PATH, reserved: int = RESERVED_USER_SPACE) -> Any:
+         """Get the total & free space in MiB for the given path."""
+         try:
+-            statvfs = os.statvfs(USER_DATA_PATH)
++            statvfs = os.statvfs(dir)
+             free_space = statvfs.f_frsize * statvfs.f_bavail
+             total_space = statvfs.f_frsize * statvfs.f_blocks
+ 
+-            total_space -= RESERVED_USER_SPACE
+-            free_space -= RESERVED_USER_SPACE
++            total_space -= reserved
++            free_space -= reserved
++
+             if total_space < 0:
+                 total_space = 0
+                 free_space  = 0
+@@ -892,7 +895,7 @@
+                 free_space = 0
+             return free_space, total_space
+         except Exception as e:
+-            logging.error(f"Failed to get free space for {USER_DATA_PATH}: {e}")
++            logging.error(f"Failed to get free space for {dir}: {e}")
+             return 0, 0
+ 
+     def check_gcodes_space(self, required_space: int) -> bool:
