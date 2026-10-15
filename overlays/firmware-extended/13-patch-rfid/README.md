@@ -30,6 +30,28 @@ Patch set in `overlays/firmware-extended/13-rfid-support/patches`:
     stamped in `_filament_info_update` and directly in `_handle_filament_detect_set` on every
     write to a channel's record.
 
+- `06-add-spool-id-support.patch`
+  - Explicit RFID clears release the previous spool ID; ordinary tagless refreshes
+    preserve manual assignments. Explicit SpoolLink `SPOOL_ID` updates take precedence.
+  - Cleared, unassigned slots are editable before loading filament.
+- `10-publish-filament-clear-before-read.patch`
+  - Publishes cleared filament metadata when a clear is requested, so a subsequent
+    RFID read cannot cancel the reset during runout/replacement.
+
+## Host regression test
+
+After applying the overlay patches to an extracted firmware tree:
+
+```sh
+python3 overlays/firmware-extended/13-patch-rfid/test/test_filament_clear.py \
+  /path/to/rootfs/home/lava/klipper/klippy/extras
+```
+
+Exercises the real patched Python methods with hardware dependencies stubbed,
+including clear/read ordering, replacement color/type edits, empty-slot editing,
+and preservation of explicit SpoolLink assignments. This does not validate the
+printer touchscreen or hardware.
+
 ## API Contract
 
 See [docs/design/filament_detect.md](../../../docs/design/filament_detect.md) for the full field

@@ -1,0 +1,36 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: nuclearmistake <nuclearmistake@gmail.com>
+Date: Sun, 26 Apr 2026 00:00:00 +0000
+Subject: [PATCH] kinematics/extruder: only block SET_PRESSURE_ADVANCE for
+ extruders being flow-calibrated
+
+When per-extruder flow calibration was added, SET_PRESSURE_ADVANCE was
+blocked during a print whenever the global flow_calibrate flag was set,
+regardless of which extruder was the target. That prevents slicer-issued
+PA values from taking effect on extruders that the user explicitly
+excluded from calibration, and emits a misleading "flow calibration
+enabled, so not take effect." message even though no calibration is
+scheduled for that extruder.
+
+Consult flow_calib_extruders[self.extruder_index] so the lockout only
+applies to the extruder(s) actually being calibrated.
+---
+ klippy/kinematics/extruder.py | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/klippy/kinematics/extruder.py b/klippy/kinematics/extruder.py
+--- a/klippy/kinematics/extruder.py
++++ b/klippy/kinematics/extruder.py
+@@ -354,7 +354,8 @@ class ExtruderStepper:
+             print_stats_state = print_stats.get_status(self.reactor.monotonic())["state"]
+         print_config = self.printer.lookup_object('print_task_config', None)
+         if print_config is not None and print_stats is not None and \
+-                print_config.print_task_config['flow_calibrate'] == True:
++                print_config.print_task_config['flow_calibrate'] == True and \
++                print_config.print_task_config['flow_calib_extruders'][self.extruder_index]:
+             if print_stats_state in ['printing', 'paused']:
+                 gcmd.respond_info("flow calibration enabled, so not take effect.")
+                 return
+--
+2.47.3
+

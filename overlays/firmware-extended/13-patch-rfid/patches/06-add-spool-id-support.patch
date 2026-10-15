@@ -1,6 +1,6 @@
 --- a/home/lava/klipper/klippy/extras/print_task_config.py
 +++ b/home/lava/klipper/klippy/extras/print_task_config.py
-@@ -24,6 +24,7 @@
+@@ -37,6 +37,7 @@
      'filament_edit': [True] * PHYSICAL_EXTRUDER_NUM,
      'filament_exist': [False] * PHYSICAL_EXTRUDER_NUM,
      'filament_soft': [False] * PHYSICAL_EXTRUDER_NUM,
@@ -8,27 +8,35 @@
      'extruder_map_table': [i for i in range(PHYSICAL_EXTRUDER_NUM)] + [0] * (LOGICAL_EXTRUDER_NUM - PHYSICAL_EXTRUDER_NUM),
      'extruders_used' : [False] * PHYSICAL_EXTRUDER_NUM,
      'extruders_replenished': [i for i in range(PHYSICAL_EXTRUDER_NUM)],
-@@ -181,6 +182,7 @@
+@@ -348,6 +349,14 @@
 
              tmp_print_task_config['filament_official'][channel] = info['OFFICIAL']
              tmp_print_task_config['filament_sku'][channel] = info['SKU']
-+            tmp_print_task_config['filament_spool_id'][channel] = info.get('SPOOL_ID', 0)
++            # Preserve manual assignments on tag-less refreshes, but release
++            # the old spool on explicit unload/runout clears. SpoolLink also
++            # uses is_clear=True when assigning metadata, so an explicit
++            # SPOOL_ID must take precedence over the clear flag.
++            if 'SPOOL_ID' in info:
++                tmp_print_task_config['filament_spool_id'][channel] = info['SPOOL_ID']
++            elif is_clear or any(info.get('CARD_UID') or []):
++                tmp_print_task_config['filament_spool_id'][channel] = 0
              if self.filament_param_obj is not None:
                  tmp_print_task_config['filament_soft'][channel] = \
                      self.filament_param_obj.get_is_soft(info['VENDOR'], info['MAIN_TYPE'], info['SUB_TYPE'])
-@@ -282,7 +284,10 @@
+@@ -492,8 +501,10 @@
+         tmp_filament_edit = list(self.print_task_config['filament_edit'])
+         for ch in range(PHYSICAL_EXTRUDER_NUM):
              allowed_edit = False
-             if self.print_task_config['filament_exist'][ch]:
-                 if self.print_task_config['filament_official'][ch] == False:
--                    allowed_edit = True
-+                    if (self.print_task_config['filament_spool_id'][ch] or 0) > 0 and self.printer.lookup_object('webhooks').has_remote_method('spoolman_set_active_spool'):
-+                        allowed_edit = False
-+                    else:
-+                        allowed_edit = True
+-            if self.print_task_config['filament_exist'][ch]:
+-                if self.print_task_config['filament_official'][ch] == False:
++            if self.print_task_config['filament_official'][ch] == False:
++                if (self.print_task_config['filament_spool_id'][ch] or 0) > 0 and self.printer.lookup_object('webhooks').has_remote_method('spoolman_set_active_spool'):
++                    allowed_edit = False
++                else:
+                     allowed_edit = True
 
              tmp_filament_edit[ch] = allowed_edit
-         if tmp_filament_edit != self.print_task_config['filament_edit']:
-@@ -343,6 +347,7 @@
+@@ -590,6 +601,7 @@
          filament_soft = gcmd.get_int('SOFT', None)
          filament_color = gcmd.get_int('FILAMENT_COLOR', None)
          filament_color_rgba = gcmd.get('FILAMENT_COLOR_RGBA', None)
@@ -36,7 +44,7 @@
          filament_alpha = gcmd.get_int('ALPHA', None, minval=0, maxval=255)
          filament_color_nums = gcmd.get_int('COLOR_NUMS', None, minval=1, maxval=FILAMENT_COLOR_NUMS_MAX)
          filament_colors_str = gcmd.get('COLORS', None)
-@@ -359,6 +365,8 @@
+@@ -606,6 +618,8 @@
 
              if tmp_print_task_config['filament_official'][config_extruder] and bool(force) == False:
                  raise gcmd.error("[print_task_config] filament_config, official filament, not configurable!")
@@ -45,7 +53,7 @@
 
              # alpha
              if filament_alpha == None:
-@@ -403,9 +411,11 @@
+@@ -697,9 +711,11 @@
 
              tmp_print_task_config['filament_official'][config_extruder] = False
              tmp_print_task_config['filament_sku'][config_extruder] = 0
