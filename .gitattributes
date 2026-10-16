@@ -1,0 +1,23 @@
+* text=auto eol=lf
+
+# Windows-native command files retain their required line endings.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Firmware and packaged assets are binary.
+*.a binary
+*.bin binary
+*.bmp binary
+*.dtb binary
+*.gz binary
+*.img binary
+*.o binary
+*.so binary
+*.whl binary
+*.xz binary
+*.zip binary
+
+# Preserve two legacy upstream files that are already stored with CRLF.
+overlays/mods/afc/02-patch-moonraker/patches/home/lava/moonraker/02-metadata-thumbnail-fix.patch -text
+overlays/mods/afc/docs/canbus.md -text
