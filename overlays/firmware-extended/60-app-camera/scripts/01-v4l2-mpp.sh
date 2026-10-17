@@ -4,7 +4,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 @paxx12
 
 GIT_URL=https://github.com/paxx12/v4l2-mpp.git
-GIT_SHA=131e5da933411ce47aef2c89be67c3c767432a02
+GIT_SHA=92795848f5eb886dc6fbbfc9d00c413a5c596a09
 
 if [[ -z "$CREATE_FIRMWARE" ]]; then
   echo "Error: This script should be run within the create_firmware.sh environment."
