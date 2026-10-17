@@ -1,0 +1,54 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-PackageHomePage: https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware
+# SPDX-FileCopyrightText: Copyright (c) 2026 @paxx12
+
+settings:
+  tweaks:
+    items:
+      fan_curves:
+        label: Fan Curves
+        description: Select nonlinear cooling curves for the power and nozzle fans. Quiet is the production-tested profile; Very Quiet (Experimental) delays ordinary nozzle cooling until 220°C. Stock restores the original Snapmaker curves.
+        help_url: http://snapmakeru1-extended-firmware.pages.dev/tweaks#fan-curves
+        get_cmd:
+          - bash
+          - -c
+          - |
+            python3 /usr/local/bin/fan_curves.py profile 2>/dev/null || echo stock
+        options:
+          quiet:
+            label: Quiet
+            confirm: |-
+              Apply the Quiet fan curves?
+              Quiet is the production-tested profile. Its first power node is 70°C at 20%, and all curve profiles use 5°C hysteresis. The power fan rises nonlinearly to 60%; nozzle fans start at 50°C with a zero-duty entry. The power-fan heavy-load rule reaches 100% only when at least two nozzle targets strictly exceed 200°C.
+            cmd:
+              - bash
+              - -xc
+              - |
+                python3 /usr/local/bin/fan_curves.py apply quiet
+          very_quiet:
+            label: Very Quiet (Experimental)
+            confirm: |-
+              Apply Very Quiet (Experimental)?
+              Ordinary nozzle-fan temperature control starts at 220°C. Its first power node is 220°C at 20%, with 5°C hysteresis; the power fan rises to 60%. Two nozzle targets strictly above 200°C still force the power fan to 100%. Use Quiet for normal production.
+            cmd:
+              - bash
+              - -xc
+              - |
+                python3 /usr/local/bin/fan_curves.py apply very_quiet
+          custom:
+            label: Custom
+            confirm: Apply the saved Custom fan curves? The first power node sets its target trigger and duty; curve profiles use 5°C hysteresis.
+            cmd:
+              - bash
+              - -xc
+              - |
+                python3 /usr/local/bin/fan_curves.py apply custom
+          stock:
+            label: Stock
+            confirm: Restore the original Snapmaker fan curves?
+            cmd:
+              - bash
+              - -xc
+              - |
+                python3 /usr/local/bin/fan_curves.py apply stock
+        default: stock

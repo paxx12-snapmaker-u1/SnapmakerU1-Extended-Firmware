@@ -12,6 +12,7 @@ import subprocess
 import time
 import fcntl
 import yaml
+import fan_curves
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 from urllib.parse import urlparse
 
@@ -81,6 +82,8 @@ class FirmwareConfigHandler(SimpleHTTPRequestHandler):
             self.handle_get_actions('quick_actions')
         elif path == "/api/actions":
             self.handle_get_actions('actions')
+        elif path == "/api/fan-curves":
+            self.handle_get_fan_curves()
         else:
             super().do_GET()
 
@@ -90,6 +93,8 @@ class FirmwareConfigHandler(SimpleHTTPRequestHandler):
             self.handle_upgrade_url()
         elif parsed.path == "/api/upgrade/upload":
             self.handle_upgrade_upload()
+        elif parsed.path == "/api/fan-curves":
+            self.handle_fan_curves()
         elif parsed.path.startswith("/api/settings/"):
             path_parts = parsed.path[14:].split('/')
             if len(path_parts) == 2:
@@ -216,13 +221,44 @@ class FirmwareConfigHandler(SimpleHTTPRequestHandler):
             log(f"Action error: {e}")
             self.send_error(500, str(e))
 
-    def send_json(self, data):
+    def send_json(self, data, status=200):
         response = json.dumps(data, indent=2).encode()
-        self.send_response(200)
+        self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", len(response))
         self.end_headers()
         self.wfile.write(response)
+
+    def handle_get_fan_curves(self):
+        try:
+            self.send_json(fan_curves.get_state())
+        except fan_curves.FanCurveError as error:
+            self.send_json({'success': False, 'error': str(error)}, 500)
+
+    def handle_fan_curves(self):
+        try:
+            length = int(self.headers.get('Content-Length', 0))
+            if length <= 0 or length > 1024 * 1024:
+                raise fan_curves.FanCurveError('invalid request body')
+            body = json.loads(self.rfile.read(length))
+            if not isinstance(body, dict):
+                raise fan_curves.FanCurveError('request must be an object')
+            action = body.get('action')
+            if action == 'save':
+                fan_curves.save_custom(body.get('curves'))
+                self.send_json({'success': True, 'message': 'Custom fan curves saved'})
+                return
+            if action == 'apply':
+                profile = body.get('profile')
+                fan_curves.apply_profile(profile, body.get('curves'))
+                self.send_json({'success': True, 'message': '%s fan curves applied' % profile})
+                return
+            raise fan_curves.FanCurveError('action must be save or apply')
+        except (fan_curves.FanCurveError, json.JSONDecodeError, TypeError, ValueError) as error:
+            self.send_json({'success': False, 'error': str(error)}, 400)
+        except Exception as error:
+            log(f"Fan curves error: {error}")
+            self.send_json({'success': False, 'error': str(error)}, 500)
 
     def _run_status_cmd(self, cmd):
         try:

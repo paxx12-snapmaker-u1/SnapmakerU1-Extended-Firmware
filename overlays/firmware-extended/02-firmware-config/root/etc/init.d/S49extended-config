@@ -39,6 +39,19 @@ start() {
 
     mkdir -p "$EXTENDED_DIR"
 
+    LEGACY_CURVES="$EXTENDED_DIR/klipper/20_fan_curves.cfg"
+    LEGACY_PROFILE=""
+    if [ -f "$LEGACY_CURVES" ]; then
+        LEGACY_PROFILE=$(sed -n 's/^# fan-curves:[[:space:]]*//p' "$LEGACY_CURVES" | head -n 1)
+        LEGACY_BACKUP="$LEGACY_CURVES.legacy"
+        BACKUP_NUM=1
+        while [ -e "$LEGACY_BACKUP" ]; do
+            LEGACY_BACKUP="$LEGACY_CURVES.legacy.$BACKUP_NUM"
+            BACKUP_NUM=$((BACKUP_NUM + 1))
+        done
+        mv "$LEGACY_CURVES" "$LEGACY_BACKUP"
+    fi
+
     # Delete old files with matching checksums to force cleanup
     echo "Performing forced cleanup of old config files..."
     pushd "$EXTENDED_DIR"
@@ -50,6 +63,11 @@ start() {
     # Copy default config files without overwriting existing ones
     echo "Copying default config files..."
     cp -rn "$DEFAULT_DIR/." "$EXTENDED_DIR/"
+
+    if [ -n "$LEGACY_PROFILE" ] && [ ! -f "$EXTENDED_DIR/fan-curves-active.json" ]; then
+        python3 /usr/local/bin/fan_curves.py migrate "$LEGACY_PROFILE" ||
+            echo "Unable to migrate legacy fan curves; using Stock"
+    fi
 
     # Remove invalid symlinks that may exist in the extended config directory
     # The busybox `find` command does not support `-xtype l`, so we use a workaround to find broken symlinks

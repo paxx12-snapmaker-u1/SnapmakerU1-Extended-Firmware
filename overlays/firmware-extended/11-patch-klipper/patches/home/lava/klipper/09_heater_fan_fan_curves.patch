@@ -1,0 +1,181 @@
+--- a/klippy/extras/heater_fan.py
++++ b/klippy/extras/heater_fan.py
+@@ -3,9 +3,83 @@
+ # Copyright (C) 2016-2020  Kevin O'Connor <kevin@koconnor.net>
+ #
+ # This file may be distributed under the terms of the GNU GPLv3 license.
++import json
++import logging
++import math
++import os
++
+ from . import fan
+ 
+ PIN_MIN_TIME = 0.100
++FAN_CURVES_PATH = os.environ.get(
++    'FAN_CURVES_PATH', '/oem/printer_data/config/extended/fan-curves-active.json')
++
++
++def _load_curve(fan_name):
++    try:
++        with open(FAN_CURVES_PATH, 'r', encoding='utf-8') as stream:
++            document = json.load(stream)
++        if not isinstance(document, dict) or document.get('version') != 1:
++            raise ValueError('unsupported version')
++        profile = document.get('profile')
++        if profile == 'stock':
++            return None
++        if profile not in ('quiet', 'very_quiet', 'custom'):
++            raise ValueError('unknown profile')
++        curves = document.get('curves')
++        if not isinstance(curves, dict):
++            raise ValueError('curves must be an object')
++        curve_name = 'power' if fan_name == 'power_fan' else 'nozzle'
++        points = curves[curve_name]
++        if not isinstance(points, list) or len(points) < 2 or len(points) > 16:
++            raise ValueError('curve must contain 2-16 points')
++        normalized = []
++        previous_temperature = None
++        for point in points:
++            if not isinstance(point, list) or len(point) != 2:
++                raise ValueError('curve point must contain two values')
++            temperature, duty = float(point[0]), float(point[1])
++            if not math.isfinite(temperature) or not math.isfinite(duty):
++                raise ValueError('curve point must be finite')
++            if temperature != int(temperature) or not 0 <= temperature <= 300:
++                raise ValueError('curve temperature is out of range')
++            if not 0 <= duty <= 0.6:
++                raise ValueError('curve duty is out of range')
++            if previous_temperature is not None and temperature <= previous_temperature:
++                raise ValueError('curve temperatures are not ascending')
++            normalized.append((temperature, duty))
++            previous_temperature = temperature
++        heavy_load = document.get('heavy_load', {})
++        if not isinstance(heavy_load, dict):
++            raise ValueError('heavy-load values must be an object')
++        hysteresis = float(document.get('hysteresis', 5.0))
++        heavy_temperature = float(heavy_load.get('temperature', 200))
++        heavy_count = float(heavy_load.get('heater_count', 2))
++        heavy_duty = float(heavy_load.get('duty', 1.0))
++        target_temperature, target_duty = normalized[0]
++        if not all(math.isfinite(value) for value in (
++                hysteresis, target_temperature, target_duty, heavy_temperature,
++                heavy_count, heavy_duty)):
++            raise ValueError('trigger values must be finite')
++        if (heavy_count != int(heavy_count) or heavy_count < 1 or
++                not 0 <= hysteresis <= 300 or
++                not 0 <= heavy_temperature <= 300 or
++                not 0 <= heavy_duty <= 1):
++            raise ValueError('heavy-load trigger is out of range')
++        return {
++            'points': normalized,
++            'target_temperature': target_temperature,
++            'target_duty': target_duty,
++            'hysteresis': hysteresis,
++            'heavy_temperature': heavy_temperature,
++            'heavy_count': int(heavy_count),
++            'heavy_duty': heavy_duty,
++        }
++    except FileNotFoundError:
++        return None
++    except (AttributeError, OSError, ValueError, TypeError, KeyError, json.JSONDecodeError) as error:
++        logging.warning('Invalid fan curve state: %s; using Stock', error)
++        return None
+ 
+ class PrinterHeaterFan:
+     def __init__(self, config):
+@@ -35,6 +109,7 @@ class PrinterHeaterFan:
+                 if current_temp <= prev_temp:
+                     raise config.error(f"Temperature values must be ascending. Found {prev_temp} then {current_temp}")
+         self.current_stepped_index = -1
++        self.current_curve_index = -1
+         # Currently uses a fixed value, could be optimized in the future to use half the difference
+         # between adjacent temperature points for more precise hysteresis control
+         self.temp_hysteresis = config.getfloat("temp_hysteresis", 5, minval=0.)
+@@ -54,9 +129,10 @@ class PrinterHeaterFan:
+             if not hasattr(self.external_temp_sensor, 'get_temp'):
+                 raise config.error(f"Object '{full_name}' does not have temperature sensor interface")
+ 
++        self.fan_name = config.get_name().split()[1]
++        self.fan_curve = _load_curve(self.fan_name)
+         # Register SET_HEATER_FAN command
+         gcode = self.printer.lookup_object('gcode')
+-        self.fan_name = config.get_name().split()[1]
+         gcode.register_mux_command("SET_HEATER_FAN", "FAN", self.fan_name,
+                                  self.cmd_SET_HEATER_FAN,
+                                  desc=self.cmd_SET_HEATER_FAN_help)
+@@ -79,7 +155,7 @@ class PrinterHeaterFan:
+         if self.original_fan_speed is None:
+             self.original_fan_speed = self.fan_speed
+         self.fan_speed = self.probe_speed
+-        self.last_speed = self.current_stepped_index = -1  # Force update in next callback
++        self.last_speed = self.current_stepped_index = self.current_curve_index = -1  # Force update in next callback
+         if self.fan_timer is not None:
+             self.reactor.update_timer(self.fan_timer, self.reactor.NOW)
+     def restore_fan_speed(self):
+@@ -87,7 +163,7 @@ class PrinterHeaterFan:
+             if self.stepped_temp_table is None:
+                 self.fan_speed = self.original_fan_speed
+             self.original_fan_speed = None
+-            self.last_speed = self.current_stepped_index = -1  # Force update in next callback
++            self.last_speed = self.current_stepped_index = self.current_curve_index = -1  # Force update in next callback
+             if self.fan_timer is not None:
+                 self.reactor.update_timer(self.fan_timer, self.reactor.NOW)
+     def calculate_stepped_fan_speed(self, temp):
+@@ -123,9 +199,46 @@ class PrinterHeaterFan:
+             return max(self.min_speed, min(speed, 1.0)), 'in_range'
+         else:
+             return 0.0, 'below_min'
++
++    def calculate_curve_fan_speed(self, temp):
++        points = self.fan_curve['points']
++        if temp < points[0][0]:
++            if (self.current_curve_index < 0 or
++                    temp < points[0][0] - self.fan_curve['hysteresis']):
++                self.current_curve_index = -1
++                return 0.0
++            target_index = 0
++        else:
++            target_index = len(points) - 1
++            for index, (threshold, _) in enumerate(points):
++                if temp < threshold:
++                    target_index = index - 1
++                    break
++        if target_index < self.current_curve_index:
++            current_threshold = points[self.current_curve_index][0]
++            if temp >= current_threshold - self.fan_curve['hysteresis']:
++                target_index = self.current_curve_index
++        self.current_curve_index = target_index
++        return max(self.min_speed, min(points[target_index][1], 1.0))
++
+     def callback(self, eventtime):
+         speed = 0.
+-        if self.temp_speed_table is not None:
++        if self.fan_curve is not None:
++            heater_temps = [heater.get_temp(eventtime)
++                            for heater in self.heaters]
++            maximum_current_temp = max(
++                (current_temp for current_temp, _ in heater_temps), default=0.)
++            speed = self.calculate_curve_fan_speed(maximum_current_temp)
++            if self.fan_name == 'power_fan':
++                if any(target_temp >= self.fan_curve['target_temperature']
++                       for _, target_temp in heater_temps):
++                    speed = max(speed, self.fan_curve['target_duty'])
++                heavy_load_count = sum(
++                    target_temp > self.fan_curve['heavy_temperature']
++                    for _, target_temp in heater_temps)
++                if heavy_load_count >= self.fan_curve['heavy_count']:
++                    speed = max(speed, self.fan_curve['heavy_duty'])
++        elif self.temp_speed_table is not None:
+             for rule in self.temp_speed_table:
+                 temp_threshold, target_temp_threshold, satisfied_heater_threshold, heater_count_threshold, rule_speed = rule
+                 satisfied_heaters = 0
+@@ -197,7 +306,7 @@ class PrinterHeaterFan:
+                            % (self.min_speed * 100,))
+             return
+         self.fan_speed = speed
+-        self.last_speed = self.current_stepped_index = -1  # Force update in next callback
++        self.last_speed = self.current_stepped_index = self.current_curve_index = -1  # Force update in next callback
+         if self.fan_timer is not None:
+             self.reactor.update_timer(self.fan_timer, self.reactor.NOW)
+         gcmd.respond_info("%s speed set to %.0f%%" % (self.fan_name, speed * 100,))
