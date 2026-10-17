@@ -44,6 +44,11 @@ request is rewritten to the mirror with the following query parameters:
 | `build_version` | `/etc/BUILD_VERSION` — this project's `git describe` string | `0.9.0-paxx12-1-gabcdef0` |
 | `build_profile` | `/etc/BUILD_PROFILE` — the build profile used | `extended` |
 
+The rolling `extended-multiace` profile is only published on the `develop`
+channel. Use that channel for updates on this experimental image; stable and
+testing releases do not include a matching multiACE image. The updater keeps
+the current build profile when selecting a firmware asset.
+
 The device's own `Authorization: Bearer` token is stripped before the
 request is sent, so no Snapmaker account credentials reach the mirror.
 Nothing else from the request is forwarded — no printer serial number,

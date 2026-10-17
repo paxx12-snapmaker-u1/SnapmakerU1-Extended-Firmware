@@ -1,0 +1,34 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-PackageHomePage: https://github.com/decay71/multiACE
+# SPDX-FileCopyrightText: Copyright (c) 2026 @decay71 and contributors
+
+set -u
+. /usr/local/share/multiace/common.sh
+
+usage() {
+    echo "Usage: $0 enable|disable|status" >&2
+    exit 1
+}
+
+case "${1:-}" in
+    enable)
+        multiace_seed_config
+        ;;
+    disable)
+        /etc/init.d/S98multiace-web stop 2>/dev/null || true
+        multiace_deactivate
+        /usr/local/bin/extended-pkg multiace clean
+        ;;
+    status)
+        if multiace_enabled; then
+            /usr/local/bin/extended-pkg multiace check
+        else
+            echo "multiACE is disabled in Firmware Config."
+            exit 1
+        fi
+        ;;
+    *)
+        usage
+        ;;
+esac

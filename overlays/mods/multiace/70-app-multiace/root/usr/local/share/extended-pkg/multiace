@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-PackageHomePage: https://github.com/decay71/multiACE
+# SPDX-FileCopyrightText: Copyright (c) 2026 @decay71 and contributors
+
+# This definition intentionally pins the provider release. Updating multiACE
+# requires a reviewed firmware change with a new version and checksum.
+PKG_LABEL="multiACE"
+PKG_VERSION="1.27b"
+PKG_URL="https://github.com/decay71/multiACE/releases/download/v1.27b/multiace-managed-1.27b.tar.gz"
+PKG_SHA256="aedc432f1ca56854ae3da98e28d6a947a9b4adc2bdb88e7feb760be472968556"
+PKG_APP_DIR="/oem/apps/multiace"
+PKG_PREFIX="multiace"
+PKG_BINARIES="web/backend/vendor/.paxx-dependencies-ready"
+
+# The archive is a Python/configuration package rather than a single binary.
+# Validate the files that the PAXX activation hook needs before extended-pkg
+# moves the staging directory into the active application tree.
+pkg_post_install() {
+    local staging="$1"
+    local required
+    for required in \
+        klipper/extras/ace.py \
+        klipper/extras/ace_gen1_tunnel.py \
+        klipper/extras/ace_protocol.py \
+        klipper/extras/filament_feed_ace.py \
+        klipper/kinematics/extruder_ace.py \
+        config/extended/ace.cfg \
+        config/extended/multiace/ace_vars.cfg \
+        VERSION \
+        web/backend/main.py \
+        web/backend/requirements.txt \
+        web/frontend/index.html \
+        tools/post_process_virtual_toolheads.py; do
+        if [[ ! -f "$staging/$required" ]]; then
+            echo "multiACE package is missing $required" >&2
+            return 1
+        fi
+    done
+
+    # The web head is optional at build time but required when ACE is enabled.
+    # Keep its dependencies inside the versioned package.  /home/lava is
+    # overlay-backed on stock U1 firmware and is wiped on reboot unless debug
+    # persistence is enabled; the package root is the durable PAXX boundary.
+    if [[ ! -x /usr/bin/python3 ]] || ! /usr/bin/python3 -m pip --version >/dev/null 2>&1; then
+        echo "multiACE web dependencies are unavailable (python3/pip missing)" >&2
+        return 1
+    fi
+
+    local vendor="$staging/web/backend/vendor"
+    echo "Installing constrained multiACE web dependencies..."
+    mkdir -p "$vendor" || return 1
+    /usr/bin/python3 -m pip install --no-input --no-compile --no-cache-dir \
+        --target "$vendor" \
+        -r "$staging/web/backend/requirements.txt" || return 1
+    PYTHONPATH="$vendor" /usr/bin/python3 -c \
+        'import fastapi, uvicorn, httpx, pydantic, websockets, multipart, serial' || return 1
+    printf '%s\n' "multiACE web dependencies installed" \
+        > "$vendor/.paxx-dependencies-ready" || return 1
+    chmod 755 "$vendor/.paxx-dependencies-ready" || return 1
+}

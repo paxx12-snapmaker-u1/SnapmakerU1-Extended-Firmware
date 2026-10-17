@@ -1,0 +1,80 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-PackageHomePage: https://github.com/decay71/multiACE
+# SPDX-FileCopyrightText: Copyright (c) 2026 @decay71 and contributors
+
+settings:
+  snapmaker_components:
+    items:
+      ace:
+        label: multiACE Integration
+        description: Experimental support for Anycubic ACE Pro and ACE 2 Pro using multiACE.
+        help_url: https://snapmakeru1-extended-firmware.pages.dev/multiace
+        get_cmd:
+          - /usr/local/bin/extended-config.py
+          - get
+          - /home/lava/printer_data/config/extended/extended2.cfg
+          - components
+          - ace
+          - none
+        options:
+          none:
+            label: Disabled
+            confirm: "Disable the managed Anycubic ACE integration? The package will be removed, the stock Klipper files will be restored on reboot, and persistent ACE configuration will be kept."
+            cmd:
+              - bash
+              - -xec
+              - |
+                /usr/local/bin/extended-config.py add /home/lava/printer_data/config/extended/extended2.cfg components ace none
+                /usr/local/sbin/multiace-control disable
+                echo ""
+                echo ">> Managed ACE disabled. Rebooting to restore stock paths..."
+                (sleep 3; /sbin/reboot) >/dev/null 2>&1 &
+          multiace:
+            label: Enabled
+            confirm: "Enable experimental multiACE support? This requires ACE Pro or ACE 2 Pro hardware. PAXX will download and verify the provider version pinned to this firmware build, preserve stock Klipper files, and reboot to activate. Remove any standalone multiACE installation first to avoid conflicts."
+            cmd:
+              - bash
+              - -xec
+              - |
+                if /usr/local/bin/extended-pkg multiace needs_upgrade; then
+                  echo "Upgrading the installed multiACE package to this firmware's reviewed pin..."
+                  /etc/init.d/S98multiace-web stop 2>/dev/null || true
+                  if ! /usr/local/bin/extended-pkg multiace upgrade; then
+                    /etc/init.d/S98multiace-web start 2>/dev/null || true
+                    exit 1
+                  fi
+                else
+                  /usr/local/bin/extended-pkg multiace download
+                fi
+                /usr/local/sbin/multiace-control enable
+                /usr/local/bin/extended-config.py add /home/lava/printer_data/config/extended/extended2.cfg components ace multiace
+                sync
+                echo ""
+                echo ">> PAXX-managed multiACE selected. Rebooting to activate it..."
+                (sleep 3; /sbin/reboot) >/dev/null 2>&1 &
+        default: none
+
+quick_actions:
+  upgrades:
+    items:
+      multiace-upgrade:
+        label: Upgrade pinned multiACE package
+        description: Install the newer multiACE release pinned by this firmware build.
+        if_cmd: >-
+          test "$(/usr/local/bin/extended-config.py get
+          /home/lava/printer_data/config/extended/extended2.cfg components ace none)"
+          = "multiace" && /usr/local/bin/extended-pkg multiace needs_upgrade
+        confirm: "Install the newer pinned multiACE package and reboot?"
+        cmd:
+          - bash
+          - -ec
+          - |
+            /etc/init.d/S98multiace-web stop 2>/dev/null || true
+            if ! /usr/local/bin/extended-pkg multiace upgrade; then
+              /etc/init.d/S98multiace-web start 2>/dev/null || true
+              exit 1
+            fi
+            echo ""
+            echo ">> Pinned multiACE package upgraded. Rebooting..."
+            (sleep 3; /sbin/reboot) >/dev/null 2>&1 &
+        message: "Upgrading multiACE..."

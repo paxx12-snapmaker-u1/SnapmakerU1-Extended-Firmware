@@ -1,0 +1,3 @@
+# Grant Klipper access to the explicitly supported CH340/CH341 adapter used
+# with ACE 2 units. Keep the device private to the lava account group.
+SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="7523", GROUP="lava", MODE="0660"
