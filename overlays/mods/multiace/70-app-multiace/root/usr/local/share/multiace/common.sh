@@ -14,6 +14,8 @@ MULTIACE_INSTALL_DIR="/oem/apps/multiace"
 MULTIACE_APP_DIR="${MULTIACE_APP_DIR:-$MULTIACE_INSTALL_DIR/latest}"
 MULTIACE_APP_ROOT="$MULTIACE_APP_DIR"
 MULTIACE_STATE_DIR="$MULTIACE_EXTENDED_DIR/multiace"
+MULTIACE_CONFIG_TEMPLATE_VERSION="$MULTIACE_STATE_DIR/ace.cfg-template-version"
+MULTIACE_CONFIG_MERGE_WARNING_VERSION="$MULTIACE_STATE_DIR/ace.cfg-merge-helper-missing-version"
 MULTIACE_MANAGED_MARKER="${MULTIACE_MANAGED_MARKER:-$MULTIACE_STATE_DIR/.multiace-managed}"
 MULTIACE_CONFIG_FILE="$MULTIACE_EXTENDED_DIR/ace.cfg"
 MULTIACE_CONFIG_LINK="$MULTIACE_EXTENDED_DIR/klipper/multiace.cfg"
@@ -77,6 +79,78 @@ multiace_sanitize_provider_config() {
     fi
 }
 
+multiace_merge_config() {
+    merge_helper="$MULTIACE_APP_ROOT/tools/merge_ace_cfg.py"
+
+    if [ ! -f "$MULTIACE_APP_ROOT/config/extended/ace.cfg" ]; then
+        echo "multiACE package is missing its ace.cfg template" >&2
+        return 1
+    fi
+    if [ ! -f "$MULTIACE_APP_ROOT/VERSION" ]; then
+        echo "multiACE package is missing its VERSION file" >&2
+        return 1
+    fi
+    template_version="$(tr -d '\r\n' < "$MULTIACE_APP_ROOT/VERSION")"
+    if [ -z "$template_version" ]; then
+        echo "multiACE package has an empty VERSION file" >&2
+        return 1
+    fi
+    if [ "$(cat "$MULTIACE_CONFIG_TEMPLATE_VERSION" 2>/dev/null)" = \
+        "$template_version" ]; then
+        return 0
+    fi
+    if [ ! -f "$merge_helper" ]; then
+        if [ "$(cat "$MULTIACE_CONFIG_MERGE_WARNING_VERSION" 2>/dev/null)" != \
+            "$template_version" ]; then
+            echo "multiACE package has no config-merge helper; preserving the existing ace.cfg without refreshing its template" >&2
+            printf '%s\n' "$template_version" \
+                > "$MULTIACE_CONFIG_MERGE_WARNING_VERSION" 2>/dev/null || true
+        fi
+        return 0
+    fi
+
+    merged_config="$(mktemp "${MULTIACE_CONFIG_FILE}.multiace.XXXXXX")" || {
+        echo "multiACE could not create a temporary config file" >&2
+        return 1
+    }
+    if ! python3 "$merge_helper" \
+        "$MULTIACE_CONFIG_FILE" \
+        "$MULTIACE_APP_ROOT/config/extended/ace.cfg" \
+        "$merged_config"; then
+        rm -f "$merged_config"
+        echo "multiACE could not merge its updated ace.cfg template" >&2
+        return 1
+    fi
+    if [ ! -s "$merged_config" ]; then
+        rm -f "$merged_config"
+        echo "multiACE config-merge helper did not create non-empty output" >&2
+        return 1
+    fi
+    chmod 644 "$merged_config" 2>/dev/null || true
+    version_marker_temporary="$(mktemp "${MULTIACE_CONFIG_TEMPLATE_VERSION}.tmp.XXXXXX")" || {
+        rm -f "$merged_config"
+        echo "multiACE could not create a temporary config-version marker" >&2
+        return 1
+    }
+    if ! printf '%s\n' "$template_version" > "$version_marker_temporary"; then
+        rm -f "$merged_config" "$version_marker_temporary"
+        echo "multiACE could not prepare its config-version marker" >&2
+        return 1
+    fi
+    if ! mv -f "$merged_config" "$MULTIACE_CONFIG_FILE"; then
+        rm -f "$merged_config" "$version_marker_temporary"
+        echo "multiACE could not replace its persistent ace.cfg" >&2
+        return 1
+    fi
+    chown lava:lava "$MULTIACE_CONFIG_FILE" 2>/dev/null || true
+    if ! mv -f "$version_marker_temporary" "$MULTIACE_CONFIG_TEMPLATE_VERSION"; then
+        rm -f "$version_marker_temporary"
+        echo "multiACE could not record its merged config template version" >&2
+        return 1
+    fi
+    rm -f "$MULTIACE_CONFIG_MERGE_WARNING_VERSION"
+}
+
 multiace_ensure_save_variables() {
     if grep -Eq '^[[:space:]]*\[save_variables\][[:space:]]*$' \
         "$MULTIACE_CONFIG_FILE"; then
@@ -104,6 +178,7 @@ multiace_ensure_save_variables() {
 }
 
 multiace_seed_config() {
+    config_seeded=0
     if [ ! -d "$MULTIACE_APP_ROOT" ]; then
         echo "multiACE package is not installed at $MULTIACE_APP_ROOT" >&2
         return 1
@@ -119,11 +194,31 @@ multiace_seed_config() {
 
     # ace.cfg is persistent user configuration. Seed it once; package updates
     # must never replace values the user has already configured.
-    if [ -L "$MULTIACE_CONFIG_FILE" ] && [ ! -e "$MULTIACE_CONFIG_FILE" ]; then
-        rm -f "$MULTIACE_CONFIG_FILE"
+    if [ -L "$MULTIACE_CONFIG_FILE" ]; then
+        if [ ! -e "$MULTIACE_CONFIG_FILE" ]; then
+            rm -f "$MULTIACE_CONFIG_FILE"
+        else
+            echo "multiACE config conflict: $MULTIACE_CONFIG_FILE is a symlink" >&2
+            return 1
+        fi
     fi
     if [ ! -e "$MULTIACE_CONFIG_FILE" ]; then
-        cp "$MULTIACE_APP_ROOT/config/extended/ace.cfg" "$MULTIACE_CONFIG_FILE"
+        cp "$MULTIACE_APP_ROOT/config/extended/ace.cfg" \
+            "$MULTIACE_CONFIG_FILE" || return 1
+        config_seeded=1
+    fi
+    if [ "$config_seeded" = "1" ]; then
+        template_version="$(tr -d '\r\n' < "$MULTIACE_APP_ROOT/VERSION")"
+        if [ -z "$template_version" ]; then
+            echo "multiACE package has an empty VERSION file" >&2
+            return 1
+        fi
+        printf '%s\n' "$template_version" \
+            > "$MULTIACE_CONFIG_TEMPLATE_VERSION" || return 1
+    else
+        if ! multiace_merge_config; then
+            return 1
+        fi
     fi
     if ! multiace_ensure_save_variables; then
         return 1
@@ -222,10 +317,8 @@ multiace_mount_modules() {
         /home/lava/klipper/klippy/extras/ace_tipform.py || return 1
     multiace_bind_file "$MULTIACE_APP_ROOT/klipper/extras/ace_rc522.py" \
         /home/lava/klipper/klippy/extras/ace_rc522.py || return 1
-    if [ -f "$MULTIACE_APP_ROOT/klipper/extras/ace_gen1_tunnel.py" ]; then
-        multiace_bind_file "$MULTIACE_APP_ROOT/klipper/extras/ace_gen1_tunnel.py" \
-            /home/lava/klipper/klippy/extras/ace_gen1_tunnel.py || return 1
-    fi
+    multiace_bind_file "$MULTIACE_APP_ROOT/klipper/extras/ace_gen1_tunnel.py" \
+        /home/lava/klipper/klippy/extras/ace_gen1_tunnel.py || return 1
     multiace_bind_file "$MULTIACE_APP_ROOT/klipper/extras/filament_feed_ace.py" \
         /home/lava/klipper/klippy/extras/filament_feed_ace.py || return 1
     multiace_bind_file "$MULTIACE_APP_ROOT/klipper/extras/filament_feed_ace.py" \

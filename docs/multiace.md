@@ -15,12 +15,12 @@ and developed with its contributors. PAXX provides the U1-specific packaging
 and firmware integration; the upstream ACE implementation is the work of the
 multiACE authors.
 
-This draft pins a published **test prerelease** of the provider for hardware
-validation on the rolling `extended-multiace` image only. Initial printer
-testing confirmed that an ACE 2 Pro can reach the ready state after fixing a
-serial-device permission problem; filament operations and reconnect behavior
-are still being tested. The prerelease is temporary, not a stable multiACE
-release.
+This draft pins a published multiACE release for hardware validation on the
+rolling `extended-multiace` image only. Initial printer testing confirmed that
+an ACE 2 Pro can reach the ready state after fixing a serial-device permission
+problem; filament operations and reconnect behavior are still being tested.
+The firmware integration remains experimental even though the provider
+version is a regular release.
 
 The PAXX integration follows the same general model used by other optional
 third-party applications in this firmware: the provider release is pinned in
@@ -119,19 +119,22 @@ is treated as an error rather than silently replacing another installation.
 
 ## Current pin and scope
 
-For this hardware-test build, PAXX pins multiACE version `1.11b` from the
-[`v1.11b-test.090d54d` prerelease](https://github.com/decay71/multiACE/releases/tag/v1.11b-test.090d54d),
-built from commit [`090d54d`](https://github.com/decay71/multiACE/commit/090d54da9a7aa52f72ed9e2049306f330827e2d0)
-on [multiACE PR #151](https://github.com/decay71/multiACE/pull/151). The exact
-managed archive URL and SHA256 are pinned in the package definition; the
-installer does not follow a moving `latest` release or an unverified branch.
-This prerelease is temporary test input, not the stable update channel.
-It also predates the managed-archive manifest corrections in multiACE #151,
-including the Gen 1 tunnel and web preflight helper. Use it only for the current
-PAXX lifecycle and ACE 2 hardware checks; it is not the final provider payload.
-After #151 is merged, Decay plans to publish a regular release. Before #738 is
-merged, update the firmware's version, archive URL, and SHA256 together to that
-release and make the Gen 1 tunnel a required package file.
+PAXX pins multiACE version `1.27b` from the regular
+[`v1.27b` release](https://github.com/decay71/multiACE/releases/tag/v1.27b),
+built from source commit
+[`a1a7b91`](https://github.com/decay71/multiACE/commit/a1a7b91b1fd297c1486a13ea22c61e01499a196d).
+The exact managed archive URL and SHA256 are pinned in the package definition;
+the installer does not follow a moving `latest` release or an unverified
+branch. This release includes the Gen 1 tunnel and web preflight helper as
+required managed-package files.
+
+There is one remaining provider-package gap: the `v1.27b` managed archive
+excludes `tools/merge_ace_cfg.py`, even though that helper exists in the
+multiACE source tree. PAXX preserves the existing `ace.cfg` and will invoke the
+provider helper during package refresh when it is present, but this release
+cannot merge new template options into an existing user config. Including that
+helper in a managed multiACE release (or an equivalent provider-supported
+managed migration interface) is still needed to complete safe config upgrades.
 
 This is a draft integration for hardware testing. It has been checked for
 package structure, checksum verification, shell syntax, and provider-side
