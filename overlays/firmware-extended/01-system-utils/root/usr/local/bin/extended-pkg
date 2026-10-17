@@ -201,6 +201,18 @@ download() {
     echo "$PKG_LABEL $PKG_VERSION installed to $PKG_APP_DIR"
 }
 
+# Move this process (and everything download() forks, notably a
+# pkg_post_install that pip installs into a venv) into the uncapped
+# ext/actions cgroup, out from under whatever capped cgroup the caller
+# runs in - e.g. firmware-config.py's ext/firmware-config, capped at
+# 48M, which a venv install regularly exceeds. Degrades gracefully via
+# limits_enter itself if cgroup v2 or the helper is unavailable.
+enter_actions_cgroup() {
+    # shellcheck disable=SC1091
+    [ -f /usr/local/sbin/limits-helper.sh ] && . /usr/local/sbin/limits-helper.sh
+    declare -F limits_enter >/dev/null && limits_enter actions max
+}
+
 case "$COMMAND" in
     check)
         check
@@ -209,6 +221,7 @@ case "$COMMAND" in
         needs_upgrade
         ;;
     upgrade)
+        enter_actions_cgroup
         if ! download; then
             rm -rf "$TMP_DIR"
             exit 1
@@ -218,6 +231,7 @@ case "$COMMAND" in
         if check; then
             exit 0
         fi
+        enter_actions_cgroup
         if ! clean; then
             echo "Failed to clean old installation"
             exit 1

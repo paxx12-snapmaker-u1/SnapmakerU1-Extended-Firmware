@@ -65,6 +65,7 @@ Heavily expanded firmware with extensive features and customization:
 - [AFC-Lite Stub](afc-lite.md) - Experimental AFC UI compatibility layer for Fluidd/Mainsail
 - [Anycubic ACE via multiACE](multiace.md) - Experimental PAXX-managed ACE support in the rolling-only `extended-multiace` profile
 - [Panda Breath Chamber Heater](panda_breath.md) - BIQU Panda Breath 300 W chamber heater and air filter integration via Klipper `heater_generic`
+- [Filament Feeders](filament_feeders.md) - Feeder setup selection, including longer filament preload for the [BIQU PopStation mini](filament_feeders.md#biqu-popstation-mini) without hand-editing `filament_feed.py` or `printer.cfg`
 - [Faulty Toolhead Bypass](faulty_toolhead.md) - Temporary bypass for one failed toolhead thermistor so the other toolheads can still be used
 - [RFID Filament Tag Support](design/rfid.md) - NTAG213/215/216 support for [OpenSpool format](design/openspool.md)
 - [Alternative Filament Detection](design/rfid.md#enabling-openrfid) - Alternative detection implementations with extended spool/tag support from Bambu, Creality, Anycubic, and others
