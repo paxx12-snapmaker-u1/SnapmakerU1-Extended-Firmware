@@ -34,6 +34,27 @@ Enable in the [firmware-config](firmware_config.md) web interface under
 URL including scheme and port (e.g. `http://192.168.1.100:7912`). Set the same
 toggle to **Disabled** to turn it off.
 
+## Card UID Storage
+
+SpoolLink records which RFID card belongs to which spool in up to two places,
+both enabled by default via the `[spoolman]` section of `extended2.cfg`:
+
+```ini
+[spoolman]
+use_spoolman_uid: true
+use_spoollink_uid: true
+```
+
+- `use_spoolman_uid` - Spoolman's native NFC/RFID tags, shown in the spool's
+  **Tags** section. Requires Spoolman v0.27.0 or newer; SpoolLink checks the
+  server version and skips this on older releases.
+- `use_spoollink_uid` - the `card_uids` spool extra field SpoolLink has always
+  used. Works with every Spoolman version and with apps that read that field.
+
+With both enabled, a native tag wins over a conflicting `card_uids` entry, and
+SpoolLink keeps the two in sync. Cards bound before upgrading Spoolman are
+copied to native tags the next time they are scanned.
+
 ## Apps
 
 Community apps that support SpoolLink, so scanning a tag resolves its spool
