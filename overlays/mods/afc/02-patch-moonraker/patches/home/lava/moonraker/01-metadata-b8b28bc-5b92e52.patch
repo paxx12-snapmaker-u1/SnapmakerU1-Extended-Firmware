@@ -511,7 +511,7 @@
  SUPPORTED_SLICERS: List[Type[BaseSlicer]] = [
      PrusaSlicer, Slic3rPE, Slic3r, Cura, Simplify3D,
      KISSlicer, IdeaMaker, IceSL, KiriMoto
-@@ -1180,10 +1297,17 @@
+@@ -1180,12 +1297,19 @@
      'chamber_temp',
      'filament_name',
      'filament_type',
@@ -523,6 +523,8 @@
 +    'mmu_print',
      'filament_weight',
      'filament_colour',
+     'filament_multi_colors',
+     'filament_colour_mode',
      'filament_total',
      'filament_weight_total',
 +    'filament_weights',

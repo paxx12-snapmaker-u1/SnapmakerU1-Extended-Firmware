@@ -171,8 +171,8 @@ class FirmwareConfigHandler(SimpleHTTPRequestHandler):
                 self._write_stream_chunk(f"=== {cfg.get('label', action)} ===\n")
                 self._write_stream_chunk(f"{cfg['message']}\n")
                 self._write_stream_chunk(f"\n")
-                exit_code, _ = self._stream_command(cfg["cmd"])
-                if exit_code == 0:
+                exit_code, stopped = self._stream_command(cfg["cmd"], stop_token=cfg.get("stop_token"))
+                if exit_code == 0 or stopped:
                     self._write_stream_chunk(f"\nSUCCESS: Completed successfully (exit code: 0)\n")
                 else:
                     self._write_stream_chunk(f"\nERROR: Failed with exit code: {exit_code}\n")

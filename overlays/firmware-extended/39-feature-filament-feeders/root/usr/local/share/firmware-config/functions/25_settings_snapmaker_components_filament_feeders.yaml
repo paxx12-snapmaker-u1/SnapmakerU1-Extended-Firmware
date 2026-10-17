@@ -1,0 +1,42 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-PackageHomePage: https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware
+# SPDX-FileCopyrightText: Copyright (c) 2026 @paxx12
+
+settings:
+  snapmaker_components:
+    items:
+      filament_feeders:
+        label: Filament Feeders
+        description: Selects the filament feeder setup. Feeder setups with a longer path to the toolhead, such as the BIQU PopStation mini, need a longer filament preload length than the stock 950 mm.
+        help_url: http://snapmakeru1-extended-firmware.pages.dev/filament_feeders
+        get_cmd:
+          - bash
+          - -c
+          - |
+            if test -e /oem/printer_data/config/extended/klipper/filament_feeders_popstation_mini.cfg; then
+              echo "popstation_mini"
+            else
+              echo "default"
+            fi
+        options:
+          default:
+            label: Default
+            cmd:
+              - bash
+              - -xc
+              - |
+                rm -f /oem/printer_data/config/extended/klipper/filament_feeders_popstation_mini.cfg &&
+                echo "Filament feeders set to Default. Restarting Klipper..." &&
+                /etc/init.d/S60klipper restart
+          popstation_mini:
+            label: BIQU PopStation mini
+            confirm: "Set filament feeders to BIQU PopStation mini? This sets the preload length to 2000 mm on both feeders. Only use this if your feeders are installed in a PopStation mini. On a stock setup, filament may be pushed hard into the toolhead."
+            cmd:
+              - bash
+              - -xc
+              - |
+                mkdir -p /oem/printer_data/config/extended/klipper &&
+                ln -sf /usr/local/share/firmware-config/tweaks/klipper/filament_feeders_popstation_mini.cfg /oem/printer_data/config/extended/klipper/filament_feeders_popstation_mini.cfg &&
+                echo "Filament feeders set to BIQU PopStation mini. Restarting Klipper..." &&
+                /etc/init.d/S60klipper restart
+        default: default

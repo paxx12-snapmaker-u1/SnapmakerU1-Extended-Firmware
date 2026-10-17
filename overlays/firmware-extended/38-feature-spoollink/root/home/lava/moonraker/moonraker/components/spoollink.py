@@ -119,7 +119,10 @@ class SpoolLink:
                 self._fire(self._sync_active_spool())
 
         ptc = status.get("print_task_config")
-        if ptc is not None:
+        # Status updates are diffs, and Moonraker merges all components'
+        # subscriptions: an update may carry other print_task_config fields
+        # without filament_spool_id. Only a present field is a change.
+        if ptc is not None and "filament_spool_id" in ptc:
             spool_ids = ptc.get("filament_spool_id")
             new_ids = list(spool_ids or [])
             if new_ids != self._ptc_spool_ids:

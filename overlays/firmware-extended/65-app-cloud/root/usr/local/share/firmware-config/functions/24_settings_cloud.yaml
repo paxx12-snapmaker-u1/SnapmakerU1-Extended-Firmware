@@ -55,12 +55,14 @@ settings:
                 echo "If you need help, follow this guide:"
                 echo "https://octoeverywhere.com/s/snapmaker-u1"
                 echo "Contact Support: https://octoeverywhere.com/support"
-                echo ""
-                echo "If the plugin is already connected to your account, you can ignore this message."
                 echo
 
                 for i in {1..15}; do
-                    echo ">> Looking for authorization URL in logs... ($i)"
+                    echo ">> Looking for plugin link status in logs... ($i)"
+                    if MATCH=$(grep "plugin-account-link-status:<true>" /home/lava/printer_data/logs/octoeverywhere.log 2>/dev/null); then
+                        echo "Your OctoEverywhere plugin is linked to your account and is ready to go!"
+                        exit 0
+                    fi
                     if MATCH=$(grep -C 20 "This Plugin Isn't Connected To OctoEverywhere!" /home/lava/printer_data/logs/octoeverywhere.log 2>/dev/null); then
                         sed -n 's/.*WARNING //p' <<< "$MATCH"
                         exit 0
@@ -68,6 +70,6 @@ settings:
                     sleep 1
                 done
 
-                echo "Authorization URL not found in logs. Please check the logs for more details."
-                echo "If the plugin is already connected to your account, you can ignore this message."
+                echo "Your OctoEverywhere plugin link status could not be determined from the logs."
+                echo "Please check the logs for more details."
         default: none

@@ -1,9 +1,13 @@
 diff -uNr rootfs.original/home/lava/origin_printer_data/config/moonraker.conf rootfs/home/lava/origin_printer_data/config/moonraker.conf
---- rootfs.original/home/lava/origin_printer_data/config/moonraker.conf	2025-11-06 05:00:27.000000000 +0100
-+++ rootfs/home/lava/origin_printer_data/config/moonraker.conf	2025-12-04 10:32:47.613494428 +0100
-@@ -46,3 +46,5 @@
+--- rootfs.original/home/lava/origin_printer_data/config/moonraker.conf	2026-09-07 11:48:11.000000000 +0200
++++ rootfs/home/lava/origin_printer_data/config/moonraker.conf	2026-09-07 11:48:11.000000000 +0200
+@@ -47,7 +47,9 @@
  mqtt_protocol: v5
  status_interval: 2
  default_qos: 1
+ # <sn>/request is served exclusively by unisrv, which relays requests to
+ # moonraker/request. Subscribing here as well would process each request twice
+ # (the second execution hits "SD busy" for printer.print.start).
+ enable_moonraker_api: False
 +
 +[include extended/moonraker/*.cfg]

@@ -1,0 +1,189 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-PackageHomePage: https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware
+# SPDX-FileCopyrightText: Copyright (c) 2026 @paxx12 @plastikman
+
+quick_actions:
+  upgrades:
+    label: Upgrades
+    items:
+      firmware-upgrade-check:
+        label: Check for Firmware Upgrade
+        description: Check the configured channel for an available firmware upgrade and show its release notes.
+        if_cmd: >-
+          [ "$(/usr/local/bin/extended-config.py get /home/lava/printer_data/config/extended/extended2.cfg components upgrade none)" != "none" ]
+        cmd:
+          - python3
+          - -c
+          - |
+            import json
+            import os
+            import subprocess
+            import sys
+
+            LATEST_JSON = "/tmp/.firmware-upgrade-latest.json"
+            DESC_JSON = "/tmp/.firmware-upgrade-latest-desc.json"
+
+            def cleanup(*paths):
+                for path in paths:
+                    try:
+                        os.remove(path)
+                    except FileNotFoundError:
+                        pass
+
+            def curl_json(url):
+                out = subprocess.run(
+                    ["curl", "-L", "-f", "-sS", url],
+                    capture_output=True, text=True, check=True,
+                )
+                return json.loads(out.stdout)
+
+            def main():
+                cleanup(LATEST_JSON, DESC_JSON)
+
+                hook = subprocess.run(
+                    ["bash", "-c", 'source /etc/hooks/lmd.d/10-firmware-imposter.sh start >/dev/null 2>&1; echo "$FW_UPDATE_REWRITE_URL"'],
+                    capture_output=True, text=True,
+                )
+                update_url = hook.stdout.strip()
+                if not update_url:
+                    print("ERROR: Firmware upgrade channel is not configured.")
+                    return 1
+
+                print("Checking for firmware upgrades...")
+                try:
+                    latest = curl_json(update_url)
+                except Exception as e:
+                    print(f"ERROR: Failed to check for firmware upgrades: {e}")
+                    return 1
+
+                if latest.get("code") != 200:
+                    print(f"ERROR: {latest.get('msg')}")
+                    return 1
+
+                try:
+                    desc = curl_json(latest["data"]["note"])
+                except Exception as e:
+                    print(f"ERROR: Failed to fetch release notes: {e}")
+                    return 1
+
+                fullversion = desc.get("fullversion")
+                try:
+                    with open("/etc/FULLVERSION") as f:
+                        current_fullversion = f.read().strip()
+                except FileNotFoundError:
+                    current_fullversion = "unknown"
+
+                if fullversion == current_fullversion:
+                    print(f"Already up to date ({current_fullversion}).")
+                    return 0
+
+                print()
+                print(f"Update available: {desc.get('name')}")
+                print(f"Version: {fullversion} (current: {current_fullversion})")
+                print(f"Size: {desc.get('size', 0) // 1024 // 1024} MB")
+                print()
+                print("Release notes:")
+                notes = desc.get("release_notes") or {}
+                items = notes.get("en-GB") or (next(iter(notes.values()), []) if notes else [])
+                for item in items:
+                    print(f"  - {item}")
+                print()
+                print('Use "Install Firmware Upgrade" to download and install this update.')
+
+                with open(LATEST_JSON + ".tmp", "w") as f:
+                    json.dump(latest, f)
+                with open(DESC_JSON + ".tmp", "w") as f:
+                    json.dump(desc, f)
+                os.replace(LATEST_JSON + ".tmp", LATEST_JSON)
+                os.replace(DESC_JSON + ".tmp", DESC_JSON)
+                return 0
+
+            sys.exit(main())
+        message: "Checking for firmware upgrades..."
+
+      firmware-upgrade-install:
+        label: Install Firmware Upgrade
+        description: Download the checked firmware upgrade, verify its checksum, and install it.
+        if_cmd: >-
+          [ -s /tmp/.firmware-upgrade-latest.json ] && [ -s /tmp/.firmware-upgrade-latest-desc.json ]
+        confirm: "Download and install the firmware upgrade now? The printer will reboot when finished."
+        cmd:
+          - python3
+          - -c
+          - |
+            import hashlib
+            import json
+            import os
+            import subprocess
+            import sys
+
+            LATEST_JSON = "/tmp/.firmware-upgrade-latest.json"
+            DESC_JSON = "/tmp/.firmware-upgrade-latest-desc.json"
+            BIN_FILE = "/userdata/firmware_upgrade.bin"
+
+            def main():
+                try:
+                    with open(LATEST_JSON) as f:
+                        latest = json.load(f)
+                    with open(DESC_JSON) as f:
+                        desc = json.load(f)
+                except (FileNotFoundError, json.JSONDecodeError):
+                    print('ERROR: No pending firmware upgrade. Run "Check for Firmware Upgrade" first.')
+                    return 1
+
+                bin_url = latest["data"]["url"]
+                expected_sha256 = desc["sha256"]
+                expected_size = desc["size"]
+                tmp_file = BIN_FILE + ".tmp"
+
+                print("Downloading firmware upgrade...")
+                try:
+                    os.remove(tmp_file)
+                except FileNotFoundError:
+                    pass
+                if subprocess.run(["curl", "-L", "-f", "--progress-bar", bin_url, "-o", tmp_file]).returncode != 0:
+                    print("ERROR: Failed to download firmware upgrade file.")
+                    os.remove(tmp_file)
+                    return 1
+
+                actual_size = os.path.getsize(tmp_file)
+                if actual_size != expected_size:
+                    print(f"ERROR: Downloaded file size ({actual_size} bytes) does not match expected size ({expected_size} bytes).")
+                    os.remove(tmp_file)
+                    return 1
+
+                print("Verifying SHA256 checksum...")
+                digest = hashlib.sha256()
+                with open(tmp_file, "rb") as f:
+                    for chunk in iter(lambda: f.read(1024 * 1024), b""):
+                        digest.update(chunk)
+                actual_sha256 = digest.hexdigest()
+                if actual_sha256 != expected_sha256:
+                    print("ERROR: SHA256 mismatch.")
+                    print(f"  expected: {expected_sha256}")
+                    print(f"  actual:   {actual_sha256}")
+                    os.remove(tmp_file)
+                    return 1
+                print("SHA256 verified.")
+
+                os.replace(tmp_file, BIN_FILE)
+                for path in (LATEST_JSON, DESC_JSON):
+                    try:
+                        os.remove(path)
+                    except FileNotFoundError:
+                        pass
+
+                print(f"Starting upgrade ({actual_size // 1024 // 1024} MB)...")
+                sys.stdout.flush()
+                proc = subprocess.Popen(
+                    ["/home/lava/bin/systemUpgrade.sh", "upgrade", "all", BIN_FILE],
+                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1,
+                )
+                for line in iter(proc.stdout.readline, ""):
+                    print(line, end="")
+                    sys.stdout.flush()
+                return proc.wait()
+
+            sys.exit(main())
+        stop_token: "upgrade soc finish, prepare to reboot"
+        message: "Installing firmware upgrade..."

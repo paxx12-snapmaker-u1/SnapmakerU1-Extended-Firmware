@@ -1,0 +1,17 @@
+filament_feed: Raise preload_length maxval from 1500 to 2500
+
+The BIQU PopStation mini lengthens the feeder-to-toolhead filament path, and
+BIQU's setup guide calls for preload_length: 2000, which the stock 1500 mm
+cap rejects at config load. The 950 mm default is unchanged.
+---
+--- a/klippy/extras/filament_feed.py
++++ b/klippy/extras/filament_feed.py
+@@ -513,7 +513,7 @@
+         self._feed_load_position_x = config.getfloat('load_position_x', FEED_LOAD_POSITION_X, minval=2, maxval=265)
+         self._feed_load_position_y = config.getfloat('load_position_y', FEED_LOAD_POSITION_Y, minval=2, maxval=250)
+         self._feed_load_extrude_max_times = config.getint('load_extrude_max_times', FEED_LOAD_EXTRUDE_TIMES_MAX, minval=3, maxval=50)
+-        preload_length = config.getfloat('preload_length', FEED_PRELOAD_LENGTH, minval=600.0, maxval=1500.0)
++        preload_length = config.getfloat('preload_length', FEED_PRELOAD_LENGTH, minval=600.0, maxval=2500.0)
+         self.coil_freq_threshold_soft = config.getint('coil_freq_thershold_soft', FEED_COIL_FREQ_THERSHOLD_SOFT, minval=100)
+         self.coil_freq_threshold_hard = config.getint('coil_freq_thershold_hard', FEED_COIL_FREQ_THERSHOLD_HARD, minval=100)
+         self.check_wheel_data = config.getint('check_wheel_data', 1)
