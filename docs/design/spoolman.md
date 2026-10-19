@@ -138,6 +138,39 @@ extra.variant = "\"Silk\""
 }
 ```
 
+# Spoolman Native Tags
+
+Spoolman v0.27.0 added NFC/RFID tags keyed on the hardware UID
+([Donkie/Spoolman#1096](https://github.com/Donkie/Spoolman/pull/1096)). A tag
+belongs to exactly one spool or filament, and its UID is normalized to uppercase hex
+without separators, the same form `card_uids` uses.
+
+| Operation | Request |
+|-----------|---------|
+| Look up | `GET api/v1/spool?tag={uid}` |
+| Link | `POST api/v1/spool/{id}/tag` with `{"uid": "{uid}"}`; `409` with `spool_id` if another spool holds it |
+| Unlink | `DELETE api/v1/spool/{id}/tag/{uid}` |
+
+Spool responses carry the linked tags as `tags: [{"uid": ...}]`.
+
+SpoolLink uses exactly one store, picked from `GET api/v1/info`: native tags when the
+version is `0.27.0` or newer, `card_uids` otherwise. The version is read at startup and
+before each card resolve; a failed check keeps the previous choice.
+
+## Migration from `card_uids`
+
+The first time native tags are selected in a Moonraker run, SpoolLink lists every spool
+(`limit=1000&allow_archived=true`) and, for each `card_uids` entry:
+
+- links it as a native tag, then removes it from `card_uids`;
+- drops it from `card_uids` without linking if another spool already holds the tag
+  (`409`), as the tag wins;
+- leaves it in `card_uids` when the same UID is on several spools, or linking fails,
+  and logs a warning. The migration runs again on the next start.
+
+Card resolves wait for the migration to finish. If the spool list cannot be fetched, the
+migration is retried before the next card resolve.
+
 # `spoollink` Component Flow
 
 `spoollink` is a Moonraker component (`moonraker/components/spoollink.py`), loaded when a
@@ -150,17 +183,21 @@ it does not maintain its own WebSocket connection.
    Klipper restarts.
 2. On startup (`component_init`), `spoollink` calls `GET api/v1/field/spool` and
    `GET api/v1/field/filament` to verify the `card_uids` and `variant` custom fields exist,
-   creating them via `POST api/v1/field/{entity}/{key}` if missing.
+   creating them via `POST api/v1/field/{entity}/{key}` if missing (`card_uids` only when
+   native tags are not in use). Before that it reads `GET api/v1/info` to pick the
+   [card UID store](#spoolman-native-tags), migrating `card_uids` to tags if needed.
 3. Klipper (or AFC) calls `spoollink_resolve_spool` with `channel`, `spool_id`, and/or `card_uid`.
 4. `spoollink` resolves the spool from Spoolman:
    - By ID: `GET api/v1/spool/{id}`
-   - By card UID: `GET api/v1/spool?limit=1000`, then filter client-side
-     on `extra.card_uids` (comma-separated, JSON-encoded uppercase hex UIDs).
-5. If both `spool_id` and `card_uid` are given and the card is not yet in the spool's
-   `card_uids`, `spoollink` appends it via `PATCH api/v1/spool/{id}` with
+   - By card UID: `GET api/v1/spool?tag={uid}` with native tags, otherwise
+     `GET api/v1/spool?limit=1000` filtered client-side on `extra.card_uids`
+     (comma-separated, JSON-encoded uppercase hex UIDs).
+5. If both `spool_id` and `card_uid` are given, any other spool that carries the same
+   UID has it removed first — a UID can only belong to one spool at a time. Then, if the
+   card is not yet on the spool, `spoollink` links it: `POST api/v1/spool/{id}/tag` with
+   native tags, otherwise `PATCH api/v1/spool/{id}` with
    `{"extra": {"card_uids": "\"UID1,UID2\""}}` (JSON-encoded string, as required by
-   Spoolman's custom field API). Any other spool that already carries the same UID has it
-   removed via a subsequent `PATCH` — a UID can only belong to one spool at a time.
+   Spoolman's custom field API).
 6. On success, `spoollink` pushes the resolved filament info into Klipper by calling the
    `spoollink/set` endpoint (registered by the Klipper `[spoollink]` router), which merges
    it onto `filament_protocol.FILAMENT_INFO_STRUCT` and applies it to `print_task_config`.
