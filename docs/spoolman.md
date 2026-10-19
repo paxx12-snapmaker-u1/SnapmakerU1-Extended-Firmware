@@ -49,7 +49,9 @@ diameter, density, and temperatures under **Advanced**.
 ![Create tab, seeded from the detected tag](screenshots/filament-manager-spoolman-create-spool.png)
 
 UID ownership is rechecked on submit: if the tag turns out to belong to a spool
-already, that spool is assigned instead of a duplicate being created.
+already, that spool is assigned instead of a duplicate being created. On
+Spoolman v0.27.0 or newer the tag is attached to the new spool as a native tag
+right after it is created; older servers get it in `card_uids` instead.
 
 ## Assigning a Spool
 
