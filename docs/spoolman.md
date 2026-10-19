@@ -54,7 +54,7 @@ already, that spool is assigned instead of a duplicate being created.
 ## Assigning a Spool
 
 The **Assign** tab, which the card's **Spoolman** button opens on, lists each
-spool's stored card UIDs. The spool already assigned to that extruder comes
+spool's stored card UIDs, from both [stores](#card-uid-storage). The spool already assigned to that extruder comes
 first, then those carrying the same filament as the detected tag — same
 vendor, material, variant, colour — under **Suggested spools**. Use it to store
 a spool's second tag, or to link a blank tag to a spool that already exists.
@@ -82,6 +82,10 @@ use_spoollink_uid: true
 With both enabled, a native tag wins over a conflicting `card_uids` entry, and
 SpoolLink keeps the two in sync. Cards bound before upgrading Spoolman are
 copied to native tags the next time they are scanned.
+
+Filament Manager follows the same settings: it lists UIDs from every enabled
+store, treats a native tag as the owner of a UID the same way, and leaves the
+linking itself to SpoolLink.
 
 ## Apps
 
