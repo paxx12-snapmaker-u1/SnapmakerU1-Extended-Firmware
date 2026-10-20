@@ -40,31 +40,7 @@
  
  logging.basicConfig(stream=sys.stderr, level=logging.INFO)
  logger = logging.getLogger("metadata")
-@@ -86,6 +94,23 @@
-             pass
-     return []
- 
-+def regex_find_strings(pattern: str, separators: str, data: str) -> List[str]:
-+    pattern = pattern.replace(r"(%S)", r"(.*)")
-+    match = re.search(pattern, data)
-+    if match and match.group(1):
-+        separators = re.escape(separators)
-+        pattern = rf'\s*(")(?:\\"|[^"])*"\s*|[^{separators}]+'
-+        parsed_matches: List[str] = []
-+        for m in re.finditer(pattern, match.group(1)):
-+            (val, sep) = m.group(0, 1)
-+            val = val.strip()
-+            if sep:
-+                val = val[1:-1].replace(rf'\{sep}', sep).strip()
-+            if val:
-+                parsed_matches.append(val)
-+        return parsed_matches
-+    return []
-+
- def regex_find_float(pattern: str, data: str) -> Optional[float]:
-     pattern = pattern.replace(r"(%F)", r"([0-9]*\.?[0-9]+)")
-     match = re.search(pattern, data)
-@@ -128,17 +153,18 @@
+@@ -145,17 +153,18 @@
  class BaseSlicer(object):
      def __init__(self, file_path: str) -> None:
          self.path = file_path
@@ -89,7 +65,7 @@
          self.size: int = fsize
  
      def _check_has_objects(self,
-@@ -172,7 +198,14 @@
+@@ -189,7 +198,14 @@
                  return True
          return False
  
@@ -105,7 +81,7 @@
          return None
  
      def has_objects(self) -> bool:
-@@ -182,14 +215,14 @@
+@@ -199,14 +215,14 @@
          m = re.search(r"\n[MG]\d+\s.*\n", self.header_data)
          if m is None:
              return None
@@ -122,23 +98,10 @@
  
      def parse_first_layer_height(self) -> Optional[float]:
          return None
-@@ -212,6 +245,9 @@
-     def parse_filament_weight_total(self) -> Optional[float]:
+@@ -250,6 +266,18 @@
+     def parse_filament_colors(self) -> Optional[List[str]]:
          return None
  
-+    def parse_filament_weights(self) -> Optional[List[float]]:
-+        return None
-+
-     def parse_filament_retract_length_toolchange(self) -> Optional[List[float]]:
-         return None
- 
-@@ -221,6 +257,21 @@
-     def parse_filament_type(self) -> Optional[str]:
-         return None
- 
-+    def parse_filament_colors(self) -> Optional[List[str]]:
-+        return None
-+
 +    def parse_extruder_colors(self) -> Optional[List[str]]:
 +        return None
 +
@@ -154,7 +117,7 @@
      def parse_estimated_time(self) -> Optional[float]:
          return None
  
-@@ -233,6 +284,9 @@
+@@ -262,6 +290,9 @@
      def parse_first_layer_extr_temp(self) -> Optional[float]:
          return None
  
@@ -164,7 +127,7 @@
      def parse_thumbnails(self) -> Optional[List[Dict[str, Any]]]:
          for data in [self.header_data, self.footer_data]:
              thumb_matches: List[str] = re.findall(
-@@ -377,9 +431,6 @@
+@@ -406,9 +437,6 @@
          return None
  
  class UnknownSlicer(BaseSlicer):
@@ -174,7 +137,7 @@
      def parse_first_layer_height(self) -> Optional[float]:
          return regex_find_min_float(r"G1\sZ(%F)\s", self.header_data)
  
-@@ -395,11 +446,8 @@
+@@ -424,11 +452,8 @@
      def parse_chamber_temp(self) -> Optional[float]:
          return regex_find_float(r"M191 S(%F)", self.header_data)
  
@@ -187,7 +150,7 @@
          aliases = {
              'PrusaSlicer': r"PrusaSlicer\s(.*)\son",
              'SuperSlicer': r"SuperSlicer\s(.*)\son",
-@@ -414,11 +462,10 @@
+@@ -443,11 +468,10 @@
          for name, expr in aliases.items():
              match = re.search(expr, data)
              if match:
@@ -203,20 +166,9 @@
  
      def has_objects(self) -> bool:
          return self._check_has_objects(
-@@ -480,8 +527,25 @@
-             self.footer_data
-         )
+@@ -531,7 +555,14 @@
+         return None
  
-+    def parse_filament_weights(self) -> Optional[List[float]]:
-+        line = regex_find_string(r'filament\sused\s\[g\]\s=\s(%S)\n', self.footer_data)
-+        if line:
-+            weights = regex_find_floats(
-+                r"(%F)", line
-+            )
-+            if weights:
-+                return weights
-+        return None
-+
      def parse_filament_type(self) -> Optional[str]:
 -        return regex_find_string(r";\sfilament_type\s=\s(%S)", self.footer_data)
 +        result = regex_find_strings(
@@ -230,7 +182,7 @@
  
      def parse_filament_volume_type(self) -> Optional[str]:
          result = regex_find_string(r";\sfilament_volume_type\s=\s(%S)", self.footer_data)
-@@ -511,8 +575,46 @@
+@@ -561,15 +592,48 @@
          return None
  
      def parse_filament_name(self) -> Optional[str]:
@@ -238,18 +190,18 @@
 -            r";\sfilament_settings_id\s=\s(%S)", self.footer_data
 +        result = regex_find_strings(
 +            r";\sfilament_settings_id\s=\s(%S)", ",;", self.footer_data
-+        )
+         )
 +        if len(result) > 1:
 +            return json.dumps(result)
 +        elif result:
 +            return result[0]
 +        return None
-+
-+    def parse_filament_colors(self) -> Optional[List[str]]:
-+        return regex_find_strings(
-+            r";\sfilament_colour\s=\s(%S)", ",;", self.footer_data
-+        )
-+
+ 
+     def parse_filament_colors(self) -> Optional[List[str]]:
+         return regex_find_strings(
+             r";\sfilament_colour\s=\s(%S)", ",;", self.footer_data
+         )
+ 
 +    def parse_extruder_colors(self) -> Optional[List[str]]:
 +        return regex_find_strings(
 +            r";\sextruder_colour\s=\s(%S)", ",;", self.footer_data
@@ -276,10 +228,12 @@
 +    def parse_mmu_print(self) -> Optional[int]:
 +        return regex_find_int(
 +            r";\ssingle_extruder_multi_material\s=\s(%D)", self.footer_data
-         )
- 
++        )
++
      def parse_estimated_time(self) -> Optional[float]:
-@@ -560,9 +662,16 @@
+         time_match = re.search(
+             r';\sestimated\sprinting\stime.*', self.footer_data)
+@@ -615,9 +679,16 @@
              if nozzle_diameter_list:
                  return nozzle_diameter_list
          return None
@@ -296,7 +250,7 @@
      def parse_line_width(self) -> Optional[float]:
          return regex_find_float(r";\sline_width\s=\s(%F)", self.footer_data)
  
-@@ -631,14 +740,13 @@
+@@ -686,14 +757,13 @@
  
  
  class Slic3rPE(PrusaSlicer):
@@ -316,7 +270,7 @@
  
      def parse_filament_total(self) -> Optional[float]:
          return regex_find_float(r"filament\sused\s=\s(%F)mm", self.footer_data)
-@@ -647,14 +755,13 @@
+@@ -702,14 +772,13 @@
          return None
  
  class Slic3r(Slic3rPE):
@@ -336,7 +290,7 @@
  
      def parse_filament_total(self) -> Optional[float]:
          filament = regex_find_float(
-@@ -671,14 +778,13 @@
+@@ -726,14 +795,13 @@
          return None
  
  class Cura(BaseSlicer):
@@ -356,7 +310,7 @@
  
      def has_objects(self) -> bool:
          return self._check_has_objects(self.header_data, r"\n;MESH:")
-@@ -696,13 +802,30 @@
+@@ -751,13 +819,30 @@
          return regex_find_float(r";MAXZ:(%F)", self.header_data)
  
      def parse_filament_total(self) -> Optional[float]:
@@ -392,7 +346,7 @@
  
      def parse_filament_type(self) -> Optional[str]:
          return regex_find_string(r";Filament\stype\s=\s(%S)", self.header_data)
-@@ -797,16 +920,14 @@
+@@ -852,16 +937,14 @@
          return thumbs
  
  class Simplify3D(BaseSlicer):
@@ -415,7 +369,7 @@
  
      def parse_first_layer_height(self) -> Optional[float]:
          return regex_find_min_float(r"G1\sZ(%F)\s", self.header_data)
-@@ -907,16 +1028,16 @@
+@@ -962,16 +1045,16 @@
          )
  
  class KISSlicer(BaseSlicer):
@@ -437,7 +391,7 @@
  
      def parse_first_layer_height(self) -> Optional[float]:
          return regex_find_float(
-@@ -958,14 +1079,13 @@
+@@ -1013,14 +1096,13 @@
  
  
  class IdeaMaker(BaseSlicer):
@@ -457,7 +411,7 @@
  
      def has_objects(self) -> bool:
          return self._check_has_objects(self.header_data, r"\n;PRINTING:")
-@@ -1035,15 +1155,14 @@
+@@ -1090,15 +1172,14 @@
              r";Dimension:(?:\s\d+\.\d+){3}\s(%F)", self.header_data)
  
  class IceSL(BaseSlicer):
@@ -478,7 +432,7 @@
  
      def parse_first_layer_height(self) -> Optional[float]:
          return regex_find_float(
-@@ -1101,7 +1220,7 @@
+@@ -1156,7 +1237,7 @@
              r";\snozzle_diameter_mm_0\s:\s+(%F)", self.header_data)
  
  class KiriMoto(BaseSlicer):
@@ -487,7 +441,7 @@
          variants: Dict[str, str] = {
              "Kiri:Moto": r"; Generated by Kiri:Moto (\d.+)",
              "SimplyPrint": r"; Generated by Kiri:Moto \(SimplyPrint\) (.+)"
-@@ -1109,11 +1228,10 @@
+@@ -1164,11 +1245,10 @@
          for name, pattern in variants.items():
              match = re.search(pattern, data)
              if match:
@@ -503,7 +457,7 @@
  
      def parse_first_layer_height(self) -> Optional[float]:
          return regex_find_float(
-@@ -1161,7 +1279,6 @@
+@@ -1216,7 +1296,6 @@
          )
  
  
@@ -511,11 +465,10 @@
  SUPPORTED_SLICERS: List[Type[BaseSlicer]] = [
      PrusaSlicer, Slic3rPE, Slic3r, Cura, Simplify3D,
      KISSlicer, IdeaMaker, IceSL, KiriMoto
-@@ -1180,12 +1297,19 @@
-     'chamber_temp',
+@@ -1236,6 +1315,11 @@
      'filament_name',
      'filament_type',
-+    'filament_colors',
+     'filament_colors',
 +    'filament_change_count',
 +    'extruder_colors',
 +    'filament_temps',
@@ -524,27 +477,20 @@
      'filament_weight',
      'filament_colour',
      'filament_multi_colors',
-     'filament_colour_mode',
-     'filament_total',
-     'filament_weight_total',
-+    'filament_weights',
-     'filament_retract_length_toolchange',
-     'line_width',
-     'outer_wall_speed',
-@@ -1199,9 +1323,18 @@
+@@ -1258,9 +1342,18 @@
      'filament_volume_type',
      'process_flow_support',
      'print_sequence',
 -    'thumbnails']
 +    'thumbnails'
 +]
-+
+ 
+-def process_objects(file_path: str, slicer: BaseSlicer, name: str) -> bool:
 +PPC_REGEX = (
 +    r"^; Pre-Processed for Cancel-Object support "
 +    r"by preprocess_cancellation (?P<version>v?\d+(?:\.\d+)*)"
 +)
- 
--def process_objects(file_path: str, slicer: BaseSlicer, name: str) -> bool:
++
 +def process_objects(file_path: str, slicer: BaseSlicer) -> bool:
 +    name = slicer.slicer_name
 +    if not slicer.has_objects():
@@ -552,7 +498,7 @@
      try:
          from preprocess_cancellation import (
              preprocess_slicer,
-@@ -1214,8 +1347,7 @@
+@@ -1273,8 +1366,7 @@
          return False
      fname = os.path.basename(file_path)
      logger.info(
@@ -562,7 +508,7 @@
      )
      with tempfile.TemporaryDirectory() as tmp_dir_name:
          tmp_file = os.path.join(tmp_dir_name, fname)
-@@ -1246,48 +1378,111 @@
+@@ -1305,48 +1397,111 @@
          shutil.move(tmp_file, file_path)
      return True
  
@@ -701,7 +647,7 @@
      for key in SUPPORTED_DATA:
          func = getattr(slicer, "parse_" + key)
          result = func()
-@@ -1327,12 +1522,23 @@
+@@ -1386,12 +1541,23 @@
      except Exception:
          logger.info(f"Error removing ufp file: {ufp_path}")
  
@@ -731,7 +677,7 @@
      if ufp is not None:
          extract_ufp(ufp, file_path)
      metadata: Dict[str, Any] = {}
-@@ -1340,7 +1546,7 @@
+@@ -1399,7 +1565,7 @@
          logger.info(f"File Not Found: {file_path}")
          sys.exit(-1)
      try:
@@ -740,7 +686,7 @@
      except Exception:
          logger.info(traceback.format_exc())
          sys.exit(-1)
-@@ -1360,12 +1566,15 @@
+@@ -1419,12 +1585,15 @@
      parser = argparse.ArgumentParser(
          description="GCode Metadata Extraction Utility")
      parser.add_argument(
@@ -760,7 +706,7 @@
      )
      parser.add_argument(
          "-u", "--ufp", metavar="<ufp file>", default=None,
-@@ -1373,9 +1582,31 @@
+@@ -1432,9 +1601,31 @@
      )
      parser.add_argument(
          "-o", "--check-objects", dest='check_objects', action='store_true',
