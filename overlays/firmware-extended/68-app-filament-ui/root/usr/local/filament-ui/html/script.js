@@ -806,16 +806,15 @@ function defaultFilamentName(material, variant, color) {
 }
 
 function canCreateSpool(channel) {
-    const metadata = channel?.rfid_data || {};
     // A channel that already has a spool needs the Assign tab to change it,
-    // not a second spool for the same filament.
-    return !!(
-        channel?.spool_id == null &&
-        normalizeUid(channel?.uid) &&
-        cleanText(metadata.vendor) &&
-        cleanText(metadata.type) &&
-        normalizeColor(metadata.color)
-    );
+    // not a second spool for the same filament. Only the UID is required:
+    // SpoolLink resolves by UID, so a blank tag works as well as a coded one.
+    return !!(channel?.spool_id == null && normalizeUid(channel?.uid));
+}
+
+// Whether the tag carries enough filament data to seed the whole form.
+function hasTagFilament(metadata) {
+    return !!(cleanText(metadata?.vendor) && cleanText(metadata?.type) && normalizeColor(metadata?.color));
 }
 
 // Exact vendor/material/variant/colour identity, with blank and `Basic`
@@ -1026,9 +1025,9 @@ const SPOOL_TAB_INTRO = {
     assign: 'Assigns an existing Spoolman spool to this extruder so its remaining weight is ' +
         'tracked while printing. A tag in the extruder is linked to that spool, and resolves ' +
         'to it automatically next time.',
-    create: 'Creates a new Spoolman spool from the tag in this extruder and assigns it. The ' +
-        'fields are seeded from the tag; a filament with the same brand, material, subtype ' +
-        'and colour is reused rather than duplicated.',
+    create: 'Creates a new Spoolman spool for the tag in this extruder and assigns it. The ' +
+        'fields are seeded from the tag when it carries filament data; a filament with the ' +
+        'same brand, material, subtype and colour is reused rather than duplicated.',
 };
 
 function showSpoolTab(tab) {
@@ -1238,24 +1237,38 @@ function setCreateSpoolColor(hex) {
     document.getElementById('cs-color-picker').value = `#${color}`;
 }
 
-// Seed the form from the tag, filling what it omits from the density table.
+// Seed the form from the tag, filling what it omits from the palette defaults
+// and the density table. A blank tag gets the defaults alone.
 function applyCreateSpoolDefaults(metadata) {
     const elements = document.getElementById('create-spool-form').elements;
-    const variant = cleanText(metadata.variant || metadata.sub_type);
     const reportedWeight = finiteNumber(metadata.weight);
 
     setFilamentValue('createMaterial', cleanText(metadata.type));
     setFilamentValue('createBrand', cleanText(metadata.vendor));
-    setFilamentValue('createSubtype', variant);
+    setFilamentValue('createSubtype', cleanText(metadata.variant || metadata.sub_type));
     setCreateSpoolColor(metadata.color);
 
-    elements.name.value = defaultFilamentName(metadata.type, variant, metadata.color);
     elements.net_weight.value = reportedWeight != null && reportedWeight > 0 ? reportedWeight : 1000;
     elements.tare_weight.value = '';
     elements.diameter.value = finiteNumber(metadata.diameter) || 1.75;
-    elements.density.value = materialDensity(metadata.type, metadata.density);
     elements.nozzle_temp.value = finiteNumber(metadata.max_temp) ?? '';
     elements.bed_temp.value = finiteNumber(metadata.bed_temp) ?? '';
+    syncCreateSpoolDerived();
+}
+
+// Keep the filament name and density in step with material, subtype and
+// colour until the user edits them, as a blank tag is filled in by hand.
+function syncCreateSpoolDerived() {
+    const context = createSpoolContext;
+    if (!context) return;
+    const elements = document.getElementById('create-spool-form').elements;
+    if (!context.edited.has('name')) {
+        elements.name.value = defaultFilamentName(
+            elements.material.value, elements.variant.value, elements.color.value);
+    }
+    if (!context.edited.has('density')) {
+        elements.density.value = materialDensity(elements.material.value, context.metadata.density);
+    }
 }
 
 function prepareCreateSpoolForm(channelNumber) {
@@ -1267,9 +1280,14 @@ function prepareCreateSpoolForm(channelNumber) {
     if (!canCreateSpool(channel)) return;
 
     const uid = normalizeUid(channel.uid);
-    createSpoolContext = { channel: channelNumber, uid, metadata: channel.rfid_data, busy: false };
+    const metadata = channel.rfid_data || {};
+    createSpoolContext = { channel: channelNumber, uid, metadata, edited: new Set(), busy: false };
     document.getElementById('create-spool-uid').textContent = formatUid(uid);
-    applyCreateSpoolDefaults(channel.rfid_data);
+    applyCreateSpoolDefaults(metadata);
+    if (!hasTagFilament(metadata)) {
+        setCreateSpoolNotice('This tag carries no complete filament data. Fill in the filament ' +
+            'details; the new spool is linked to the tag by its UID.');
+    }
 }
 
 function finishCreateSpool(message) {
@@ -1467,6 +1485,12 @@ function initializeModals() {
         const color = normalizeColor(e.target.value);
         if (color) document.getElementById('cs-color-picker').value = `#${color}`;
     });
+    document.getElementById('create-spool-form').addEventListener('input', e => {
+        if (e.target.name === 'name' || e.target.name === 'density') {
+            createSpoolContext?.edited.add(e.target.name);
+        }
+        syncCreateSpoolDerived();
+    });
 
     document.getElementById('mismatch-close').addEventListener('click', () => closeModal('mismatch-modal'));
     document.getElementById('mismatch-cancel').addEventListener('click', () => closeModal('mismatch-modal'));
@@ -1596,6 +1620,7 @@ const FILAMENT_PALETTES = {
     },
     // The Create Spool dialog offers the same choices, over its own inputs.
     createMaterial: {
+        onChange: () => syncCreateSpoolDerived(),
         paletteId: 'cs-material-palette',
         valueId: 'cs-material-value',
         items: MATERIALS.map(([name]) => name),
@@ -1609,6 +1634,7 @@ const FILAMENT_PALETTES = {
         customInputId: 'cs-brand-custom',
     },
     createSubtype: {
+        onChange: () => syncCreateSpoolDerived(),
         paletteId: 'cs-subtype-palette',
         valueId: 'cs-subtype-value',
         items: SUBTYPE_ITEMS,
@@ -1669,6 +1695,7 @@ function setFilamentPaletteValue(name, value) {
     document.querySelectorAll(`#${config.paletteId} .palette-tile`).forEach(tile => {
         tile.classList.toggle('selected', tile.dataset.value === selectedTileValue);
     });
+    config.onChange?.();
 }
 
 // Selects `value`, adding a one-off tile for it first if it isn't one of the

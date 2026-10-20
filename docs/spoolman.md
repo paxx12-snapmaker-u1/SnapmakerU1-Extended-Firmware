@@ -36,11 +36,15 @@ toggle to **Disabled** to turn it off.
 
 ## Creating a Spool
 
-The **Create** tab of the **Spoolman** dialog makes a new spool from the
-detected tag and assigns it. It is enabled on a channel with no spool assigned
-whose tag carries a UID, vendor, material, and six-digit colour — on a channel
-that already has one, assign a spool instead. The form uses the same palettes
-as **User**, with diameter, density, and temperatures under **Advanced**.
+The **Create** tab of the **Spoolman** dialog makes a new spool for the
+detected tag and assigns it. It is enabled on any channel with no spool
+assigned whose tag reports a UID — on a channel that already has one, assign a
+spool instead. The form is seeded from the tag's vendor, material, colour and
+other data when it carries them; a blank or third-party tag starts from the
+palette defaults and is filled in by hand, then linked to the new spool by its
+UID. The filament name and density follow the chosen material, subtype and
+colour until edited. The form uses the same palettes as **User**, with
+diameter, density, and temperatures under **Advanced**.
 
 ![Create tab, seeded from the detected tag](screenshots/filament-manager-spoolman-create-spool.png)
 
@@ -53,8 +57,8 @@ The **Assign** tab, which the card's **Spoolman** button opens on, lists each
 spool's stored card UIDs. The spool already assigned to that extruder comes
 first, then those carrying the same filament as the detected tag — same
 vendor, material, variant, colour — under **Suggested spools**. Use it to store
-a spool's second tag, and for tags with no usable metadata. Hovering the card's
-Spoolman badge lists the spool's stored UIDs.
+a spool's second tag, or to link a blank tag to a spool that already exists.
+Hovering the card's Spoolman badge lists the spool's stored UIDs.
 
 ![Assign tab, with the suggested spool listed first](screenshots/filament-manager-spoolman-suggested-spools.png)
 
