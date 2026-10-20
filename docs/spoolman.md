@@ -130,7 +130,7 @@ SET_SPOOL_ID LANE=E0 SPOOL_ID=5
 |-----------|---------|-------------|
 | `LANE` | — | Lane name (e.g. `E0`); resolved through [AFC-Lite](afc-lite.md) when enabled, otherwise from the name itself |
 | `CHANNEL` | — | Extruder channel index (`0`-`3`), used instead of `LANE` |
-| `SPOOL_ID` | `0` | Spoolman spool ID; `0` clears the assignment |
+| `SPOOL_ID` | `0` | Spoolman spool ID; `0` clears the assignment and unlinks the channel's card from Spoolman, so the next scan does not reassign it |
 
 The macro is provided by the Spoolman integration itself, so it is
 available whenever Spoolman is enabled, with or without AFC-Lite.

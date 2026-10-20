@@ -1198,6 +1198,10 @@ async function clearSpoolForChannel(channel) {
         { label: 'Assigned to', value: assigned ? describeSpool(assigned)
             : spoolPickerCurrentId != null ? `Spool #${spoolPickerCurrentId}` : 'Nothing' },
     ];
+    // SpoolLink unlinks the tag in the extruder too, so the next scan does not
+    // reassign the same spool.
+    const uid = currentChannelUid(channel);
+    if (uid) rows.push({ label: 'Unlinks RFID', html: uidHtml(uid) });
     if (!await requestConfirmation('Clear Spool', rows)) return;
 
     closeModal('spoolman-modal');
@@ -1205,6 +1209,13 @@ async function clearSpoolForChannel(channel) {
         showStatus('Clearing spool…', 'info');
         await sendGcode(`SET_SPOOL_ID LANE=E${channel} SPOOL_ID=0`);
         showStatus(`Extruder ${channel + 1} spool cleared`, 'success');
+        if (uid && assigned) {
+            // The unlink runs asynchronously in SpoolLink, after the gcode returns.
+            await new Promise(resolve => setTimeout(resolve, 1500));
+            const spool = await fetchSpoolmanSpool(assigned.id);
+            if (spool) spoolmanSpools.set(Number(spool.id), spool);
+            rebuildFromCache();
+        }
     } catch (err) {
         showStatus(`Failed to clear spool: ${err.message}`, 'error');
     }
