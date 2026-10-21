@@ -108,6 +108,37 @@ used alongside Max Speed; the two no longer change any setting in common.
 **Configuration:**
 This feature can **only** be configured via Firmware Configuration web interface. Manual configuration is not supported.
 
+## Fan Curves
+
+Selects a cooling profile for the power fan and the four nozzle fans. `Stock`
+restores the original Snapmaker behaviour, `Quiet` and `Very Quiet` run the fans
+below the stock cooling curve.
+
+**What it does:**
+- `Quiet` starts the nozzle fans at 5% at 50C and reaches 48% at 210C, against
+  the stock 30% at 45C and 70% at 210C
+- `Very Quiet` starts at the same 5% at 50C and stays lower, at 25% at 210C
+- The power fan runs below the stock 60%: `Quiet` starts at 20% at 70C,
+  `Very Quiet` at 10% at 50C
+- The stock heavy-load rule is kept: three or more active toolheads with one
+  targeting above 260C still drive the power fan to 100%
+- A faulty toolhead bypass keeps its nozzle fan off, the same as on stock
+
+**Risks:**
+- The nozzle fans run below the stock cooling curve, so a hotend can run warmer
+  than on stock
+- `Very Quiet` runs the nozzle fans at about a third of the stock airflow at PLA
+  temperatures, which is where heat creep and clogs appear
+
+**Recommendation:**
+- Start with `Quiet`
+- Use `Stock` for a heated chamber, where the power fan already runs cooler
+  than on stock
+- Watch the hotend on the first print after switching profile
+
+**Configuration:**
+This feature can **only** be configured via Firmware Configuration web interface. Manual configuration is not supported.
+
 ## Object Processing for Adaptive Mesh
 
 Enables object processing in Moonraker's file manager to support adaptive mesh features.
