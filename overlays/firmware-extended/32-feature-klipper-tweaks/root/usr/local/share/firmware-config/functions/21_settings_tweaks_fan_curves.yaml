@@ -1,0 +1,49 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-PackageHomePage: https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware
+# SPDX-FileCopyrightText: Copyright (c) 2026 @BICHENG
+
+settings:
+  tweaks:
+    items:
+      fan_curves:
+        label: Fan Curves
+        description: Select a cooling profile for the power fan and the four nozzle fans. Quiet and Very Quiet start the nozzle fans at 50C and stay below the stock cooling curve, Very Quiet stays lower. Stock restores the original Snapmaker behaviour.
+        help_url: http://snapmakeru1-extended-firmware.pages.dev/tweaks#fan-curves
+        get_cmd:
+          - bash
+          - -c
+          - |
+            python3 /usr/local/bin/fan_curves.py profile 2>/dev/null || echo stock
+        options:
+          quiet:
+            label: Quiet
+            confirm: |-
+              Apply the Quiet fan profile?
+              The nozzle fans start at 5% at 50C and stay below the stock curve, so they run quieter than stock while printing. The power fan starts at 20% at 70C and reaches 60% at 260C.
+              The stock heavy-load rule is kept: three or more active toolheads with one targeting above 260C drive the power fan to 100%.
+            cmd:
+              - bash
+              - -xc
+              - |
+                python3 /usr/local/bin/fan_curves.py apply quiet
+          very_quiet:
+            label: Very Quiet
+            confirm: |-
+              Apply the Very Quiet fan profile?
+              The nozzle fans start at 5% at 50C, so they run through the whole PLA range instead of staying off. They stay below the Quiet curve: 25% at 210C, against Quiet's 48% and stock's 70%.
+              The power fan starts at 10% at 50C and stays at or below 20%. The stock heavy-load rule is kept.
+              The nozzle fans run at roughly a third of the stock airflow, so check the hotend for heat creep on the first print.
+            cmd:
+              - bash
+              - -xc
+              - |
+                python3 /usr/local/bin/fan_curves.py apply very_quiet
+          stock:
+            label: Stock
+            confirm: Restore the original Snapmaker fan behaviour?
+            cmd:
+              - bash
+              - -xc
+              - |
+                python3 /usr/local/bin/fan_curves.py apply stock
+        default: stock

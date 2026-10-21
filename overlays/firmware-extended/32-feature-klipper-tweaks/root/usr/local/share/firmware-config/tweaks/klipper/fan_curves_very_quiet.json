@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "profile": "very_quiet",
+  "curves": {
+    "power": [[50, 0.1], [120, 0.12], [190, 0.15], [260, 0.2]],
+    "nozzle": [[50, 0.05], [100, 0.1], [150, 0.16], [200, 0.25], [240, 0.4], [260, 0.55]]
+  },
+  "hysteresis": 5.0,
+  "heavy_load": {"temperature": 260, "heaters": 3, "duty": 1.0}
+}
