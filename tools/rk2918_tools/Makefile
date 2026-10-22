@@ -10,4 +10,4 @@ TARGETS := afptool img_unpack img_maker mkkrnlimg
 all: ${TARGETS}
 
 clean:
-	rm ${TARGETS}
+	rm -f ${TARGETS}

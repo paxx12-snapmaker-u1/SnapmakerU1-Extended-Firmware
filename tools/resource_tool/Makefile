@@ -5,5 +5,5 @@
 resource_tool: resource_tool.c
 	gcc -o $@ $<
 
-clean: 
+clean:
 	rm -f resource_tool
