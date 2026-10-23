@@ -1,0 +1,822 @@
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<!-- SPDX-PackageHomePage: https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 @noon92 -->
+<!-- Push notifications form, loaded into the firmware-config form modal. -->
+<style>
+    .nt { font-size: 14px; }
+    .nt-enable { display: flex; align-items: center; gap: 10px; padding: 12px; background: var(--item); border-radius: 6px; margin-bottom: 16px; cursor: pointer; color: #fff; font-weight: 500; }
+    .nt-enable.nt-sec { font-weight: 600; margin-bottom: 12px; }
+    .nt input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--accent); cursor: pointer; flex: none; }
+    .nt-section { font-size: 16px; color: #fff; font-weight: 600; margin: 8px 0 10px; }
+    .nt-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 16px; margin-bottom: 20px; }
+    .nt-field label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+    .nt-field .nt-hint { font-size: 11px; color: var(--muted); margin-top: 4px; line-height: 1.4; }
+    .nt-field .nt-warn { font-size: 11px; color: var(--warning); margin-top: 4px; }
+    .nt-input { width: 100%; background: var(--item); border: 1px solid #555; border-radius: 6px; padding: 9px 10px; color: var(--text); font-size: 13px; font-family: monospace; }
+    .nt-input:focus { outline: none; border-color: var(--accent); }
+    select.nt-input { font-family: inherit; cursor: pointer; }
+    .nt-secret { display: flex; gap: 6px; }
+    .nt-secret .btn { min-height: 0; padding: 0 12px; }
+    .nt-table-wrap { overflow-x: auto; margin-bottom: 12px; }
+    .nt-table { width: 100%; border-collapse: separate; border-spacing: 0 4px; min-width: 460px; }
+    .nt-table th { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; text-align: left; padding: 0 10px 2px; }
+    .nt-table th.nt-c, .nt-table td.nt-c { text-align: center; width: 64px; white-space: nowrap; }
+    .nt-table th.nt-img, .nt-table td.nt-img { width: 96px; }
+    .nt-table td { background: var(--item); padding: 8px 10px; vertical-align: middle; }
+    .nt-table td:first-child { border-radius: 6px 0 0 6px; }
+    .nt-table td:last-child { border-radius: 0 6px 6px 0; }
+    .nt-table tr.nt-group td { background: none; padding: 10px 2px 0; font-size: 12px; color: var(--muted); }
+    .nt-table tr.nt-off .nt-dim { opacity: 0.4; }
+    .nt-name { color: #fff; }
+    .nt-icon { display: inline-block; width: 24px; }
+    .nt-table select.nt-input.nt-layer { width: auto; padding: 4px 6px; display: inline-block; font-family: inherit; }
+    .nt-sub { display: block; margin-top: 4px; font-size: 12px; color: #8a8f98; white-space: nowrap; }
+    .nt-sub select.nt-input.nt-layer { font-size: 12px; padding: 2px 4px; max-width: 140px; }
+    .nt-sub input.nt-input.nt-deg { width: 56px; font-size: 12px; padding: 2px 4px; display: inline-block; }
+    .nt-foot { font-size: 12px; color: #8a8f98; margin: 0 0 16px; }
+    .nt-table select.nt-input { padding: 5px 8px; width: 120px; }
+    .nt-table td input[type=checkbox] { vertical-align: middle; }
+    .nt-na { color: var(--muted); }
+    .nt-public { color: var(--error); font-size: 12px; margin-top: 6px; line-height: 1.4; font-weight: 500; }
+    .nt-inline { display: flex; gap: 6px; }
+    .nt-inline .btn { min-height: 0; padding: 0 12px; white-space: nowrap; }
+    .nt-inline .btn.nt-active { border-color: var(--accent); color: var(--accent); }
+    .nt-field .nt-hint a { color: var(--accent); }
+    .nt-disabled .nt-body { opacity: 0.55; }
+    .nt-unit { align-items: center; }
+    .nt-unit .nt-input { width: 80px; flex: none; }
+    .nt-unit span { color: var(--muted); font-size: 13px; }
+    .nt-port { display: grid; grid-template-columns: 90px 1fr; gap: 6px; }
+    .nt-hint a { color: var(--accent); }
+    .nt-table tr.nt-nopush .nt-dim-push { opacity: 0.4; }
+    .nt-no-push .nt-col-push, .nt-no-email .nt-col-email { display: none; }
+    @media (max-width: 600px) {
+        .nt-grid { grid-template-columns: 1fr; }
+        .nt-table { min-width: 0; font-size: 13px; }
+        .nt-table td { padding: 8px 3px; }
+        .nt-table td:first-child { padding-left: 8px; }
+        .nt-table th { padding: 0 3px 2px; font-size: 10px; letter-spacing: 0; }
+        .nt-table th.nt-c, .nt-table td.nt-c { width: 30px; }
+        .nt-table th.nt-img, .nt-table td.nt-img { width: 36px; }
+        .nt-sub { font-size: 11px; white-space: normal; }
+        .nt-sub select.nt-input.nt-layer { font-size: 11px; padding: 2px 2px; max-width: 126px; }
+        /* Just wide enough for "Default" */
+        .nt-table select.nt-input { width: auto; padding: 5px 2px; font-size: 12px; }
+        .nt-icon { width: 20px; }
+    }
+</style>
+
+<div class="nt" id="nt-root">
+    <label class="nt-enable"><input type="checkbox" id="nt-enabled"> Enable notifications</label>
+    <div class="nt-public" id="nt-stored-error" style="display:none; margin: -8px 0 16px"></div>
+
+    <div class="nt-body">
+        <div class="nt-section">Push notifications</div>
+        <label class="nt-enable nt-sec"><input type="checkbox" id="nt-push-enabled"> Send push notifications</label>
+        <div id="nt-push">
+        <div class="nt-grid">
+            <div class="nt-field">
+                <label for="nt-provider">Push service</label>
+                <select class="nt-input" id="nt-provider">
+                    <option value="discord_dm">Discord (direct message)</option>
+                    <option value="discord">Discord (server channel)</option>
+                    <option value="gotify">Gotify</option>
+                    <option value="ntfy" selected>ntfy</option>
+                    <option value="pushover">Pushover</option>
+                    <option value="telegram">Telegram</option>
+                </select>
+                <div class="nt-hint" id="nt-provider-hint"></div>
+            </div>
+        </div>
+        <div class="nt-grid" id="nt-gotify">
+            <div class="nt-field">
+                <label for="nt-gt-server">Server URL</label>
+                <input class="nt-input" id="nt-gt-server" placeholder="https://gotify.example.com" autocomplete="off" spellcheck="false">
+            </div>
+            <div class="nt-field">
+                <label for="nt-gt-token">App token</label>
+                <div class="nt-secret">
+                    <input class="nt-input" id="nt-gt-token" type="password" autocomplete="new-password" spellcheck="false">
+                    <button type="button" class="btn btn-secondary" data-toggle="nt-gt-token">Show</button>
+                </div>
+                <div class="nt-hint">In the Gotify web UI: Apps &gt; Create Application.</div>
+            </div>
+        </div>
+        <div class="nt-grid" id="nt-pushover">
+            <div class="nt-field">
+                <label for="nt-po-user">User key</label>
+                <input class="nt-input" id="nt-po-user" autocomplete="off" spellcheck="false">
+                <div class="nt-hint">Shown on your <a href="https://pushover.net" target="_blank">Pushover</a> dashboard.</div>
+            </div>
+            <div class="nt-field">
+                <label for="nt-po-token">Application API token</label>
+                <div class="nt-secret">
+                    <input class="nt-input" id="nt-po-token" type="password" autocomplete="new-password" spellcheck="false">
+                    <button type="button" class="btn btn-secondary" data-toggle="nt-po-token">Show</button>
+                </div>
+                <div class="nt-hint">Create an application for the printer on pushover.net.</div>
+            </div>
+            <div class="nt-field">
+                <label for="nt-po-device">Device (optional)</label>
+                <input class="nt-input" id="nt-po-device" placeholder="All devices" autocomplete="off" spellcheck="false">
+            </div>
+        </div>
+        <div class="nt-grid" id="nt-telegram">
+            <div class="nt-field">
+                <label for="nt-tg-token">Bot token</label>
+                <div class="nt-secret">
+                    <input class="nt-input" id="nt-tg-token" type="password" autocomplete="new-password" spellcheck="false" placeholder="123456789:ABC...">
+                    <button type="button" class="btn btn-secondary" data-toggle="nt-tg-token">Show</button>
+                </div>
+                <div class="nt-hint">In Telegram, open <a href="https://t.me/BotFather" target="_blank">@BotFather</a>, send <b>/newbot</b>, pick a name, and paste the token it gives you.</div>
+            </div>
+            <div class="nt-field">
+                <label for="nt-tg-chat">Chat ID</label>
+                <input class="nt-input" id="nt-tg-chat" placeholder="Found automatically" autocomplete="off" spellcheck="false">
+                <div class="nt-hint">Leave empty: open your new bot in Telegram, press <b>Start</b>, then Save or Send Test and it is found for you. For a group, add the bot to the group and send a message there first.</div>
+            </div>
+        </div>
+        <div class="nt-grid" id="nt-discord-dm">
+            <div class="nt-field">
+                <label for="nt-dc-token">Bot token</label>
+                <div class="nt-secret">
+                    <input class="nt-input" id="nt-dc-token" type="password" autocomplete="new-password" spellcheck="false">
+                    <button type="button" class="btn btn-secondary" data-toggle="nt-dc-token">Show</button>
+                </div>
+                <div class="nt-hint">In the <a href="https://discord.com/developers/applications" target="_blank">Discord Developer Portal</a>: <b>New Application</b>, name it, then <b>Bot</b> &gt; <b>Reset Token</b> and copy it. Discord only lets the bot message you if you share a server: Save shows a link to add it to one of yours if needed.</div>
+            </div>
+            <div class="nt-field">
+                <label for="nt-dc-user">Send to (user ID)</label>
+                <input class="nt-input" id="nt-dc-user" placeholder="You (the bot's owner)" autocomplete="off" spellcheck="false">
+                <div class="nt-hint">Leave empty to message the account that made the bot.</div>
+            </div>
+        </div>
+        <div class="nt-grid" id="nt-discord">
+            <div class="nt-field">
+                <label for="nt-dc-hook">Webhook URL</label>
+                <div class="nt-secret">
+                    <input class="nt-input" id="nt-dc-hook" type="password" autocomplete="new-password" spellcheck="false" placeholder="https://discord.com/api/webhooks/...">
+                    <button type="button" class="btn btn-secondary" data-toggle="nt-dc-hook">Show</button>
+                </div>
+                <div class="nt-hint">In Discord: the channel's <b>Edit Channel</b> &gt; <b>Integrations</b> &gt; <b>Webhooks</b> &gt; <b>New Webhook</b> &gt; <b>Copy Webhook URL</b>.</div>
+            </div>
+            <div class="nt-field">
+                <label for="nt-dc-mention">Mention (optional)</label>
+                <input class="nt-input" id="nt-dc-mention" placeholder="None" autocomplete="off" spellcheck="false">
+                <div class="nt-hint">Added to high and max priority notifications: a user ID, <b>role:</b>role ID, <b>everyone</b> or <b>here</b>.</div>
+            </div>
+        </div>
+        <div class="nt-grid" id="nt-ntfy">
+            <div class="nt-field" id="nt-server-field">
+                <label for="nt-server">Server URL</label>
+                <div class="nt-inline">
+                    <input class="nt-input" id="nt-server" placeholder="https://ntfy.example.com" autocomplete="off" spellcheck="false">
+                    <button type="button" class="btn btn-secondary" id="nt-use-public">Use public server</button>
+                </div>
+                <div class="nt-hint">Your own ntfy server (hostname or IP, optional port), or the public ntfy.sh.</div>
+                <div class="nt-public" id="nt-public-warn" style="display:none">
+                    Public server: anyone who knows or guesses your topic can read your notifications, including
+                    camera images, model previews and file names. Fine for testing; for everyday use, set up your own
+                    ntfy server.
+                </div>
+            </div>
+            <div class="nt-field">
+                <label for="nt-topic">Topic</label>
+                <div class="nt-inline">
+                    <input class="nt-input" id="nt-topic" placeholder="u1" maxlength="64" autocomplete="off" spellcheck="false">
+                    <button type="button" class="btn btn-secondary" id="nt-topic-random" title="Generate a long random topic">Random</button>
+                </div>
+                <div class="nt-hint">Subscribe to the same topic in the ntfy app.</div>
+            </div>
+            <div class="nt-field">
+                <label for="nt-auth">Authentication</label>
+                <select class="nt-input" id="nt-auth">
+                    <option value="none">None</option>
+                    <option value="token">Access token</option>
+                    <option value="basic">Username &amp; password</option>
+                </select>
+            </div>
+            <div class="nt-field" id="nt-username-field">
+                <label for="nt-username">Username</label>
+                <input class="nt-input" id="nt-username" autocomplete="off" spellcheck="false">
+            </div>
+            <div class="nt-field" id="nt-secret-field">
+                <label for="nt-secret" id="nt-secret-label">Access token</label>
+                <div class="nt-secret">
+                    <input class="nt-input" id="nt-secret" type="password" autocomplete="new-password" spellcheck="false">
+                    <button type="button" class="btn btn-secondary" data-toggle="nt-secret">Show</button>
+                </div>
+                <div class="nt-hint">Tip: Use a write-only account for the printer.</div>
+            </div>
+        </div>
+        </div>
+
+        <div class="nt-section">Email</div>
+        <label class="nt-enable nt-sec"><input type="checkbox" id="nt-email-enabled"> Send email notifications</label>
+        <div class="nt-grid" id="nt-email">
+            <div class="nt-field">
+                <label for="nt-email-preset">Email provider</label>
+                <select class="nt-input" id="nt-email-preset">
+                    <option value="gmail">Gmail</option>
+                    <option value="brevo">Brevo</option>
+                    <option value="other">Other (SMTP)</option>
+                </select>
+                <div class="nt-hint" id="nt-email-hint"></div>
+            </div>
+            <div class="nt-field">
+                <label for="nt-email-host">SMTP server and port</label>
+                <div class="nt-inline">
+                    <input class="nt-input" id="nt-email-host" placeholder="smtp.example.com" autocomplete="off" spellcheck="false">
+                    <input class="nt-input" id="nt-email-port" style="width:80px;flex:none" inputmode="numeric" autocomplete="off">
+                </div>
+                <select class="nt-input" id="nt-email-security" style="margin-top:6px">
+                    <option value="starttls">STARTTLS (usually port 587)</option>
+                    <option value="ssl">SSL/TLS (usually port 465)</option>
+                    <option value="none">None (unencrypted)</option>
+                </select>
+            </div>
+            <div class="nt-field">
+                <label for="nt-email-username">Username</label>
+                <input class="nt-input" id="nt-email-username" autocomplete="off" spellcheck="false">
+            </div>
+            <div class="nt-field">
+                <label for="nt-email-password" id="nt-email-password-label">Password</label>
+                <div class="nt-secret">
+                    <input class="nt-input" id="nt-email-password" type="password" autocomplete="new-password" spellcheck="false">
+                    <button type="button" class="btn btn-secondary" data-toggle="nt-email-password">Show</button>
+                </div>
+            </div>
+            <div class="nt-field">
+                <label for="nt-email-from">From</label>
+                <input class="nt-input" id="nt-email-from" placeholder="printer@example.com" autocomplete="off" spellcheck="false">
+            </div>
+            <div class="nt-field">
+                <label for="nt-email-to">To</label>
+                <input class="nt-input" id="nt-email-to" placeholder="you@example.com" autocomplete="off" spellcheck="false">
+                <div class="nt-hint">Up to 5 addresses, separated by commas.</div>
+            </div>
+        </div>
+
+        <div class="nt-section">Webhook</div>
+        <label class="nt-enable nt-sec"><input type="checkbox" id="nt-wh-enabled"> Send every notification to a webhook</label>
+        <div class="nt-grid" id="nt-webhook">
+            <div class="nt-field">
+                <label for="nt-wh-url">Webhook URL</label>
+                <div class="nt-secret">
+                    <input class="nt-input" id="nt-wh-url" type="password" autocomplete="new-password" spellcheck="false" placeholder="https://example.com/hook">
+                    <button type="button" class="btn btn-secondary" data-toggle="nt-wh-url">Show</button>
+                </div>
+                <div class="nt-hint">For Home Assistant, Node-RED, n8n or your own scripts. It gets every notification, whatever the Push and Email columns say.</div>
+            </div>
+            <div class="nt-field">
+                <label>What is sent</label>
+                <div class="nt-hint" style="margin-top:0">Each notification is POSTed as JSON: <code>title</code>, <code>message</code>, <code>type</code> (info, success, warning, failure), <code>event</code> (e.g. complete; use it to pick), <code>printer</code>, the links, and the image in <code>attachments</code> (base64).</div>
+            </div>
+        </div>
+
+        <div class="nt-section">Notification content</div>
+        <div class="nt-grid">
+            <div class="nt-field">
+                <label for="nt-name">Printer name</label>
+                <input class="nt-input" id="nt-name" placeholder="U1" autocomplete="off">
+                <div class="nt-hint">Shown in every title, e.g. "✅ U1 complete".</div>
+            </div>
+            <div class="nt-field">
+                <label for="nt-camera">Camera for snapshots</label>
+                <select class="nt-input" id="nt-camera">
+                    <option value="internal">Internal camera</option>
+                    <option value="usb">USB camera</option>
+                </select>
+                <div class="nt-warn" id="nt-camera-warn"></div>
+            </div>
+            <div class="nt-field" style="grid-column: 1 / -1">
+                <label for="nt-printer-url">Printer URL for buttons (optional)</label>
+                <div class="nt-inline">
+                    <input class="nt-input" id="nt-printer-url" placeholder="http://u1" autocomplete="off" spellcheck="false">
+                    <button type="button" class="btn btn-secondary" id="nt-use-local">Use local IP</button>
+                    <button type="button" class="btn btn-secondary" id="nt-use-tailscale">Use Tailscale</button>
+                </div>
+                <div class="nt-hint" id="nt-printer-url-hint"></div>
+                <div class="nt-public" id="nt-local-warn" style="display:none">
+                    Local IP: the buttons only work when your phone is on the same network as the printer.
+                </div>
+                <div class="nt-public" id="nt-tg-warn" style="display:none"></div>
+            </div>
+        </div>
+
+        <div class="nt-table-wrap">
+            <table class="nt-table" id="nt-table">
+                <thead>
+                    <tr><th>Notification</th><th class="nt-c nt-col-push">Push</th><th class="nt-col-push">Priority</th><th class="nt-c nt-col-email">Email</th><th class="nt-c nt-img">Image</th></tr>
+                </thead>
+                <tbody id="nt-rows"></tbody>
+            </table>
+        </div>
+        <div class="nt-foot">* Needs <b>Exclude objects</b> enabled in the slicer.</div>
+        <div class="nt-grid" id="nt-filament">
+            <div class="nt-field">
+                <label for="nt-fl-percent">🧵 Spool running low: alert when a spool is down to</label>
+                <div class="nt-inline nt-unit">
+                    <input class="nt-input" id="nt-fl-percent" type="number" min="0" max="90" inputmode="numeric">
+                    <span>% of a full spool</span>
+                </div>
+                <div class="nt-hint">0 turns this off.</div>
+            </div>
+            <div class="nt-field">
+                <label for="nt-fl-grams">Or to</label>
+                <div class="nt-inline nt-unit">
+                    <input class="nt-input" id="nt-fl-grams" type="number" min="0" max="5000" inputmode="numeric">
+                    <span>g, whichever comes first</span>
+                </div>
+                <div class="nt-hint">0 turns this off.</div>
+            </div>
+        </div>
+        <div class="nt-hint" id="nt-filament-off" style="margin:-8px 0 16px;font-size:12px;color:var(--muted)">
+            🧵 <b>Spoolman</b> notifications (not enough filament, running low, switched to backup spool) need the Spoolman integration (Settings &gt; Snapmaker Components &gt; Spoolman Integration).
+        </div>
+    </div>
+</div>
+
+<script>
+(function () {
+    const PRIORITY_LABELS = { min: 'Min', low: 'Low', default: 'Default', high: 'High', max: 'Max' };
+    const GROUP_LABELS = { fault: 'Faults', spoolman: 'Spoolman' };
+    let state = null;
+    let localWarned = false;  // the local IP popup shows once per opening
+    const LOCAL_WARNING = 'With the local IP, the Web UI and Live Camera buttons only work when your phone ' +
+        'is on the same network as the printer.\n\nUse Tailscale (or another address your phone can reach) ' +
+        'for buttons that work from anywhere.';
+    const el = id => document.getElementById(id);
+    const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+
+    function renderRows() {
+        let group = null;
+        el('nt-rows').innerHTML = state.meta.rows.map(meta => {
+            const row = state.rows[meta.id];
+            let html = '';
+            if (meta.group !== group && !(meta.group === 'spoolman' && !state.meta.spoolman)) {
+                group = meta.group;
+                if (GROUP_LABELS[group]) {
+                    html += `<tr class="nt-group"><td colspan="5">${GROUP_LABELS[group]}</td></tr>`;
+                }
+            }
+            const prio = state.meta.priorities.map(p =>
+                `<option value="${p}"${p === row.priority ? ' selected' : ''}>${PRIORITY_LABELS[p] || p}</option>`).join('');
+            const layer = meta.id === 'first_layer'
+                ? `<select class="nt-input nt-layer" id="nt-layers">${[1, 2, 3].map(n =>
+                    `<option value="${n}"${n === state.layers_complete ? ' selected' : ''}>${['1st', '2nd', '3rd'][n - 1]}</option>`).join('')}</select>`
+                : '';
+            // Print-by-object: layer complete and print complete for each
+            // object, or once per print job
+            const byObject = { first_layer: ['nt-layer-objects', state.first_layer_objects],
+                               complete: ['nt-complete-objects', state.complete_objects] }[meta.id];
+            const objects = byObject
+                ? `<span class="nt-sub">Print-by-object mode: <select class="nt-input nt-layer" id="${byObject[0]}">${[['each', 'once per object *'], ['once', 'once per print job']].map(([v, t]) =>
+                    `<option value="${v}"${v === byObject[1] ? ' selected' : ''}>${t}</option>`).join('')}</select></span>`
+                : '';
+            // X or Y stepper driver at or over this temperature: once per
+            // print job, and again after a pause
+            const driver = meta.id === 'driver_hot'
+                ? `<span class="nt-sub">X or Y driver over <input class="nt-input nt-layer nt-deg" id="nt-driver-hot" type="number" min="40" max="150" inputmode="numeric" value="${state.driver_temp}"> °C</span>`
+                : '';
+            const calib = meta.id === 'calibration'
+                ? '<span class="nt-sub">Notifies when complete, failed or requires user intervention</span>'
+                : '';
+            const image = meta.image
+                ? `<input type="checkbox" data-image="${meta.id}"${row.image ? ' checked' : ''}>`
+                : '<span class="nt-na">—</span>';
+            if (meta.group === 'spoolman' && !state.meta.spoolman) return html;
+            return html + `<tr data-row="${meta.id}">
+                <td><span class="nt-icon">${meta.icon}</span>${layer ? `${layer} <span class="nt-name">layer complete</span>` : `<span class="nt-name">${esc(meta.label)}</span>`}${objects}${driver}${calib}</td>
+                <td class="nt-c nt-col-push"><input type="checkbox" data-enabled="${meta.id}"${row.enabled ? ' checked' : ''}></td>
+                <td class="nt-col-push"><select class="nt-input nt-dim-push" data-priority="${meta.id}">${prio}</select></td>
+                <td class="nt-c nt-col-email"><input type="checkbox" data-email="${meta.id}"${row.email ? ' checked' : ''}></td>
+                <td class="nt-c nt-img"><span class="nt-dim">${image}</span></td>
+            </tr>`;
+        }).join('');
+        el('nt-rows').querySelectorAll('[data-enabled], [data-email]').forEach(cb => {
+            cb.onchange = updateRowDimming;
+        });
+        updateRowDimming();
+    }
+
+    // A row is dimmed where it sends nothing: priority without push, image
+    // without push or email
+    function updateRowDimming() {
+        const push = el('nt-push-enabled').checked;
+        const email = el('nt-email-enabled').checked;
+        const hook = el('nt-wh-enabled').checked;   // gets every row
+        el('nt-rows').querySelectorAll('tr[data-row]').forEach(tr => {
+            const id = tr.dataset.row;
+            const p = push && tr.querySelector(`[data-enabled="${id}"]`).checked;
+            const e = email && tr.querySelector(`[data-email="${id}"]`).checked;
+            tr.classList.toggle('nt-nopush', !p);
+            tr.classList.toggle('nt-off', !p && !e && !hook);
+        });
+        el('nt-table').classList.toggle('nt-no-push', !push);
+        el('nt-table').classList.toggle('nt-no-email', !email);
+    }
+
+    const PROVIDER_HINTS = {
+        ntfy: '<a href="https://ntfy.sh" target="_blank">ntfy</a>: free and open source; use the public server or host your own.',
+        gotify: '<a href="https://gotify.net" target="_blank">Gotify</a>: free and open source, on your own server.<div class="nt-public">Text only: picture attachments not supported by Gotify.</div>',
+        pushover: '<a href="https://pushover.net" target="_blank">Pushover</a>: one-time purchase per platform after a 30-day trial.',
+        telegram: '<a href="https://telegram.org" target="_blank">Telegram</a>: free; notifications come from your own bot, in a private chat or a group. Low and min priority arrive silently.',
+        discord_dm: '<a href="https://discord.com" target="_blank">Discord</a>: free; direct messages from your own bot. Low and min priority arrive silently.',
+        discord: '<a href="https://discord.com" target="_blank">Discord</a>: free; posts to a channel on a server you manage. Low and min priority arrive silently.'
+    };
+
+    const EMAIL_HINTS = {
+        gmail: 'Username and From: your Gmail address. Password: an ' +
+            '<a href="https://myaccount.google.com/apppasswords" target="_blank">app password</a> ' +
+            '(needs 2-Step Verification; <a href="https://support.google.com/accounts/answer/185833" target="_blank">how app passwords work</a>), ' +
+            'not your Google password.',
+        brevo: '<a href="https://www.brevo.com" target="_blank">Brevo</a>: Username is your SMTP login (…@smtp-brevo.com), password an SMTP key; both under ' +
+            '<a href="https://app.brevo.com/settings/keys/smtp" target="_blank">SMTP &amp; API</a>. ' +
+            'From must be a sender you have verified in Brevo. If ' +
+            '<a href="https://app.brevo.com/security/authorised_ips" target="_blank">IP blocking</a> is on, allow the printer\'s network.',
+        other: 'Your email provider\'s SMTP settings.'
+    };
+
+    function presetFor(host) {
+        const presets = state.meta.email_presets;
+        return Object.keys(presets).find(k => presets[k].host === host.trim().toLowerCase()) || (host.trim() ? 'other' : 'gmail');
+    }
+
+    function applyPreset() {
+        const key = el('nt-email-preset').value;
+        const p = state.meta.email_presets[key];
+        if (p) {
+            el('nt-email-host').value = p.host;
+            el('nt-email-port').value = p.port;
+            el('nt-email-security').value = p.security;
+        }
+        updateEmail();
+    }
+
+    function updateEmail() {
+        const on = el('nt-email-enabled').checked;
+        el('nt-email').style.display = on ? '' : 'none';
+        const key = el('nt-email-preset').value;
+        el('nt-email-hint').innerHTML = EMAIL_HINTS[key] || '';
+        el('nt-email-password-label').textContent = key === 'brevo' ? 'SMTP key' : (key === 'gmail' ? 'App password' : 'Password');
+        el('nt-email-password').placeholder = state.has_email_password ? 'Saved (leave empty to keep)' : '';
+        updateRowDimming();
+    }
+
+    const PUBLIC_SERVER = 'https://ntfy.sh';
+    const PUBLIC_WARNING = 'ntfy.sh is a public server. Anyone who knows or guesses your topic can read your ' +
+        'notifications, including camera images, model previews and file names.\n\n' +
+        'It is fine for testing. For everyday use, setting up your own ntfy server is a good idea. ' +
+        'On the public server, use a long random topic (the Random button creates one).';
+    const isPublic = server => /^https?:\/\/(www\.)?ntfy\.sh\/?$/i.test(server.trim());
+
+    function randomTopic() {
+        const bytes = new Uint8Array(12);
+        crypto.getRandomValues(bytes);
+        return 'u1-' + Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+    }
+
+    // RFC 1918 private ranges, link-local and mDNS names: reachable on the LAN only
+    function isLanOnly(url) {
+        let host;
+        try { host = new URL(url).hostname.toLowerCase(); } catch (e) { return false; }
+        if (host === 'localhost' || host.endsWith('.local')) return true;
+        const m = host.match(/^(\d+)\.(\d+)\.\d+\.\d+$/);
+        if (!m) return false;
+        const a = +m[1], b = +m[2];
+        return a === 10 || a === 127 || (a === 172 && b >= 16 && b <= 31) ||
+            (a === 192 && b === 168) || (a === 169 && b === 254);
+    }
+
+    function updatePrinterUrl() {
+        const url = el('nt-printer-url').value.trim();
+        el('nt-local-warn').style.display = url && isLanOnly(url) ? '' : 'none';
+        // Highlight the button whose address is in the field
+        const same = (host) => !!host && url.replace(/\/+$/, '').toLowerCase() === ('http://' + host).toLowerCase();
+        el('nt-use-local').classList.toggle('nt-active', same(state.meta.local_ip));
+        el('nt-use-tailscale').classList.toggle('nt-active', same(state.meta.tailscale_host));
+        const prov = el('nt-provider').value;
+        el('nt-printer-url-hint').innerHTML = prov === 'pushover'
+            ? 'Adds a <b>Web UI</b> link. Without it, fault notifications link to the Error Index.'
+            : ['gotify', 'telegram', 'discord', 'discord_dm'].includes(prov)
+                ? 'Adds <b>Web UI</b> and <b>Live Camera</b> links. Leave empty for no links.'
+                : 'Adds <b>Web UI</b> and <b>Live Camera</b> buttons. Leave empty for no buttons.';
+        // Telegram drops links to a host without a dot, so the script sends
+        // the Tailscale IP in place of the Tailscale name
+        const tg = prov === 'telegram' && state.meta.tailscale_ip && hostOf(url) === (state.meta.tailscale_host || '').toLowerCase();
+        el('nt-tg-warn').style.display = tg ? '' : 'none';
+        if (tg) el('nt-tg-warn').textContent = `Telegram can't link to a Tailscale name, so the Tailscale IP (${state.meta.tailscale_ip}) is used for Telegram links.`;
+    }
+
+    function hostOf(url) {
+        try { return new URL(url).hostname.toLowerCase(); } catch (e) { return ''; }
+    }
+
+    function updatePublicWarning() {
+        const pub = el('nt-provider').value === 'ntfy' && isPublic(el('nt-server').value);
+        el('nt-public-warn').style.display = pub ? '' : 'none';
+        el('nt-use-public').classList.toggle('nt-active', pub);
+    }
+
+    function usePublicServer() {
+        showConfirmModal('Use the public ntfy server?', PUBLIC_WARNING, () => {
+            el('nt-server').value = PUBLIC_SERVER;
+            if (el('nt-topic').value.trim().length < 16) el('nt-topic').value = randomTopic();
+            el('nt-auth').value = 'none';
+            updateAuth();
+            updatePublicWarning();
+        });
+    }
+
+    function updateProvider() {
+        const provider = el('nt-provider').value;
+        el('nt-ntfy').style.display = provider === 'ntfy' ? '' : 'none';
+        el('nt-provider-hint').innerHTML = PROVIDER_HINTS[provider] || '';
+        el('nt-pushover').style.display = provider === 'pushover' ? '' : 'none';
+        el('nt-gotify').style.display = provider === 'gotify' ? '' : 'none';
+        el('nt-gt-token').placeholder = state.has_secret && state.provider === 'gotify' ? 'Saved (leave empty to keep)' : '';
+        el('nt-po-token').placeholder = state.has_secret && state.provider === 'pushover' ? 'Saved (leave empty to keep)' : '';
+        el('nt-telegram').style.display = provider === 'telegram' ? '' : 'none';
+        el('nt-discord').style.display = provider === 'discord' ? '' : 'none';
+        el('nt-discord-dm').style.display = provider === 'discord_dm' ? '' : 'none';
+        el('nt-dc-hook').placeholder = state.has_secret && state.provider === 'discord' ? 'Saved (leave empty to keep)' : 'https://discord.com/api/webhooks/...';
+        el('nt-dc-token').placeholder = state.has_secret && state.provider === 'discord_dm' ? 'Saved (leave empty to keep)' : '';
+        el('nt-tg-token').placeholder = state.has_secret && state.provider === 'telegram' ? 'Saved (leave empty to keep)' : '123456789:ABC...';
+        updatePublicWarning();
+        updateAuth();
+        updatePrinterUrl();
+        if (el('nt-rows').children.length) updateRowDimming();
+    }
+
+    function updateAuth() {
+        const auth = el('nt-auth').value;
+        el('nt-username-field').style.display = auth === 'basic' ? '' : 'none';
+        el('nt-secret-field').style.display = auth === 'none' ? 'none' : '';
+        el('nt-secret-label').textContent = auth === 'basic' ? 'Password' : 'Access token';
+        el('nt-secret').placeholder = state.has_secret && state.provider === 'ntfy' && auth === state.auth
+            ? 'Saved (leave empty to keep)' : (auth === 'token' ? 'tk_...' : '');
+    }
+
+    function updateCamera() {
+        const cam = el('nt-camera').value;
+        el('nt-camera-warn').textContent = state.meta.cameras[cam] ? '' :
+            (cam === 'usb'
+                ? 'USB camera (paxx12 service) is not enabled: notifications will be sent without camera images.'
+                : 'Internal camera (paxx12 service) is not enabled: notifications will be sent without camera images.');
+    }
+
+    function updateEnabled() {
+        el('nt-root').classList.toggle('nt-disabled', !el('nt-enabled').checked);
+    }
+
+    window.firmwareConfigForms.notifications = {
+        render(container, data) {
+            state = data;
+            localWarned = false;
+            el('nt-enabled').checked = data.enabled;
+            el('nt-push-enabled').checked = data.push_enabled !== false;
+            el('nt-push').style.display = el('nt-push-enabled').checked ? '' : 'none';
+            el('nt-push-enabled').onchange = () => {
+                el('nt-push').style.display = el('nt-push-enabled').checked ? '' : 'none';
+                updateRowDimming();
+            };
+            el('nt-provider').value = data.provider;
+            el('nt-po-user').value = data.pushover_user;
+            el('nt-gt-server').value = data.gotify_server || '';
+            el('nt-po-device').value = data.pushover_device;
+            el('nt-tg-chat').value = data.telegram_chat || '';
+            el('nt-dc-user').value = data.discord_user || '';
+            el('nt-dc-mention').value = data.discord_mention || '';
+            el('nt-server').value = data.server;
+            el('nt-topic').value = data.topic;
+            el('nt-auth').value = data.auth;
+            el('nt-username').value = data.username;
+            el('nt-name').value = data.name;
+            el('nt-camera').value = data.camera;
+            el('nt-printer-url').value = data.printer_url;
+            el('nt-email-enabled').checked = data.email_enabled;
+            el('nt-wh-enabled').checked = !!data.webhook_enabled;
+            el('nt-wh-url').placeholder = data.has_webhook_url ? 'Saved (leave empty to keep)' : 'https://example.com/hook';
+            const updateWebhook = () => {
+                el('nt-webhook').style.display = el('nt-wh-enabled').checked ? '' : 'none';
+            };
+            el('nt-wh-enabled').onchange = () => { updateWebhook(); updateRowDimming(); };
+            updateWebhook();
+            // Saved settings that no longer pass validation (e.g. after an
+            // update): the last generated config stays until they're fixed
+            el('nt-stored-error').textContent = data.meta.stored_error
+                ? `The saved settings need attention: ${data.meta.stored_error}. Notifications keep the last applied settings until this is saved again.`
+                : '';
+            el('nt-stored-error').style.display = data.meta.stored_error ? '' : 'none';
+            el('nt-fl-percent').value = data.filament_low_percent;
+            el('nt-fl-grams').value = data.filament_low_grams;
+            el('nt-filament').style.display = data.meta.spoolman ? '' : 'none';
+            el('nt-filament-off').style.display = data.meta.spoolman ? 'none' : '';
+            el('nt-email-host').value = data.email_host;
+            el('nt-email-port').value = data.email_port;
+            el('nt-email-security').value = data.email_security;
+            el('nt-email-username').value = data.email_username;
+            el('nt-email-from').value = data.email_from;
+            el('nt-email-to').value = data.email_to;
+            el('nt-email-preset').value = presetFor(data.email_host);
+            if (!data.email_host) {
+                const p = data.meta.email_presets[el('nt-email-preset').value];
+                el('nt-email-host').value = p.host;
+                el('nt-email-port').value = p.port;
+                el('nt-email-security').value = p.security;
+            }
+            Array.from(el('nt-camera').options).forEach(o => {
+                if (!data.meta.cameras[o.value]) o.textContent += ' (not enabled)';
+            });
+            renderRows();
+            updateProvider();
+            updateEmail();
+            el('nt-email-enabled').onchange = updateEmail;
+            el('nt-email-preset').onchange = applyPreset;
+            // Fill To from From once, if To is still empty
+            el('nt-email-from').onchange = () => {
+                const from = el('nt-email-from').value.trim();
+                if (from && !el('nt-email-to').value.trim()) el('nt-email-to').value = from;
+            };
+            el('nt-email-username').onchange = () => {
+                // Gmail sends from the account's own address
+                const u = el('nt-email-username').value.trim();
+                if (!el('nt-email-from').value.trim() && el('nt-email-preset').value === 'gmail' && u.includes('@')) {
+                    el('nt-email-from').value = u;
+                    el('nt-email-from').onchange();
+                }
+            };
+            updateCamera();
+            updateEnabled();
+            el('nt-auth').onchange = updateAuth;
+            el('nt-provider').onchange = updateProvider;
+            el('nt-use-public').onclick = usePublicServer;
+            el('nt-printer-url').oninput = updatePrinterUrl;
+            el('nt-use-local').disabled = !data.meta.local_ip;
+            el('nt-use-local').onclick = () => {
+                const fill = () => {
+                    el('nt-printer-url').value = 'http://' + data.meta.local_ip;
+                    updatePrinterUrl();
+                };
+                if (localWarned) return fill();
+                showConfirmModal('Use the local IP?', LOCAL_WARNING, () => { localWarned = true; fill(); });
+            };
+            const ts = data.meta.tailscale_host;
+            // First setup only: suggest the best printer address. Once saved,
+            // an empty field means "no buttons" and is left alone.
+            const firstSetup = !data.enabled && !data.server && !data.pushover_user && !data.has_secret;
+            if (firstSetup && !data.printer_url) {
+                if (ts) el('nt-printer-url').value = 'http://' + ts;
+                else if (data.meta.local_ip) el('nt-printer-url').value = 'http://' + data.meta.local_ip;
+            }
+            el('nt-use-tailscale').disabled = !ts;
+            el('nt-use-tailscale').title = ts ? `http://${ts}` : 'Enable Tailscale under Settings > Remote Access first';
+            el('nt-use-tailscale').onclick = () => {
+                el('nt-printer-url').value = 'http://' + ts;
+                updatePrinterUrl();
+            };
+            updatePrinterUrl();
+            el('nt-server').oninput = updatePublicWarning;
+            // ntfy topics: letters, digits, - and _ only; anything else
+            // (typed or pasted) is dropped as it's entered
+            el('nt-topic').oninput = () => {
+                const t = el('nt-topic'), clean = t.value.replace(/[^A-Za-z0-9_-]/g, '');
+                if (clean !== t.value) {
+                    const at = t.selectionStart - (t.value.length - clean.length);
+                    t.value = clean;
+                    t.setSelectionRange(Math.max(0, at), Math.max(0, at));
+                }
+            };
+            el('nt-topic-random').onclick = () => { el('nt-topic').value = randomTopic(); };
+            el('nt-camera').onchange = updateCamera;
+            el('nt-enabled').onchange = updateEnabled;
+            container.querySelectorAll('[data-toggle]').forEach(btn => {
+                btn.onclick = () => {
+                    const input = el(btn.dataset.toggle);
+                    const show = input.type === 'password';
+                    input.type = show ? 'text' : 'password';
+                    btn.textContent = show ? 'Hide' : 'Show';
+                };
+            });
+        },
+
+        // Saving while a print job runs restarts Moonraker (the UI): ask
+        // first. The printer's state is read at that moment, not at open.
+        async confirm(command, payload, changed) {
+            if (command !== 'save' || !changed) return true;
+            let busy = false;
+            try {
+                const data = await apiFetch('api/form/notifications').then(r => r.json());
+                busy = !!data.meta.busy;
+            } catch (e) { busy = true; }
+            if (!busy) return true;
+            return new Promise(resolve => showConfirmModal('Save during a print job?',
+                'Saving may restart the printer UI (Moonraker). This should not impact the print job.\n\nContinue?',
+                () => resolve(true), () => resolve(false)));
+        },
+
+        collect() {
+            const enabled = el('nt-enabled').checked;
+            const pushEnabled = el('nt-push-enabled').checked;
+            const provider = el('nt-provider').value;
+            const emailEnabled = el('nt-email-enabled').checked;
+            const emailPassword = el('nt-email-password').value;
+            const webhookEnabled = el('nt-wh-enabled').checked;
+            const webhookUrl = el('nt-wh-url').value.trim();
+            if (enabled && !pushEnabled && !emailEnabled && !webhookEnabled) {
+                throw new Error('Enable push notifications, email or a webhook.');
+            }
+            if (webhookEnabled && !webhookUrl && !state.has_webhook_url) {
+                throw new Error('Enter the webhook URL.');
+            }
+            if (emailEnabled) {
+                if (!el('nt-email-host').value.trim()) throw new Error('Enter the SMTP server.');
+                if (el('nt-email-username').value.trim() && !emailPassword && !state.has_email_password) {
+                    throw new Error('Enter the email password.');
+                }
+                if (!el('nt-email-from').value.trim()) throw new Error('Enter the From address.');
+                if (!el('nt-email-to').value.trim()) throw new Error('Enter the To address.');
+            }
+            const server = el('nt-server').value.trim();
+            const topic = el('nt-topic').value.trim();
+            const auth = el('nt-auth').value;
+            const keepSecret = state.has_secret && state.provider === provider;
+            let secret;
+            if (provider === 'ntfy') {
+                if (enabled && !server) throw new Error('Enter the ntfy server URL.');
+                if (enabled && isPublic(server) && topic.length < 16) {
+                    throw new Error('On the public ntfy.sh server use a topic of at least 16 characters (Random creates one).');
+                }
+                if (enabled && !topic) throw new Error('Enter a topic.');
+                secret = el('nt-secret').value.trim();
+                if (auth !== 'none' && !secret && !(keepSecret && auth === state.auth)) {
+                    throw new Error(auth === 'token' ? 'Enter the access token.' : 'Enter the password.');
+                }
+            } else if (provider === 'pushover') {
+                if (enabled && !el('nt-po-user').value.trim()) throw new Error('Enter your Pushover user key.');
+                secret = el('nt-po-token').value.trim();
+                if (enabled && !secret && !keepSecret) throw new Error('Enter the Pushover application API token.');
+            } else if (provider === 'gotify') {
+                if (enabled && !el('nt-gt-server').value.trim()) throw new Error('Enter the Gotify server URL.');
+                secret = el('nt-gt-token').value.trim();
+                if (enabled && !secret && !keepSecret) throw new Error('Enter the Gotify app token.');
+            } else if (provider === 'telegram') {
+                secret = el('nt-tg-token').value.trim();
+                if (enabled && !secret && !keepSecret) throw new Error('Enter the Telegram bot token from @BotFather.');
+            } else if (provider === 'discord') {
+                secret = el('nt-dc-hook').value.trim();
+                if (enabled && !secret && !keepSecret) throw new Error('Enter the Discord webhook URL.');
+            } else if (provider === 'discord_dm') {
+                secret = el('nt-dc-token').value.trim();
+                if (enabled && !secret && !keepSecret) throw new Error('Enter the Discord bot token.');
+            }
+            const rows = {};
+            state.meta.rows.forEach(meta => {
+                if (!document.querySelector(`[data-enabled="${meta.id}"]`)) return;
+                const imageEl = document.querySelector(`[data-image="${meta.id}"]`);
+                rows[meta.id] = {
+                    enabled: document.querySelector(`[data-enabled="${meta.id}"]`).checked,
+                    priority: document.querySelector(`[data-priority="${meta.id}"]`).value,
+                    image: imageEl ? imageEl.checked : false,
+                    email: document.querySelector(`[data-email="${meta.id}"]`).checked
+                };
+            });
+            const payload = {
+                enabled, push_enabled: pushEnabled, provider, server, topic, auth,
+                pushover_user: el('nt-po-user').value.trim(),
+                pushover_device: el('nt-po-device').value.trim(),
+                gotify_server: el('nt-gt-server').value.trim().replace(/\/+$/, ''),
+                telegram_chat: el('nt-tg-chat').value.trim(),
+                discord_user: el('nt-dc-user').value.trim(),
+                discord_mention: el('nt-dc-mention').value.trim().replace(/^@/, ''),
+                username: el('nt-username').value.trim(),
+                name: el('nt-name').value.trim() || 'U1',
+                camera: el('nt-camera').value,
+                printer_url: el('nt-printer-url').value.trim(),
+                layers_complete: parseInt(el('nt-layers').value, 10) || 2,
+                first_layer_objects: el('nt-layer-objects').value,
+                driver_temp: parseInt(el('nt-driver-hot').value, 10) || 105,
+                complete_objects: el('nt-complete-objects').value,
+                filament_low_percent: parseInt(el('nt-fl-percent').value, 10) || 0,
+                filament_low_grams: parseInt(el('nt-fl-grams').value, 10) || 0,
+                email_enabled: emailEnabled,
+                email_host: el('nt-email-host').value.trim(),
+                email_port: parseInt(el('nt-email-port').value, 10) || 0,
+                email_security: el('nt-email-security').value,
+                email_username: el('nt-email-username').value.trim(),
+                email_from: el('nt-email-from').value.trim(),
+                email_to: el('nt-email-to').value.trim(),
+                webhook_enabled: webhookEnabled,
+                // The printer's clock is UTC: ETAs are shown in this browser's time zone
+                timezone: (Intl.DateTimeFormat().resolvedOptions().timeZone || '').replace(/[^A-Za-z0-9_+\-\/]/g, ''),
+                rows
+            };
+            if (secret) payload.secret = secret;
+            if (emailPassword) payload.email_password = emailPassword;
+            if (webhookUrl) payload.webhook_url = webhookUrl;
+            return payload;
+        }
+    };
+})();
+</script>

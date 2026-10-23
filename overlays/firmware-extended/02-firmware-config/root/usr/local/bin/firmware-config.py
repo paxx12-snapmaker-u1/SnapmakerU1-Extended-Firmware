@@ -81,6 +81,8 @@ class FirmwareConfigHandler(SimpleHTTPRequestHandler):
             self.handle_get_actions('quick_actions')
         elif path == "/api/actions":
             self.handle_get_actions('actions')
+        elif path.startswith("/api/form/"):
+            self.handle_get_form(path[10:])
         else:
             super().do_GET()
 
@@ -98,6 +100,12 @@ class FirmwareConfigHandler(SimpleHTTPRequestHandler):
                 self.handle_update_setting(option, value)
             else:
                 self.send_error(404, "Invalid settings path")
+        elif parsed.path.startswith("/api/form/"):
+            path_parts = parsed.path[10:].split('/')
+            if len(path_parts) == 2:
+                self.handle_form_command(path_parts[0], path_parts[1])
+            else:
+                self.send_error(404, "Invalid form path")
         elif parsed.path.startswith("/api/action/"):
             path_parts = parsed.path[12:].split('/')
             action = path_parts[0] if path_parts else None
@@ -128,15 +136,21 @@ class FirmwareConfigHandler(SimpleHTTPRequestHandler):
     def _finish_text_stream(self):
         pass
 
-    def _stream_command(self, cmd, stop_token=None, env=None):
+    def _stream_command(self, cmd, stop_token=None, env=None, input_data=None):
         process = subprocess.Popen(
             cmd,
+            stdin=subprocess.PIPE if input_data is not None else None,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
             bufsize=1,
             env=env
         )
+        if input_data is not None:
+            try:
+                process.stdin.write(input_data)
+            finally:
+                process.stdin.close()
         try:
             for line in iter(process.stdout.readline, ""):
                 self._write_stream_chunk(line)
@@ -296,16 +310,42 @@ class FirmwareConfigHandler(SimpleHTTPRequestHandler):
                     if if_cmd and not self._check_condition(if_cmd):
                         continue
 
-                    try:
-                        cmd_result = subprocess.run(
-                            config["get_cmd"],
-                            capture_output=True,
-                            text=True,
-                            timeout=5
-                        )
-                        current_value = cmd_result.stdout.strip() if cmd_result.returncode == 0 else config.get("default", "")
-                    except Exception:
-                        current_value = config.get("default", "")
+                    form = config.get("form")
+                    current_value = config.get("default", "")
+                    if "get_cmd" in config:
+                        try:
+                            cmd_result = subprocess.run(
+                                config["get_cmd"],
+                                capture_output=True,
+                                text=True,
+                                timeout=5
+                            )
+                            if cmd_result.returncode == 0:
+                                current_value = cmd_result.stdout.strip()
+                        except Exception:
+                            pass
+
+                    if form:
+                        settings_list.append({
+                            "id": setting_id,
+                            "label": config["label"],
+                            "description": config.get("description"),
+                            "help_url": config.get("help_url"),
+                            "current": current_value,
+                            "hidden": config.get("hidden", False),
+                            "form": {
+                                "html": form["html"],
+                                "commands": {
+                                    name: {
+                                        "label": cmd_cfg.get("label", name),
+                                        "style": cmd_cfg.get("style", "primary"),
+                                        "close_on_success": cmd_cfg.get("close_on_success", False),
+                                    }
+                                    for name, cmd_cfg in form.get("commands", {}).items()
+                                },
+                            },
+                        })
+                        continue
 
                     options_data = {}
                     for opt_key, opt_val in config["options"].items():
@@ -337,6 +377,85 @@ class FirmwareConfigHandler(SimpleHTTPRequestHandler):
         except Exception as e:
             log(f"Get settings error: {e}")
             self.send_error(500, str(e))
+
+    def _get_form_config(self, setting_key):
+        config = self._get_setting_config(setting_key)
+        if not config or not config.get("form"):
+            return None, None
+        return config, config["form"]
+
+    def handle_get_form(self, setting_key):
+        """Return the form's current values: JSON printed by form.get_cmd."""
+        try:
+            config, form = self._get_form_config(setting_key)
+            if not form:
+                self.send_error(404, "Unknown form")
+                return
+            result = subprocess.run(form["get_cmd"], capture_output=True, text=True, timeout=10)
+            if result.returncode != 0:
+                self.send_error(500, (result.stdout + result.stderr).strip() or "get_cmd failed")
+                return
+            self.send_json(json.loads(result.stdout))
+        except Exception as e:
+            log(f"Get form error: {e}")
+            self.send_error(500, str(e))
+
+    def handle_form_command(self, setting_key, command):
+        """Run a form command with the submitted JSON on stdin; stream output."""
+        stream_started = False
+        try:
+            config, form = self._get_form_config(setting_key)
+            cmd_cfg = (form or {}).get("commands", {}).get(command)
+            if not cmd_cfg:
+                self.send_error(404, "Unknown form command")
+                return
+            # A form carries settings and credentials: only accept it from
+            # this page. A JSON content type makes a cross-site browser
+            # request need a preflight, which this server never grants.
+            ctype = self.headers.get('Content-Type', '').split(';')[0].strip().lower()
+            origin = self.headers.get('Origin') or ''
+            host = self.headers.get('Host') or ''
+            if ctype != 'application/json' or (origin and origin.split('//', 1)[-1] != host):
+                self.send_error(403, "Form requests must come from this page")
+                return
+            content_length = int(self.headers.get('Content-Length', 0))
+            if content_length > 64 * 1024:
+                self.send_error(413, "Request too large")
+                return
+            body = self.rfile.read(content_length).decode('utf-8') if content_length else "{}"
+            try:
+                json.loads(body)
+            except json.JSONDecodeError:
+                self.send_error(400, "Invalid JSON")
+                return
+
+            log(f"Form {setting_key}: {command}")
+            self._start_text_stream()
+            stream_started = True
+            self._write_stream_chunk(f"=== {config['label']}: {cmd_cfg.get('label', command)} ===\n")
+            self._write_stream_chunk(f"Time: {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
+            self._write_stream_chunk(f"{'=' * 40}\n\n")
+            rc, _ = self._stream_command(cmd_cfg["cmd"], input_data=body)
+            self._write_stream_chunk(f"\n{'=' * 40}\n")
+            if rc == 0:
+                self._write_stream_chunk("SUCCESS: Completed successfully\n")
+            elif rc == -9:
+                self._write_stream_chunk("ERROR: Command was killed (out of memory?)\n")
+            elif rc < 0:
+                self._write_stream_chunk(f"ERROR: Command was killed by signal {-rc}\n")
+            else:
+                self._write_stream_chunk(f"ERROR: Command completed with exit code {rc}\n")
+            self._finish_text_stream()
+        except Exception as e:
+            log(f"Form command error: {e}")
+            try:
+                if stream_started:
+                    self._write_stream_chunk(f"\nError: {e}\n")
+                    self._finish_text_stream()
+                else:
+                    self.send_error(500, str(e))
+            except Exception:
+                pass
 
     def handle_get_links(self):
         try:
@@ -436,6 +555,10 @@ class FirmwareConfigHandler(SimpleHTTPRequestHandler):
             config = self._get_setting_config(setting_key)
             if not config:
                 self.send_error(400, "Invalid setting key")
+                return
+
+            if "options" not in config:
+                self.send_error(400, "Setting has no options")
                 return
 
             if value not in config["options"]:
@@ -729,10 +852,12 @@ def main():
     log(f"  GET  /api/settings             - Get current settings")
     log(f"  GET  /api/links                - Get available quick links")
     log(f"  GET  /api/actions              - Get available actions")
+    log(f"  GET  /api/form/<setting>       - Get form values")
     log(f"  POST /api/upgrade                   - Upload file or download from URL and install firmware")
     log(f"  POST /api/settings/<option>/<value> - Update a setting")
     log(f"  POST /api/action/<action>           - Execute action")
     log(f"  POST /api/action/<action>/download  - Download action result file")
+    log(f"  POST /api/form/<setting>/<command>  - Run form command (JSON body on stdin)")
     log(f"")
     log(f"Available actions: {', '.join(functions.get('actions', {}).keys())}")
     log(f"Available settings: {', '.join(functions.get('settings', {}).keys())}")

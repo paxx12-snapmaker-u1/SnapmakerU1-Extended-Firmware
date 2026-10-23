@@ -70,6 +70,7 @@
         .modal-status { color: var(--muted); font-size: 12px; margin-bottom: 12px; }
         .modal-status.success { color: var(--success); }
         .modal-status.error { color: var(--error); }
+        .modal-log .log-warn { color: var(--error); font-weight: 600; }
         .modal-log { background: #0d0d0d; border-radius: 6px; padding: 12px; font-family: monospace; font-size: 12px; white-space: pre-wrap; word-wrap: break-word; height: 300px; overflow-y: auto; margin-bottom: 16px; display: none; }
         .modal-log.visible { display: block; }
         .modal-buttons { display: flex; gap: 12px; justify-content: flex-end; }
@@ -84,6 +85,18 @@
         .notice { display: none; background: var(--warning); color: #000; padding: 12px 16px; border-radius: 8px; margin-bottom: 16px; font-size: 14px; }
         .notice.visible { display: block; }
         .notice a { color: #000; font-weight: 600; }
+        .modal.modal-wide { width: 880px; max-height: 88vh; }
+        .form-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; margin-bottom: 16px; }
+        .form-error { color: var(--error); font-size: 13px; margin-bottom: 12px; display: none; white-space: pre-wrap; text-align: center; }
+        .form-error.visible { display: block; }
+        .row-status { font-size: 12px; color: var(--muted); margin-right: 12px; }
+        @media (max-width: 600px) {
+            body { padding: 12px; }
+            .modal { padding: 16px; max-width: 96vw; }
+            .modal-buttons { flex-wrap: wrap; gap: 8px; }
+            /* Keep a modal's buttons on one line where they fit */
+            .modal-buttons .btn { padding: 10px 14px; font-size: 13px; white-space: nowrap; }
+        }
     </style>
 </head>
 <body>
@@ -148,6 +161,17 @@
         </div>
     </div>
 
+    <!-- Form Modal (settings with a custom form, e.g. Notifications) -->
+    <div class="modal-overlay" id="form-modal">
+        <div class="modal modal-wide">
+            <div class="modal-title" id="form-title"></div>
+            <div id="form-help-link" style="display:none;margin-top:-10px;margin-bottom:16px;font-size:13px;"></div>
+            <div class="form-body" id="form-body"></div>
+            <div class="form-error" id="form-error"></div>
+            <div class="modal-buttons" id="form-buttons"></div>
+        </div>
+    </div>
+
     <!-- Confirmation Modal -->
     <div class="modal-overlay" id="confirm-modal">
         <div class="modal">
@@ -204,6 +228,9 @@
         // Global state
         let selectedFile = null;
         let actionsData = [];
+        let settingsData = {};
+        // Form fragments register { render(container, data), collect() } here
+        window.firmwareConfigForms = window.firmwareConfigForms || {};
         let currentAction = '';
         const showHidden = new URLSearchParams(window.location.search).has('hidden') || window.location.hash.includes('hidden');
 
@@ -334,10 +361,22 @@
                 }
 
                 card.style.display = 'block';
+                settingsData = {};
+                groups.forEach(([_, group]) => group.items.forEach(s => { settingsData[s.id] = s; }));
                 container.innerHTML = groups.map(([_, group]) =>
                     `<div class="group-section">
                         <div class="group-title">${group.label}</div>
                         ${group.items.filter(setting => !setting.hidden || showHidden).map(setting => {
+                            if (setting.form) {
+                                return `<div class="row" onclick="openForm('${setting.id}')">
+                                    <div class="row-label-wrap">
+                                        <span class="row-label">${setting.label}${setting.help_url ? `<a class="row-help" href="${setting.help_url}" target="_blank" onclick="event.stopPropagation()">↗</a>` : ''}</span>
+                                        ${setting.description ? `<span class="row-desc">${setting.description}</span>` : ''}
+                                    </div>
+                                    ${setting.current ? `<span class="row-status">${setting.current}</span>` : ''}
+                                    <button class="btn btn-primary" style="pointer-events:none">Configure</button>
+                                </div>`;
+                            }
                             const options = Object.entries(setting.options)
                                 .filter(([optKey, optVal]) => !optVal.hidden || optKey === setting.current || showHidden)
                                 .map(([optKey, optVal]) => {
@@ -475,6 +514,7 @@
             validateConfirmInputs();
             $('confirm-btn').onclick = () => {
                 const inputValues = getConfirmInputValues();
+                confirmOnCancel = null;  // confirming is not cancelling
                 hideConfirmModal();
                 onConfirm(inputValues);
             };
@@ -497,6 +537,7 @@
             $('action-message').textContent = message;
             $('action-message').style.color = '';
             $('action-log').textContent = '';
+            logPending = ''; logTail = null;
             $('action-log').classList.remove('visible');
             $('action-progress').classList.remove('visible');
             $('action-progress-fill').style.width = '0%';
@@ -515,9 +556,28 @@
             $('action-close-btn').disabled = false;
         }
 
+        // Output lines starting with ERROR or WARNING are shown in red. The
+        // output arrives in chunks, so the unfinished last line is kept as
+        // plain text until its newline comes.
+        let logPending = '', logTail = null;
+        const LOG_WARN = /^\s*(ERROR|WARNING)\b/;
         function appendLog(text) {
             const el = $('action-log');
-            el.textContent += text;
+            if (logTail) logTail.remove();
+            const lines = (logPending + text).split('\n');
+            logPending = lines.pop();
+            lines.forEach(line => {
+                if (LOG_WARN.test(line)) {
+                    const span = document.createElement('span');
+                    span.className = 'log-warn';
+                    span.textContent = line + '\n';
+                    el.appendChild(span);
+                } else {
+                    el.appendChild(document.createTextNode(line + '\n'));
+                }
+            });
+            logTail = document.createTextNode(logPending);
+            el.appendChild(logTail);
             el.scrollTop = el.scrollHeight;
         }
 
@@ -734,6 +794,7 @@
                     $('action-download-btn').style.display = 'inline-block';
                 }
             }
+            return isSuccess;
         }
 
         // ========================================
@@ -780,6 +841,140 @@
             } catch (e) {
                 appendLog(`\nERROR: ${e.message}`);
                 setMessage('Failed', 'var(--error)');
+            }
+        }
+
+        // ========================================
+        // Form Functions
+        // ========================================
+
+        const loadedForms = {};
+
+        async function loadFormFragment(url) {
+            if (loadedForms[url]) return loadedForms[url];
+            const html = await (await apiFetch(url)).text();
+            loadedForms[url] = html;
+            return html;
+        }
+
+        function mountFragment(container, html) {
+            container.innerHTML = html;
+            // innerHTML does not execute scripts; re-create them
+            container.querySelectorAll('script').forEach(old => {
+                const script = document.createElement('script');
+                script.textContent = old.textContent;
+                old.replaceWith(script);
+            });
+        }
+
+        function showFormError(message) {
+            $('form-error').textContent = message || '';
+            $('form-error').classList.toggle('visible', !!message);
+        }
+
+        function hideFormModal() {
+            $('form-modal').classList.remove('visible');
+            $('form-body').innerHTML = '';
+            formSaved = null;
+        }
+
+        // Unsaved changes: compare every field with its state after render
+        let formSaved = null;
+
+        function formSnapshot() {
+            return JSON.stringify(Array.from($('form-body').querySelectorAll('input, select, textarea'))
+                .map(e => (e.type === 'checkbox' || e.type === 'radio') ? e.checked : e.value));
+        }
+
+        function isFormDirty() {
+            return formSaved !== null && $('form-modal').classList.contains('visible') && formSnapshot() !== formSaved;
+        }
+
+        function requestCloseForm() {
+            if (!isFormDirty()) return hideFormModal();
+            showConfirmModal('Are you sure?', 'You have unsaved changes. They will be lost.', hideFormModal);
+        }
+
+        window.addEventListener('beforeunload', e => {
+            if (isFormDirty()) {
+                e.preventDefault();
+                e.returnValue = '';
+            }
+        });
+
+        async function openForm(id) {
+            const setting = settingsData[id];
+            if (!setting || !setting.form) return;
+            $('form-title').textContent = setting.label;
+            const helpEl = $('form-help-link');
+            if (setting.help_url) {
+                helpEl.innerHTML = `<a href="${setting.help_url}" target="_blank">View documentation</a>`;
+                helpEl.style.display = 'block';
+            } else {
+                helpEl.style.display = 'none';
+            }
+            showFormError('');
+            const body = $('form-body');
+            body.innerHTML = '<div class="loading"><span class="spinner"></span> Loading...</div>';
+            const buttons = $('form-buttons');
+            formSaved = null;
+            buttons.innerHTML = '<button class="btn btn-secondary" onclick="requestCloseForm()">Close</button>' +
+                Object.entries(setting.form.commands).map(([name, cmd]) =>
+                    `<button class="btn btn-${cmd.style}" data-command="${name}" disabled>${cmd.label}</button>`
+                ).join('');
+            $('form-modal').classList.add('visible');
+
+            try {
+                const [data, html] = await Promise.all([
+                    apiFetch(`api/form/${id}`).then(r => r.json()),
+                    loadFormFragment(setting.form.html)
+                ]);
+                mountFragment(body, html);
+                const handler = window.firmwareConfigForms[id];
+                if (!handler) throw new Error(`Form handler "${id}" not registered`);
+                handler.render(body, data);
+                formSaved = formSnapshot();
+                buttons.querySelectorAll('[data-command]').forEach(btn => {
+                    btn.disabled = false;
+                    btn.onclick = () => runFormCommand(id, btn.dataset.command);
+                });
+            } catch (e) {
+                body.innerHTML = `<div class="loading" style="color:var(--error)">Error: ${e.message}</div>`;
+            }
+        }
+
+        async function runFormCommand(id, command) {
+            const setting = settingsData[id];
+            const cmd = setting.form.commands[command];
+            let payload;
+            try {
+                payload = window.firmwareConfigForms[id].collect();
+                showFormError('');
+            } catch (e) {
+                showFormError(e.message);
+                return;
+            }
+            // A form may ask the user first (e.g. a save that restarts a
+            // service during a print job)
+            const confirm = window.firmwareConfigForms[id].confirm;
+            if (confirm && !(await confirm(command, payload, formSnapshot() !== formSaved))) return;
+            showActionModal(`${setting.label}: ${cmd.label}`, 'Running...');
+            $('action-log').classList.add('visible');
+            try {
+                const resp = await apiFetch(`api/form/${id}/${command}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const ok = await streamResponse(resp);
+                if (ok && cmd.close_on_success) {
+                    hideFormModal();
+                    refreshAll();
+                }
+            } catch (e) {
+                appendLog(`\nERROR: ${e.message}`);
+                setMessage('Failed', 'var(--error)');
+                enableCloseButton();
             }
         }
 
