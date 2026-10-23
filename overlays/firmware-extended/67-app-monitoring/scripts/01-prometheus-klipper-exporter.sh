@@ -11,7 +11,7 @@ fi
 set -e
 
 GIT_URL=https://github.com/scross01/prometheus-klipper-exporter.git
-GIT_SHA=9eacec280108a4da8156b47c01c2862219d86ecd
+GIT_SHA=f977de09fe25f14d2316996c8c614f1c2f888427
 
 TARGET_DIR="$CACHE_DIR/prometheus-klipper-exporter"
 
