@@ -23,48 +23,56 @@ For external RFID API and mapping details, see [External RFID Support](design/fi
 
 ## Prerequisites
 
-- Docker installed on your system
+- Git with submodule support
+- Docker with its daemon running
 
-The `./dev.sh` script automatically sets up a Debian Trixie ARM64 environment with all required dependencies.
+The `./dev.sh` script builds and runs a Debian Trixie container with the native build tools and ARM64 cross-compilers used by the firmware build. It does not run an ARM64 Debian system.
+
+On Windows, use WSL2 with Docker Desktop integration and keep the checkout in the WSL Linux filesystem, such as `~/src`. The `./dev.sh` launcher checks the checkout's filesystem type and stops before starting Docker when WSL is using a Windows-mounted filesystem (`drvfs` or `9p`). Move the repository into the WSL Linux filesystem and rerun the command. Runtime shell and Python scripts have LF checkout rules, and the firmware builder checks staged shebangs before creating the squashfs image.
 
 ## Source Repository
 
-The project is hosted on GitHub with a mirror on Codeberg:
-
-- **GitHub**: [https://github.com/paxx12](https://github.com/paxx12)
-- **Codeberg**: [https://codeberg.org/paxx12-snapmaker-u1](https://codeberg.org/paxx12-snapmaker-u1)
-
-### Using Codeberg Mirror
-
-To use Codeberg as the source instead of GitHub, configure git to automatically remap GitHub URLs:
+Clone the GitHub repository with its required submodule:
 
 ```bash
-git config --global url."https://codeberg.org/paxx12-snapmaker-u1/".insteadOf "https://github.com/paxx12/"
+git clone --recurse-submodules https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware.git
+cd SnapmakerU1-Extended-Firmware
 ```
-
-This remaps all GitHub repository URLs to Codeberg automatically, including submodules and dependencies.
 
 ## Quick Start
 
-Build tools and download firmware:
+Download the pinned stock firmware and build the default extended profile:
 
 ```bash
-./dev.sh make tools
 ./dev.sh make firmware
-```
-
-Build extended firmware:
-
-```bash
 ./dev.sh make build PROFILE=extended OUTPUT_FILE=firmware/U1_extended.bin
 ```
 
-Open a shell in the development environment:
+The build verifies downloaded dependencies against their pinned SHA256 values. A bad cached download is replaced only after its replacement passes verification.
+
+## Tests
+
+Run the focused download-cache tests without downloading the stock firmware:
+
+```bash
+./dev.sh make test-downloads
+```
+
+Run the complete project test target:
+
+```bash
+./dev.sh make test
+```
+
+The complete target runs the download tests, startup-guard tests, builds the image tools, and checks that the pinned stock firmware survives unpack and repack byte-for-byte. It downloads the stock image if it is not already cached. The startup tests cover staged CRLF shebang rejection and the camera hook's normal, disabled, invalid-setting, and helper-failure paths.
+
+Pull-request CI runs this test target before building the standard, AFC, and multiACE profiles. A newer run for the same pull request cancels its superseded run; separate pull requests run independently. Manual workflow runs are grouped separately.
+
+Open a shell in the development container:
 
 ```bash
 ./dev.sh bash
 ```
-
 ## Mods
 
 The `PROFILE` argument is parsed as `<firmware>[-<mod>]*`: a single required
@@ -127,30 +135,14 @@ Once initialized, use `opkg` to install packages from the Entware repository.
 
 ### Experimental AFC Mod
 
-> **Experimental**: The `afc` mod is not maintained by this project (see
-> [Mods](mods.md#rules)) and may break or be removed at any point without
-> notice. It does not ship in public releases — it is only available as a
-> `develop`-channel CI build artifact or via a local build from source.
+> **Experimental**: AFC support is maintained as a project mod, but remains hardware-dependent and may change. Rolling prereleases include `extended-afc`; the stable-release workflow builds only the standard `extended` profile.
 
-Unlike the [AFC-Lite Stub](afc-lite.md), which is a status-reporting-only
-compatibility shim included in the regular `extended` build, the `afc` mod
-adds the **real** [AFC-Klipper-Add-On](https://github.com/AFCProject/AFC-Klipper-Add-On)
-for people with actual AFC hardware (hubs, buffers, lane control) connected
-over CAN bus. It:
+Unlike the [AFC-Lite Stub](afc-lite.md), which is a status-reporting compatibility shim included in the regular `extended` build, the `afc` mod adds the real [AFC-Klipper-Add-On](https://github.com/AFCProject/AFC-Klipper-Add-On) for physical AFC hardware (hubs, buffers, lane control) over CAN bus. It:
 
-- Clones `AFC-Klipper-Add-On` from upstream at build time into
-  `/home/lava/AFC-Klipper-Add-On`.
-- Adds udev rules bringing up the onboard CAN bus chip at 1 Mbps so external
-  AFC MCUs can be reached — see
-  [`overlays/mods/afc/docs/canbus.md`](https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware/blob/develop/overlays/mods/afc/docs/canbus.md)
-  for wiring and MCU flashing instructions.
-- Patches Moonraker's gcode metadata parser and Klipper's extruder handling
-  for compatibility with AFC's virtual lane extruders.
-- Exposes an **Enable AFC-Klipper-Add-On Plugin** toggle under
-  **Snapmaker Components** in Fluidd/Mainsail firmware config, which runs
-  AFC-Klipper-Add-On's own installer to wire it into Klipper. It is disabled
-  by default even on `extended-afc` builds.
-
+- Clones `AFC-Klipper-Add-On` from upstream at build time into `/home/lava/AFC-Klipper-Add-On`.
+- Adds udev rules bringing up the onboard CAN bus chip at 1 Mbps so external AFC MCUs can be reached. See [the AFC CAN bus guide](https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware/blob/develop/overlays/mods/afc/docs/canbus.md) for wiring and MCU flashing instructions.
+- Patches Moonraker's gcode metadata parser and Klipper's extruder handling for compatibility with AFC's virtual lane extruders.
+- Exposes an **Enable AFC-Klipper-Add-On Plugin** toggle under **Snapmaker Components** in Fluidd/Mainsail firmware config. It is disabled by default, including on `extended-afc` images.
 ### Directory Structure
 
 ```text
@@ -240,32 +232,34 @@ Output: `tmp/extracted-<version>/` (the `FIRMWARE_VERSION` from `vars.mk`)
 
 ## Upgrade Firmware
 
-To build and deploy firmware directly to a connected printer:
+The SSH helper builds a profile, copies `tmp/firmware/update.img` to the printer, then invokes the vendor `systemUpgrade.sh upgrade soc` path:
 
 ```bash
 ./dev.sh ./scripts/dev/upgrade-firmware.sh root@<printer-ip> <profile>
 ```
 
-Example:
+For example:
 
 ```bash
 ./dev.sh ./scripts/dev/upgrade-firmware.sh root@192.168.1.100 extended
 ```
 
-By default, the script uses `snapmaker` as the SSH password. To use a different password:
+By default, the helper uses `snapmaker` as the SSH password. To use a different password:
 
 ```bash
 PASSWORD=mypassword ./dev.sh ./scripts/dev/upgrade-firmware.sh root@192.168.1.100 extended
 ```
 
+This helper follows the printer's SOC upgrade path. It does not flash the complete firmware package's MCU components or replace the printer's bootloader. Review the generated image and the helper's target before using it on hardware.
+
 ## Release Process
 
-The project uses GitHub Actions for automated releases:
+GitHub Actions has two release paths:
 
-1. Changes pushed to `main` trigger a pre-release build
-2. Extended firmware is built
-3. Version is auto-incremented using `scripts/next_version.sh`
-4. Release artifacts are published to GitHub Releases
+- Pushes to `main` or a `stable-*` branch build the standard `extended` profile and create a draft release for review.
+- Pushes to `develop` update the rolling prerelease with standard `extended`, experimental `extended-afc`, and experimental `extended-multiace` images.
+
+Pull-request CI runs the test target and builds all three profiles, then uploads them as test artifacts. It does not publish a release.
 
 ## Tools
 

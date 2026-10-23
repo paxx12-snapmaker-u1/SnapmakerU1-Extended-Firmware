@@ -4,6 +4,10 @@
 
 name: Build
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 on:
   pull_request:
   workflow_dispatch:
@@ -84,6 +88,9 @@ jobs:
 
     - name: Download firmware
       run: ./dev.sh make firmware
+
+    - name: Run tests
+      run: ./dev.sh make test
 
     - name: Build with Extended Fluidd firmware
       run: ./dev.sh make build PROFILE=extended OUTPUT_FILE=U1_extended_${{ env.GIT_VERSION }}_upgrade.bin

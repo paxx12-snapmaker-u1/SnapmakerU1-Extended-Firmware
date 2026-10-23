@@ -3,6 +3,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2025 @paxx12, @james-coder
 
 #include <stdio.h>
+#include <errno.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdbool.h>
@@ -87,6 +88,8 @@ static int info(const char *infile, const char *outdir, void (*file_fnc)(const c
   printf("  Files:\t%u\n", be_to_host16(header.files));
 
   if (file_fnc) {
+    file_fnc("UPFILE_MAGIC_VER", &header.magic_ver, sizeof(header.magic_ver));
+    file_fnc("UPFILE_RESERVED", header.reserved, sizeof(header.reserved));
     file_fnc("UPFILE_VERSION", header.version, trim_right(header.version, sizeof(header.version)));
     file_fnc("UPFILE_BUILD_DATE", header.build_date, trim_right(header.build_date, sizeof(header.build_date)));
   }
@@ -98,6 +101,7 @@ static int info(const char *infile, const char *outdir, void (*file_fnc)(const c
     goto error;
   }
 
+  uint64_t data_end = 0;
   for (uint16_t i = 0; i < files; i++) {
     UPFILE_ENTRY entry;
     if (fseek(fp, sizeof(UPFILE_HEADER) + i * sizeof(UPFILE_ENTRY), SEEK_SET) != 0) {
@@ -112,6 +116,11 @@ static int info(const char *infile, const char *outdir, void (*file_fnc)(const c
       fprintf(stderr, "File entry %u checksum validation failed\n", i);
       goto error;
     }
+    uint64_t entry_end = be_to_host64(entry.offset) + be_to_host32(entry.size);
+    if (entry_end > data_end) {
+      data_end = entry_end;
+    }
+
     printf("File Entry %u:\n", i);
     printf("  Type:\t\t%u\n", be_to_host16(entry.type));
     printf("  Offset:\t0x%016llx\n", (unsigned long long)be_to_host64(entry.offset));
@@ -150,6 +159,44 @@ static int info(const char *infile, const char *outdir, void (*file_fnc)(const c
       file_fnc(FILE_NAMES[i], data, be_to_host32(entry.size));
     }
     free(data);
+  }
+
+  if (file_fnc) {
+    if (fseek(fp, 0, SEEK_END) != 0) {
+      perror("fseek");
+      goto error;
+    }
+    long file_end = ftell(fp);
+    if (file_end < 0 || (uint64_t)file_end < data_end) {
+      fprintf(stderr, "Invalid UPFILE length while reading trailing data\n");
+      goto error;
+    }
+
+    uint64_t trailing_len = (uint64_t)file_end - data_end;
+    if (trailing_len > SIZE_MAX) {
+      fprintf(stderr, "UPFILE trailing data is too large to unpack\n");
+      goto error;
+    }
+    if (trailing_len > 0) {
+      size_t trailing_size = (size_t)trailing_len;
+      uint8_t *trailing_data = malloc(trailing_size);
+      if (!trailing_data) {
+        perror("malloc");
+        goto error;
+      }
+      if (fseek(fp, (long)data_end, SEEK_SET) != 0) {
+        perror("fseek");
+        free(trailing_data);
+        goto error;
+      }
+      if (fread(trailing_data, 1, trailing_size, fp) != trailing_size) {
+        fprintf(stderr, "Failed to read UPFILE trailing data\n");
+        free(trailing_data);
+        goto error;
+      }
+      file_fnc("UPFILE_TRAILING", trailing_data, trailing_size);
+      free(trailing_data);
+    }
   }
 
   fclose(fp);
@@ -252,6 +299,64 @@ static int read_string_from_file(const char *filename, char *buffer, size_t buff
   return 0;
 }
 
+static int read_fixed_metadata(const char *filename, void *buffer, size_t size,
+                               const void *default_value) {
+  FILE *fp = fopen(filename, "rb");
+  if (!fp) {
+    if (errno == ENOENT) {
+      memcpy(buffer, default_value, size);
+      return 0;
+    }
+    perror(filename);
+    return -1;
+  }
+
+  size_t bytes = fread(buffer, 1, size, fp);
+  int trailing = fgetc(fp);
+  bool invalid = bytes != size || trailing != EOF || ferror(fp);
+  fclose(fp);
+  if (invalid) {
+    fprintf(stderr, "Error: %s must contain exactly %zu bytes\n", filename, size);
+    return -1;
+  }
+  return 0;
+}
+
+static int append_trailing(FILE *outfp) {
+  FILE *infp = fopen("UPFILE_TRAILING", "rb");
+  if (!infp) {
+    if (errno == ENOENT) {
+      return 0;
+    }
+    perror("fopen UPFILE_TRAILING");
+    return -1;
+  }
+
+  if (fseek(outfp, 0, SEEK_END) != 0) {
+    perror("fseek");
+    fclose(infp);
+    return -1;
+  }
+
+  uint8_t buffer[8192];
+  size_t bytes;
+  while ((bytes = fread(buffer, 1, sizeof(buffer), infp)) > 0) {
+    if (fwrite(buffer, 1, bytes, outfp) != bytes) {
+      fprintf(stderr, "Failed to append UPFILE trailing data\n");
+      fclose(infp);
+      return -1;
+    }
+  }
+
+  bool read_error = ferror(infp);
+  fclose(infp);
+  if (read_error) {
+    fprintf(stderr, "Failed to read UPFILE trailing data\n");
+    return -1;
+  }
+  return 0;
+}
+
 static int pack(const char *outfile, const char *indir) {
   FILE *outfp = fopen(outfile, "wb");
   if (!outfp) {
@@ -270,7 +375,14 @@ static int pack(const char *outfile, const char *indir) {
   // Create upfile header
   UPFILE_HEADER header = {0};
   header.magic = UPFILE_MAGIC;
-  header.magic_ver = host_to_be16(1);
+  uint16_t default_magic_ver = host_to_be16(1);
+  char default_reserved[sizeof(header.reserved)] = {0};
+  if (read_fixed_metadata("UPFILE_MAGIC_VER", &header.magic_ver,
+                          sizeof(header.magic_ver), &default_magic_ver) != 0 ||
+      read_fixed_metadata("UPFILE_RESERVED", header.reserved,
+                          sizeof(header.reserved), default_reserved) != 0) {
+    goto error;
+  }
   header.files = host_to_be16(UPFILE_FILE_COUNT);
   if (read_string_from_file("UPFILE_VERSION", header.version, sizeof(header.version)) != 0) {
     fprintf(stderr, "Error: UPFILE_VERSION not found\n");
@@ -298,6 +410,10 @@ static int pack(const char *outfile, const char *indir) {
     if (ret != 0) {
       goto error;
     }
+  }
+
+  if (append_trailing(outfp) != 0) {
+    goto error;
   }
 
   printf("Packed UPFILE to %s\n", outfile);
