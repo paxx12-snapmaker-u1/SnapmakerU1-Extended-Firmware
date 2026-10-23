@@ -76,6 +76,7 @@ automatically when the filament is loaded:
 | [SpoolTagger](https://codeberg.org/NiftyBits/SpoolTagger) | [NiftyBits](https://codeberg.org/NiftyBits) | Windows, Linux (desktop, ACR122U USB NFC reader; [releases](https://codeberg.org/NiftyBits/SpoolTagger/releases/latest)) | OpenSpool (NTAG); Mifare Classic by UID only | Links tags to spools (up to 2 tags per spool) | ✅ (see notes) | [Codeberg](https://codeberg.org/NiftyBits/SpoolTagger) (MIT) | [![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-FFDD00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/NiftyBits) |
 | [3DMRP](https://github.com/MKloberg/3dmrp) | [MKloberg](https://github.com/MKloberg) | Self-hosted (Windows; [releases](https://github.com/MKloberg/3dmrp/releases/latest)), phone via Chrome on Android | Any tag by UID (Web NFC scan-to-select; no content parsing) | Print-farm manager — links tags to spools, NFC scan-to-select; also AFC lane control and U1 touchscreen mirror | – (see notes) | [GitHub](https://github.com/MKloberg/3dmrp) (source) | [![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-FFDD00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/mkloberg) |
 | [Spool Studio](https://github.com/GeorgHo/SpoolStudio) | [GeorgHo](https://github.com/GeorgHo) | Android ([v3.0.2 release](https://github.com/GeorgHo/SpoolStudio/releases/tag/v3.0.2)) | OpenSpool; Bambu Lab (with user-provided key); legacy Spool Studio tags (for conversion); any tag by UID | Links tags to spools via NFC card UID; writes Paxx12-compatible OpenSpool tags and shows the printer-reported toolhead status | ✅ (see notes) | [GitHub](https://github.com/GeorgHo/SpoolStudio) (MIT) | [![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-FFDD00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/georgho) |
+| [FilaSpool](https://apps.apple.com/us/app/filaspool/id6762657898) | [jacfx7](https://github.com/jacfx7) | iOS ([App Store](https://apps.apple.com/us/app/filaspool/id6762657898)), Android ([Google Play](https://play.google.com/store/apps/details?id=com.jjclar4.filaspool)) | OpenSpool, OpenPrintTag, OpenTag3D | Links tags to spools by UID on write and on read (`card_uids`, created if missing); writes Paxx12-compatible OpenSpool tags; multiple tags per spool; reusing a tag for another spool moves its UID | ✅ (see notes) | Closed source | — |
 
 **Notes:**
 
@@ -87,6 +88,11 @@ automatically when the filament is loaded:
     resolves its spool and offers to re-pair it.
   - **SpoolTagger** — migrates the whole Spoolman library in one pass on
     startup.
+  - **FilaSpool** — reads OpenSpool, OpenPrintTag and OpenTag3D tags; a
+    scanned tag carrying a `spool_id` that belongs to one of its
+    Spoolman-linked spools has its UID registered on that spool, so tags
+    written earlier don't need rewriting. Tags without a `spool_id`
+    (including OpenTag3D) are read for their filament data but not linked.
   - **3DMRP** — writes the current convention since v0.8.1; earlier links
     are updated on the next rescan.
   - **Spool Studio** — v3 converts tags written by its own older
