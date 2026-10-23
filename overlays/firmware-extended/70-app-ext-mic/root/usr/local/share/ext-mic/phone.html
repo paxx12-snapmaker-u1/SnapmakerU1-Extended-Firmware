@@ -1,0 +1,393 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#000000">
+  <meta http-equiv="Cache-Control" content="no-store">
+  <title>麦克风</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font: 16px/1.45 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --page: #000; --text: #f5f5f5; --muted: #8a8a8a;
+      --accent: #f5f5f5; --accent-text: #000;
+      --plot: #000; --plot-grid: #242424; --plot-wave: #f5f5f5; --plot-spectrum: #f5f5f5;
+    }
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; min-height: 100%; margin: 0; background: var(--page); }
+    body { width: 100%; max-width: none; height: 100vh; min-height: 100vh; height: 100svh; min-height: 100svh; height: 100dvh; min-height: 100dvh; overflow: hidden; padding: 0; color: var(--text); background: var(--page); position: relative; }
+    header { position: absolute; z-index: 2; top: max(.75rem, env(safe-area-inset-top)); left: max(.75rem, env(safe-area-inset-left)); right: max(.75rem, env(safe-area-inset-right)); display: flex; justify-content: flex-end; align-items: flex-start; gap: 1rem; pointer-events: none; }
+    button { min-height: 2.5rem; padding: .65rem .9rem; border: 0; border-radius: 0; color: var(--text); background: transparent; font: inherit; font-weight: 650; text-shadow: 0 1px 8px #000; }
+    button.secondary { color: var(--muted); background: transparent; } button:disabled { cursor: not-allowed; opacity: .45; }
+    .status-stack { text-align: right; color: var(--muted); font-size: .8rem; line-height: 1.35; }
+    #connection, #status { min-height: 1.1rem; }
+    .graphs { width: 100%; height: 100%; min-height: 0; display: flex; padding: 0; }
+    .panel { flex: 1 1 auto; min-height: 0; display: flex; padding: 0; border: 0; background: transparent; }
+    canvas { display: block; width: 100%; height: 100%; min-height: 0; flex: 1 1 auto; margin: 0; border: 0; border-radius: 0; background: var(--plot); }
+  </style>
+</head>
+<body>
+  <header><div class="status-stack"><div id="connection" role="status" aria-live="polite">未连接</div><div id="status" role="status" aria-live="polite">等待开始</div></div></header>
+  <main class="graphs"><section class="panel"><canvas id="spectrum" aria-label="实时声谱图"></canvas></section></main>
+<script>
+(() => {
+  'use strict';
+  const TARGET_RATE = 48000, CHUNK_SECONDS = 0.25, MAX_QUEUE = 4, SPECTRUM_MIN_HZ = 20, SPECTRUM_MAX_HZ = 20000, SPECTRUM_MIN_DB = -100, SPECTRUM_MAX_DB = -20;
+  const connectionElement = document.getElementById('connection'), statusElement = document.getElementById('status');
+  const spectrumCanvas = document.getElementById('spectrum');
+  const spectrumContext = spectrumCanvas.getContext('2d');
+  let stream = null, audioContext = null, sourceNode = null, analyserNode = null, captureNode = null, silentGain = null, wakeLock = null;
+  let animationFrame = 0, rendering = false, session = null, sequence = 0, captureGeneration = 0, accepting = false, stopping = false, transportFailed = false, sampleRate = TARGET_RATE;
+  let sendQueue = [], sendPromise = null, lastTrack = null, frequencyData = null, receiveTimer = 0, spectrogramData = null, spectrogramImage = null, spectrogramWidth = 0, spectrogramHeight = 0;
+  let servicePollTimer = 0, reloadTimer = 0, retryTimer = 0, reloadPending = false;
+  const AUTO_START_KEY = 'ext-mic-auto-start';
+  function readAutoStart() { try { return localStorage.getItem(AUTO_START_KEY) === '1'; } catch (_) { return false; } }
+  function rememberAutoStart() { try { localStorage.setItem(AUTO_START_KEY, '1'); } catch (_) {} }
+  let serviceInstance = '', phoneRevision = '', fullscreenOwned = false, starting = false, pendingStart = false, exitHandled = false, autoStartEnabled = true;
+
+  function enterCaptureFullscreen() {
+    if (document.fullscreenElement || document.webkitFullscreenElement) return;
+    const root = document.documentElement;
+    try {
+      const requestFullscreen = root.requestFullscreen || root.webkitRequestFullscreen;
+      if (!requestFullscreen) return;
+      fullscreenOwned = true;
+      const request = root.requestFullscreen
+        ? requestFullscreen.call(root, { navigationUI: 'hide' })
+        : requestFullscreen.call(root);
+      if (request && typeof request.catch === 'function') request.catch(() => { fullscreenOwned = false; });
+    } catch (_) { fullscreenOwned = false; }
+  }
+  function releaseCaptureFullscreen() {
+    if (!fullscreenOwned) return;
+    fullscreenOwned = false;
+    if (!document.fullscreenElement && !document.webkitFullscreenElement) return;
+    try {
+      const exit = document.exitFullscreen || document.webkitExitFullscreen;
+      const result = exit?.call(document);
+      if (result && typeof result.catch === 'function') result.catch(() => {});
+    } catch (_) {}
+  }
+  function stopServicePoll() {
+    if (servicePollTimer) clearTimeout(servicePollTimer);
+    servicePollTimer = 0;
+  }
+  function releaseForReload() {
+    captureGeneration++;
+    starting = false;
+    accepting = false;
+    transportFailed = true;
+    exitHandled = true;
+    session = null;
+    sendQueue.length = 0;
+    disconnectAudio();
+  }
+  function schedulePageReload() {
+    if (reloadPending) return;
+    reloadPending = true;
+    stopServicePoll();
+    releaseForReload();
+    setButtons(false);
+    showConnection('服务已更新');
+    showStatus('正在刷新');
+    reloadTimer = window.setTimeout(() => window.location.reload(), 250);
+  }
+  async function pollServiceVersion() {
+    if (reloadPending) return;
+    try {
+      const response = await fetchTimed(`/v1/status?_=${Date.now()}`, { cache: 'no-store', headers: { Accept: 'application/json' } }, 2000);
+      if (response.ok) {
+        const value = await response.json().catch(() => ({}));
+        const nextInstance = String(value.instance_id || '');
+        const nextRevision = String(value.phone_revision || response.headers.get('X-Phone-Revision') || '');
+        if (phoneRevision && nextRevision && nextRevision !== phoneRevision && !session && !starting) return schedulePageReload();
+        if (nextInstance) serviceInstance = nextInstance;
+        if (nextRevision) phoneRevision = nextRevision;
+      }
+    } catch (_) {}
+    if (!reloadPending) servicePollTimer = window.setTimeout(() => { void pollServiceVersion(); }, 5000);
+  }
+
+  function showConnection(message) { connectionElement.textContent = message; }
+  function showStatus(message) { statusElement.textContent = message; }
+  function formatRate(rate) { return `${(rate / 1000).toFixed(rate % 1000 ? 1 : 0)} kHz`; }
+  function formatReceiveRate(bitsPerSecond) { const kbps = bitsPerSecond / 1000; return kbps >= 1000 ? `${(kbps / 1000).toFixed(2)} Mbps` : `${kbps.toFixed(0)} kbps`; }
+  function connectedText(prefix) { return `${prefix} · ${formatRate(sampleRate)}`; }
+  function friendlyError(error) {
+    if (error?.name === 'NotAllowedError') return '请允许使用麦克风';
+    if (error?.name === 'NotFoundError') return '没有找到麦克风';
+    if (error?.name === 'NotReadableError') return '麦克风当前不可用';
+    if (error?.name === 'AbortError') return '采集被中断，请重试';
+    if (error?.status === 401 || error?.status === 404 || error?.status === 409) return '正在重新连接';
+    if (error?.message === 'network') return '连接中断，请重试';
+    return error?.message || '采集失败，请重试';
+  }
+  function setButtons(_) {}
+  async function fetchTimed(url, options = {}, timeoutMs = 5000) {
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch(url, { ...options, signal: controller.signal });
+    } catch (error) {
+      if (error?.name === 'AbortError') throw new Error('network');
+      throw error;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  async function requestJson(url, options = {}, timeoutMs = 5000) {
+    const response = await fetchTimed(url, options, timeoutMs), value = await response.json().catch(() => ({}));
+    if (!response.ok) { const error = new Error(value.error || `request failed (${response.status})`); error.status = response.status; error.details = value.details; throw error; }
+    return value;
+  }
+  function authHeaders(currentSession) { return { 'Authorization': `Bearer ${currentSession.token}` }; }
+  const DSP_SETTING_NAMES = ['echoCancellation', 'noiseSuppression', 'autoGainControl'];
+  function readCaptureSettings(track, trackSettings, sampleRate) {
+    let capabilities = {}, capabilitiesAvailable = false;
+    if (typeof track.getCapabilities === 'function') {
+      try {
+        const value = track.getCapabilities();
+        if (value && typeof value === 'object' && Object.keys(value).length) { capabilities = value; capabilitiesAvailable = true; }
+      } catch (_) {}
+    }
+    const dsp = {};
+    for (const name of DSP_SETTING_NAMES) {
+      if (typeof trackSettings[name] === 'boolean') dsp[name] = trackSettings[name];
+      else if (capabilitiesAvailable && !Object.prototype.hasOwnProperty.call(capabilities, name)) dsp[name] = 'unsupported';
+      else if (capabilitiesAvailable && ((Array.isArray(capabilities[name]) && (capabilities[name].length === 0 || (capabilities[name].length === 1 && capabilities[name][0] === false))) || capabilities[name] === false)) dsp[name] = 'unsupported';
+      else dsp[name] = 'unreported';
+    }
+    return { sample_rate: sampleRate, channels: 1, dsp, capabilities_available: capabilitiesAvailable };
+  }
+  async function createSession(trackSettings, captureSettings, sampleRate) {
+    const created = await requestJson('/v1/mic/session', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+      source: 'phone_internal', transport: 'pcm_chunk', phone_model: navigator.userAgent,
+      browser: { user_agent: navigator.userAgent, vendor: navigator.vendor || '', platform: navigator.platform || '' },
+      constraints: { channelCount: 1, sampleRate: TARGET_RATE, echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+      track_settings: trackSettings, capture_settings: captureSettings, audio_context_sample_rate: sampleRate, replace_existing: true
+    }) });
+    return created;
+  }
+  function toPcm(values) { const pcm = new Int16Array(values.length); for (let i = 0; i < values.length; i++) { const value = Math.max(-1, Math.min(1, values[i])); pcm[i] = value < 0 ? Math.round(value * 32768) : Math.round(value * 32767); } return pcm; }
+  async function sendChunk(values) {
+    if (!session || transportFailed) return;
+    const currentSession = session, pcm = toPcm(values), chunkSequence = sequence;
+    const response = await fetchTimed(currentSession.chunk_url, { method: 'POST', headers: { ...authHeaders(currentSession), 'Content-Type': 'application/octet-stream', 'X-Seq': String(chunkSequence), 'X-Sample-Count': String(pcm.length), 'X-Sample-Rate': String(sampleRate), 'X-Channels': '1' }, body: pcm.buffer }, 5000);
+    const value = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const error = new Error(value.error || 'network'); error.status = response.status; throw error;
+    }
+    sequence = chunkSequence + 1;
+  }
+  function drainQueue() {
+    if (sendPromise || !sendQueue.length) return sendPromise;
+    sendPromise = (async () => { while (sendQueue.length && !transportFailed) await sendChunk(sendQueue.shift()); })().catch(error => { if (!stopping) failTransport(error); else { transportFailed = true; sendQueue.length = 0; } }).finally(() => { sendPromise = null; if (sendQueue.length && !transportFailed) drainQueue(); });
+    return sendPromise;
+  }
+  function shouldRetry(error) { return error?.message === 'network' || error?.status === 401 || error?.status === 404 || error?.status === 409; }
+  function failTransport(error) {
+    if (transportFailed) return;
+    transportFailed = true; accepting = false; sendQueue.length = 0; disconnectAudio(); setButtons(false); showConnection('已断开'); showStatus(friendlyError(error));
+    session = null;
+    if (autoStartEnabled && !reloadPending && shouldRetry(error)) scheduleCaptureRetry();
+  }
+  function scheduleCaptureRetry(delayMs = 3000) {
+    if (retryTimer || reloadPending || stopping || !autoStartEnabled) return;
+    retryTimer = window.setTimeout(() => {
+      retryTimer = 0;
+      if (!document.hidden && autoStartEnabled && !reloadPending && !session && !audioContext && !starting) void startCapture();
+    }, delayMs);
+  }
+  function enqueue(values) { if (!accepting || transportFailed) return; if (sendQueue.length >= MAX_QUEUE) { failTransport(new Error('network')); return; } sendQueue.push(values); drainQueue(); }
+  function resizeCanvas(canvas, context) {
+    const rect = canvas.getBoundingClientRect();
+    const width = Math.max(1, Math.round(rect.width));
+    const height = Math.max(1, Math.round(rect.height));
+    const scale = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
+    const pixelWidth = Math.max(1, Math.round(width * scale));
+    const pixelHeight = Math.max(1, Math.round(height * scale));
+    if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) {
+      canvas.width = pixelWidth;
+      canvas.height = pixelHeight;
+    }
+    context.setTransform(scale, 0, 0, scale, 0, 0);
+    return { width, height, scale, pixelWidth, pixelHeight };
+  }
+  function drawGrid(context, width, height) { const style = getComputedStyle(document.documentElement); context.fillStyle = style.getPropertyValue('--plot').trim(); context.fillRect(0, 0, width, height); context.strokeStyle = style.getPropertyValue('--plot-grid').trim(); context.lineWidth = 1; context.beginPath(); for (let i = 1; i < 4; i++) { const y = Math.round(height * i / 4) + .5; context.moveTo(0, y); context.lineTo(width, y); } for (let i = 1; i < 8; i++) { const x = Math.round(width * i / 8) + .5; context.moveTo(x, 0); context.lineTo(x, height); } context.stroke(); }
+  function spectrogramColor(db) { const level = Math.max(0, Math.min(1, (db - SPECTRUM_MIN_DB) / (SPECTRUM_MAX_DB - SPECTRUM_MIN_DB))); return [Math.round(Math.max(0, level - .5) * 510), Math.round(Math.max(0, level - .25) * 340), Math.round(Math.min(1, .15 + level * 1.25) * 255)]; }
+  function drawSpectrum() {
+    const { width, height, scale } = resizeCanvas(spectrumCanvas, spectrumContext);
+    const style = getComputedStyle(document.documentElement);
+    const left = 42, right = 8, top = 8, bottom = 24;
+    const plotWidth = Math.max(1, width - left - right);
+    const plotHeight = Math.max(1, height - top - bottom);
+    const pixelPlotWidth = Math.max(1, Math.round(plotWidth * scale));
+    const pixelPlotHeight = Math.max(1, Math.round(plotHeight * scale));
+    const logSpan = Math.log10(SPECTRUM_MAX_HZ / SPECTRUM_MIN_HZ);
+    if (pixelPlotWidth !== spectrogramWidth || pixelPlotHeight !== spectrogramHeight) {
+      spectrogramWidth = pixelPlotWidth;
+      spectrogramHeight = pixelPlotHeight;
+      spectrogramData = new Uint8ClampedArray(pixelPlotWidth * pixelPlotHeight * 4);
+      spectrogramImage = new ImageData(spectrogramData, pixelPlotWidth, pixelPlotHeight);
+    }
+    if (spectrogramData && frequencyData?.length) {
+      const nyquist = sampleRate / 2;
+      for (let y = 0; y < pixelPlotHeight; y++) {
+        const row = y * pixelPlotWidth * 4;
+        spectrogramData.copyWithin(row, row + 4, row + pixelPlotWidth * 4);
+      }
+      for (let y = 0; y < pixelPlotHeight; y++) {
+        const hz = SPECTRUM_MAX_HZ * Math.pow(SPECTRUM_MIN_HZ / SPECTRUM_MAX_HZ, y / Math.max(1, pixelPlotHeight - 1));
+        const index = Math.min(frequencyData.length - 1, Math.max(0, Math.floor(hz / nyquist * frequencyData.length)));
+        const [r, g, b] = spectrogramColor(frequencyData[index]);
+        const offset = (y * pixelPlotWidth + pixelPlotWidth - 1) * 4;
+        spectrogramData[offset] = r;
+        spectrogramData[offset + 1] = g;
+        spectrogramData[offset + 2] = b;
+        spectrogramData[offset + 3] = 255;
+      }
+    }
+    spectrumContext.fillStyle = style.getPropertyValue('--plot').trim();
+    spectrumContext.fillRect(0, 0, width, height);
+    if (spectrogramImage) spectrumContext.putImageData(spectrogramImage, Math.round(left * scale), Math.round(top * scale));
+    spectrumContext.strokeStyle = style.getPropertyValue('--plot-grid').trim();
+    spectrumContext.fillStyle = style.getPropertyValue('--muted').trim();
+    spectrumContext.lineWidth = 1 / scale;
+    spectrumContext.font = '11px system-ui, sans-serif';
+    spectrumContext.textAlign = 'center';
+    spectrumContext.beginPath();
+    for (const hz of [20, 100, 1000, 10000, 20000]) {
+      const y = top + Math.log10(SPECTRUM_MAX_HZ / hz) / logSpan * plotHeight;
+      spectrumContext.moveTo(left, y + .5 / scale);
+      spectrumContext.lineTo(width - right, y + .5 / scale);
+      spectrumContext.fillText(hz >= 1000 ? `${hz / 1000}k` : String(hz), left - 19, y + 4);
+    }
+    spectrumContext.stroke();
+    spectrumContext.textAlign = 'left';
+    spectrumContext.fillText('Hz', 4, top + 4);
+    spectrumContext.textAlign = 'right';
+    spectrumContext.fillText('时间', width - right, height - 7);
+  }
+  function render() { if (analyserNode) { if (!frequencyData || frequencyData.length !== analyserNode.frequencyBinCount) frequencyData = new Float32Array(analyserNode.frequencyBinCount); analyserNode.getFloatFrequencyData(frequencyData); } drawSpectrum(); animationFrame = requestAnimationFrame(render); }
+  function beginRender() { if (rendering) return; rendering = true; render(); }
+  function stopReceiveMonitor() { if (receiveTimer) clearTimeout(receiveTimer); receiveTimer = 0; }
+  async function monitorReceive(currentSession) {
+    if (!currentSession || currentSession !== session || transportFailed || stopping) return;
+    try {
+      const state = await requestJson(currentSession.status_url, { headers: authHeaders(currentSession) });
+      if (currentSession !== session) return;
+      const receivedAt = Date.parse(state.last_received_utc || '');
+      const startedAt = Date.parse(state.last_activity_utc || state.created_utc || '');
+      const age = Number.isFinite(receivedAt) ? Date.now() - receivedAt : Number.isFinite(startedAt) ? Date.now() - startedAt : Infinity;
+      if (state.state !== 'OPEN') { const error = new Error('session ended'); error.status = 409; throw error; }
+      if (!state.last_received_utc && age <= 10000) {
+        showConnection(`传输中 · ${formatRate(sampleRate)} · 等待首块`);
+      } else if (age > 5000) {
+        throw new Error('network');
+      }
+      if (state.last_received_utc) showConnection(age > 1500 ? `传输中 · ${formatRate(sampleRate)} · 等待接收` : `传输中 · ${formatRate(sampleRate)} · 接收 ${formatReceiveRate(Number(state.receive_rate_bps) || 0)}`);
+    } catch (error) {
+      if (currentSession === session) failTransport(error);
+      return;
+    }
+    receiveTimer = setTimeout(() => { void monitorReceive(currentSession); }, 500);
+  }
+  function disconnectAudio() { accepting = false; releaseCaptureFullscreen(); stopReceiveMonitor(); if (animationFrame) cancelAnimationFrame(animationFrame); animationFrame = 0; rendering = false; if (captureNode) { captureNode.port.onmessage = null; captureNode.port.onmessageerror = null; captureNode.port.close(); captureNode.disconnect(); } sourceNode?.disconnect(); analyserNode?.disconnect(); silentGain?.disconnect(); if (lastTrack) lastTrack.onended = null; stream?.getTracks().forEach(track => track.stop()); stream = null; sourceNode = null; analyserNode = null; captureNode = null; silentGain = null; lastTrack = null; if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; } const closing = audioContext; audioContext = null; if (closing && closing.state !== 'closed') closing.close().catch(() => {}); }
+  async function startCapture() {
+    if ((session && !transportFailed) || audioContext || stopping || sendPromise) return;
+    if (starting) { pendingStart = true; return; }
+    starting = true;
+    enterCaptureFullscreen();
+    const run = ++captureGeneration;
+    setButtons(true); transportFailed = false; stopping = false; sendQueue.length = 0; showConnection('正在连接'); showStatus('正在连接');
+    try {
+      if (!navigator.mediaDevices?.getUserMedia || !window.AudioWorkletNode) throw new Error('当前浏览器不支持采集');
+      stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: { ideal: 1 }, sampleRate: { ideal: TARGET_RATE }, echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+      if (run !== captureGeneration) { stream.getTracks().forEach(track => track.stop()); stream = null; return; }
+      lastTrack = stream.getAudioTracks()[0];
+      if (!lastTrack) throw new Error('没有找到麦克风');
+      showConnection(connectedText('麦克风已连接'));
+      lastTrack.onended = () => { if (accepting) failTransport(new Error('采集被中断，请重试')); };
+      const trackSettings = lastTrack.getSettings ? lastTrack.getSettings() : {};
+      try { audioContext = new AudioContext({ sampleRate: TARGET_RATE, latencyHint: 'interactive' }); }
+      catch (_) { audioContext = new AudioContext({ latencyHint: 'interactive' }); }
+      if (!audioContext.audioWorklet) throw new Error('当前浏览器不支持采集');
+      await audioContext.resume();
+      if (run !== captureGeneration) { disconnectAudio(); return; }
+      sampleRate = audioContext.sampleRate;
+      const captureSettings = readCaptureSettings(lastTrack, trackSettings, sampleRate);
+
+      session = await createSession(trackSettings, captureSettings, sampleRate);
+      if (run !== captureGeneration) {
+        const abandonedSession = session; session = null;
+        disconnectAudio(); return;
+      }
+      sequence = 0;
+
+      analyserNode = audioContext.createAnalyser(); analyserNode.fftSize = 2048; analyserNode.minDecibels = SPECTRUM_MIN_DB; analyserNode.maxDecibels = SPECTRUM_MAX_DB; analyserNode.smoothingTimeConstant = .72;
+      sourceNode = audioContext.createMediaStreamSource(stream); sourceNode.connect(analyserNode);
+      const workletSource = `class CaptureProcessor extends AudioWorkletProcessor { constructor() { super(); this.pending = []; this.target = Math.max(256, Math.round(sampleRate * ${CHUNK_SECONDS})); } process(inputs, outputs) { const channel = inputs[0] && inputs[0][0]; if (channel) { for (let i = 0; i < channel.length; i++) this.pending.push(channel[i]); while (this.pending.length >= this.target) { const part = this.pending.splice(0, this.target); const data = new Float32Array(part); this.port.postMessage(data.buffer, [data.buffer]); } } const output = outputs[0] && outputs[0][0]; if (output) output.fill(0); return true; } } registerProcessor('phone-mic-capture', CaptureProcessor);`;
+      const moduleUrl = URL.createObjectURL(new Blob([workletSource], { type: 'application/javascript' }));
+      try { await audioContext.audioWorklet.addModule(moduleUrl); } finally { URL.revokeObjectURL(moduleUrl); }
+      if (run !== captureGeneration) { disconnectAudio(); return; }
+      captureNode = new AudioWorkletNode(audioContext, 'phone-mic-capture', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1] });
+      silentGain = audioContext.createGain(); silentGain.gain.value = 0;
+      analyserNode.connect(silentGain); sourceNode.connect(captureNode).connect(silentGain).connect(audioContext.destination);
+      captureNode.port.onmessage = event => { if (!accepting) return; enqueue(new Float32Array(event.data)); };
+      captureNode.onprocessorerror = () => failTransport(new Error('采集被中断，请重试'));
+      accepting = true; setButtons(true); showConnection(`${connectedText('传输中')} · 等待接收`); showStatus('正在采集'); void monitorReceive(session);
+      rememberAutoStart();
+      try { wakeLock = await navigator.wakeLock?.request('screen'); } catch (_) {}
+      if (run !== captureGeneration || !accepting) { disconnectAudio(); return; }
+      beginRender();
+    } catch (error) {
+      if (run !== captureGeneration) return;
+      const abandonedSession = session; session = null;
+      disconnectAudio();
+      setButtons(false); showConnection('已断开'); showStatus(friendlyError(error));
+      if (autoStartEnabled && shouldRetry(error)) scheduleCaptureRetry();
+    } finally {
+      if (run === captureGeneration) {
+        starting = false;
+        if (pendingStart) {
+          pendingStart = false;
+          if (!session && !audioContext && !stopping) void startCapture();
+        }
+      }
+    }
+  }
+  async function onVisibilityChange() {
+    if (document.hidden) return;
+    void pollServiceVersion();
+    if (!audioContext && autoStartEnabled) scheduleCaptureRetry(0);
+    if (!audioContext || !accepting) return;
+    try {
+      if (audioContext.state !== 'running') await audioContext.resume();
+      if (lastTrack && lastTrack.readyState !== 'live') failTransport(new Error('采集被中断，请重试'));
+    } catch (error) { failTransport(error); }
+  }
+  document.addEventListener('click', () => { autoStartEnabled = true; pendingStart = false; if (!session && !audioContext && !starting) void startCapture(); }, { passive: true }); document.addEventListener('visibilitychange', onVisibilityChange);
+  function stopOnExit() {
+    if (exitHandled) return;
+    exitHandled = true;
+    captureGeneration++;
+    starting = false;
+    autoStartEnabled = true;
+    accepting = false;
+    session = null;
+    sendQueue.length = 0;
+    disconnectAudio();
+  }
+  window.addEventListener('pagehide', stopOnExit);
+  window.addEventListener('beforeunload', stopOnExit);
+  window.addEventListener('resize', () => { drawSpectrum(); });
+  window.visualViewport?.addEventListener('resize', () => { drawSpectrum(); });
+  if (window.ResizeObserver) new ResizeObserver(() => { drawSpectrum(); }).observe(spectrumCanvas);
+  drawSpectrum();
+  void pollServiceVersion();
+  window.setTimeout(() => { if (!document.hidden) void startCapture(); }, 0);
+})();
+</script>
+</body>
+</html>

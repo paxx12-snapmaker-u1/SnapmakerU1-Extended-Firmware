@@ -1,0 +1,32 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-PackageHomePage: https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware
+# SPDX-FileCopyrightText: Copyright (c) 2026 @paxx12
+
+actions:
+  services:
+    items:
+      start-ext-mic:
+        label: Start Ext Mic
+        description: Start the phone microphone service.
+        cmd:
+          - /etc/init.d/S99ext-mic
+          - start
+        message: "Starting Ext Mic..."
+
+      stop-ext-mic:
+        label: Stop Ext Mic
+        description: Stop the phone microphone service and release port 9443.
+        confirm: true
+        cmd:
+          - /etc/init.d/S99ext-mic
+          - stop
+        message: "Stopping Ext Mic..."
+
+      restart-ext-mic:
+        label: Restart Ext Mic
+        description: Restart the phone microphone service.
+        confirm: true
+        cmd:
+          - /etc/init.d/S99ext-mic
+          - restart
+        message: "Restarting Ext Mic..."

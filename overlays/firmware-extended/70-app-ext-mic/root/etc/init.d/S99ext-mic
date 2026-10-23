@@ -1,0 +1,143 @@
+#!/bin/sh
+# ext-mic service. BusyBox init invokes this once; the supervisor
+# keeps the HTTPS listener alive through boot races and child process exits.
+
+NAME="ext-mic"
+SUPERVISOR="/usr/local/bin/ext-mic-supervisor.sh"
+PIDFILE="/run/ext-mic-supervisor.pid"
+EXT_MIC_PIDFILES="/run/ext-mic-child.pid"
+CHILD_PIDFILE="/run/ext-mic-child.pid"
+
+pid_from_file() {
+    [ -r "$PIDFILE" ] || return 1
+    pid=$(cat "$PIDFILE" 2>/dev/null) || return 1
+    case "$pid" in ''|*[!0-9]*) return 1 ;; esac
+    printf '%s\n' "$pid"
+}
+
+pid_is_supervisor() {
+    pid=$(pid_from_file) || return 1
+    [ -r "/proc/$pid/cmdline" ] || return 1
+    tr '\000' ' ' <"/proc/$pid/cmdline" 2>/dev/null | grep -Fq "$SUPERVISOR"
+}
+
+pid_is_ext_mic() {
+    pid="$1"
+    [ -r "/proc/$pid/cmdline" ] || return 1
+    tr '\000' ' ' <"/proc/$pid/cmdline" 2>/dev/null | grep -Fq "/usr/local/bin/ext-mic.py"
+}
+
+stop_pid() {
+    pid="$1"
+    kill -TERM "$pid" 2>/dev/null || true
+    attempt=1
+    while [ "$attempt" -le 10 ] && kill -0 "$pid" 2>/dev/null; do
+        sleep 1
+        attempt=$((attempt + 1))
+    done
+    kill -KILL "$pid" 2>/dev/null || true
+}
+
+stop_ext_mic_pidfiles() {
+    for ext_mic_pidfile in $EXT_MIC_PIDFILES; do
+        [ -r "$ext_mic_pidfile" ] || continue
+        ext_mic_pid=$(cat "$ext_mic_pidfile" 2>/dev/null || true)
+        case "$ext_mic_pid" in ''|*[!0-9]*) rm -f "$ext_mic_pidfile"; continue ;; esac
+        if pid_is_ext_mic "$ext_mic_pid"; then
+            echo "Stopping old $NAME process (pid $ext_mic_pid)"
+            stop_pid "$ext_mic_pid"
+        fi
+        rm -f "$ext_mic_pidfile"
+    done
+}
+
+clear_stale_pid() {
+    [ -e "$PIDFILE" ] || return 0
+    pid_is_supervisor || rm -f "$PIDFILE"
+}
+
+start() {
+    clear_stale_pid
+    if pid_is_supervisor; then
+        echo "$NAME already supervising (pid $(pid_from_file))"
+        return 0
+    fi
+    [ -r "$SUPERVISOR" ] || { echo "$SUPERVISOR is missing" >&2; return 1; }
+    stop_ext_mic_pidfiles
+    # BusyBox runs S99 once.  The root supervisor waits for /userdata and LAN,
+    # prepares storage, then starts the Python daemon as lava.
+    if [ -r /usr/local/sbin/limits-helper.sh ]; then
+        . /usr/local/sbin/limits-helper.sh
+        limits_enter ext-mic 96M
+    fi
+    mkdir -p /run || return 1
+    printf "Starting $NAME supervisor: "
+    start-stop-daemon -S -b -m -q -p "$PIDFILE" -x "$SUPERVISOR" || return 1
+    attempt=1
+    while [ "$attempt" -le 10 ]; do
+        sleep 1
+        if pid_is_supervisor; then
+            echo "OK"
+            return 0
+        fi
+        attempt=$((attempt + 1))
+    done
+    echo "FAILED" >&2
+    clear_stale_pid
+    return 1
+}
+
+stop() {
+    printf "Stopping $NAME: "
+    clear_stale_pid
+    if pid_is_supervisor; then
+        pid=$(pid_from_file)
+        start-stop-daemon -K -p "$PIDFILE" -s TERM
+        attempt=1
+        while [ "$attempt" -le 10 ] && kill -0 "$pid" 2>/dev/null; do
+            sleep 1
+            attempt=$((attempt + 1))
+        done
+        if kill -0 "$pid" 2>/dev/null; then
+            kill -KILL "$pid" 2>/dev/null || true
+        fi
+        rm -f "$PIDFILE"
+        stop_ext_mic_pidfiles
+        echo "OK"
+    else
+        rm -f "$PIDFILE"
+        stop_ext_mic_pidfiles
+        echo "not running"
+    fi
+}
+
+status() {
+    clear_stale_pid
+    if pid_is_supervisor; then
+        child_pid=""
+        if [ -r "$CHILD_PIDFILE" ]; then
+            child_pid=$(cat "$CHILD_PIDFILE" 2>/dev/null || true)
+        fi
+        case "$child_pid" in
+            ''|*[!0-9]*) echo "$NAME supervisor waiting for /userdata or LAN (pid $(pid_from_file))" ;;
+            *)
+                if pid_is_ext_mic "$child_pid"; then
+                    echo "$NAME running (supervisor pid $(pid_from_file), child pid $child_pid)"
+                else
+                    echo "$NAME supervisor restarting child (pid $(pid_from_file))"
+                fi
+                ;;
+        esac
+        return 0
+    fi
+    echo "$NAME stopped"
+    return 1
+}
+
+case "$1" in
+    start) start ;;
+    stop) stop ;;
+    restart|reload) stop; sleep 1; start ;;
+    status) status ;;
+    *) echo "Usage: $0 {start|stop|restart|status}" >&2; exit 1 ;;
+esac
