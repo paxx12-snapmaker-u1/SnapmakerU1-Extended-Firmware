@@ -24,6 +24,9 @@ let refreshing = false;
 let spoolmanActive = false;
 let spoolmanUrl = null;
 let forceGenericVendor = false;
+// Where SpoolLink keeps card UIDs, mirrored from its `[spoollink]` config.
+let useSpoolmanUid = true;
+let useSpoollinkUid = true;
 let spoolmanSpools = new Map();
 let spoolPickerChannel = null;
 let spoolRefreshTimer = null;
@@ -183,6 +186,11 @@ function setConnectionStatus(connected) {
 
 // ── Initial data load (no gcodes — shows existing printer state) ──────────
 
+function configFlag(value, fallback) {
+    if (value == null || value === '') return fallback;
+    return value === true || String(value).toLowerCase() === 'true';
+}
+
 function loadSpoolmanStatus() {
     sendRPC('server.spoolman.status').then(status => {
         if (status.spoolman_connected) {
@@ -194,12 +202,10 @@ function loadSpoolmanStatus() {
     sendRPC('server.config').then(config => {
         spoolmanUrl = config.config?.spoolman?.server || null;
 
-        const rawForceGeneric =
-            config.config?.spoollink?.force_generic_vendor;
-
-        forceGenericVendor =
-            rawForceGeneric === true ||
-            String(rawForceGeneric).toLowerCase() === 'true';
+        const spoollink = config.config?.spoollink || {};
+        forceGenericVendor = configFlag(spoollink.force_generic_vendor, false);
+        useSpoolmanUid = configFlag(spoollink.use_spoolman_uid, true);
+        useSpoollinkUid = configFlag(spoollink.use_spoollink_uid, true);
 
         // Config may arrive after the first channel render.
         rebuildFromCache();
@@ -228,6 +234,16 @@ async function fetchSpoolmanList(path) {
     const result = await spoolmanRequest('GET', path, { query: 'limit=1000' });
     if (!Array.isArray(result)) throw new Error(`Spoolman returned an invalid list for ${path}`);
     return result;
+}
+
+// Native tags need Spoolman v0.27.0 or newer, detected the same way SpoolLink does.
+async function spoolmanSupportsTags() {
+    if (!useSpoolmanUid) return false;
+    const info = await spoolmanRequest('GET', '/v1/info').catch(() => null);
+    const match = /^v?(\d+)\.(\d+)\.(\d+)/.exec(cleanText(info?.version));
+    if (!match) return false;
+    const [major, minor] = match.slice(1).map(Number);
+    return major > 0 || minor >= 27;
 }
 
 async function fetchSpoolmanSpool(id) {
@@ -508,7 +524,7 @@ function createChannelCard(channel) {
                 }
                 if (spool.remaining_weight != null) rows.push({ label: 'Remaining', value: `${Math.round(spool.remaining_weight)} g` });
                 if (spool.filament.weight  != null) rows.push({ label: 'Total',     value: `${spool.filament.weight} g` });
-                const storedUids = parseCardUids(spool);
+                const storedUids = parseSpoolUids(spool);
                 rows.push({ label: 'RFID tags', html: storedUids.length
                     ? storedUids.map(uidHtml).join(', ')
                     : 'none stored' });
@@ -699,8 +715,9 @@ function hidePopover() {
 
 // ── Spoolman helpers ──────────────────────────────────────────────────────
 
-// UID and colour normalisation, the SpoolLink `card_uids` wire format,
-// filament matching, and the Spoolman payload builders.
+// UID and colour normalisation, the card UID stores (Spoolman native tags and
+// the SpoolLink `card_uids` wire format), filament matching, and the Spoolman
+// payload builders.
 
 function cleanText(value) {
     return value == null ? '' : String(value).trim();
@@ -746,10 +763,10 @@ function encodeExtraString(value) {
     return JSON.stringify(cleanText(value));
 }
 
-function parseCardUids(spool) {
+function uniqueUids(values) {
     const seen = new Set();
     const uids = [];
-    for (const value of decodeExtraString(spool?.extra?.card_uids || '').split(',')) {
+    for (const value of values) {
         const uid = normalizeUid(value);
         if (uid && !seen.has(uid)) {
             seen.add(uid);
@@ -757,6 +774,21 @@ function parseCardUids(spool) {
         }
     }
     return uids;
+}
+
+function parseCardUids(spool) {
+    if (!useSpoollinkUid) return [];
+    return uniqueUids(decodeExtraString(spool?.extra?.card_uids || '').split(','));
+}
+
+// Spoolman v0.27.0+ lists native tags on every spool; older servers omit them.
+function parseTagUids(spool) {
+    if (!useSpoolmanUid) return [];
+    return uniqueUids((spool?.tags || []).map(tag => tag?.uid));
+}
+
+function parseSpoolUids(spool) {
+    return uniqueUids([...parseTagUids(spool), ...parseCardUids(spool)]);
 }
 
 function normalizeColor(value) {
@@ -888,7 +920,10 @@ function buildFilamentPayload(values, vendorId) {
     return payload;
 }
 
-function buildSpoolPayload(filamentId, values) {
+// Spoolman cannot set native tags on create, so they are attached right after.
+// Without them the UID is seeded into `card_uids`, so either way a retry after
+// a failed link finds the spool instead of creating another.
+function buildSpoolPayload(filamentId, values, seedCardUids) {
     const id = Number(filamentId);
     const uid = normalizeUid(values?.uid);
     const netWeight = finiteNumber(values?.net_weight);
@@ -901,15 +936,19 @@ function buildSpoolPayload(filamentId, values) {
         filament_id: id,
         initial_weight: netWeight,
         remaining_weight: netWeight,
-        extra: { card_uids: encodeExtraString(uid) },
     };
+    if (seedCardUids) payload.extra = { card_uids: encodeExtraString(uid) };
     if (tareWeight != null && tareWeight >= 0) payload.spool_weight = tareWeight;
     return payload;
 }
 
+// Mirrors SpoolLink: a native tag is authoritative, and `card_uids` entries
+// only count when no spool holds the UID as a tag.
 function findUidOwners(spools, uidValue) {
     const uid = normalizeUid(uidValue);
     if (!uid) return [];
+    const tagged = (spools || []).filter(spool => parseTagUids(spool).includes(uid));
+    if (tagged.length > 0) return tagged;
     return (spools || []).filter(spool => parseCardUids(spool).includes(uid));
 }
 
@@ -1006,7 +1045,7 @@ async function executeSpoolAssignment(channel, targetSpool, uid) {
 
     // SET_SPOOL_ID returns before the UID has moved: Moonraker dispatches the
     // remote method asynchronously and SpoolLink then does its own retried
-    // GET/GET/PATCH, so poll until the target spool owns the UID on its own.
+    // lookups and writes, so poll until the target spool owns the UID on its own.
     for (const wait of [500, 750, 1000, 1500, 2000, 2000]) {
         await new Promise(resolve => setTimeout(resolve, wait));
         const spools = await fetchSpoolmanList('/v1/spool').catch(() => null);
@@ -1087,7 +1126,7 @@ function spoolPickerItem(spool) {
     const swatchesHtml = swatchColors
         .map(c => `<div class="spoolman-swatch" style="background:#${escHtml(c)}"></div>`)
         .join('');
-    const uids = parseCardUids(spool);
+    const uids = parseSpoolUids(spool);
     const uidsLabel = uids.length ? uids.map(formatUid).join(', ') : 'no RFID tags';
     item.innerHTML =
         `<div class="spoolman-swatches">${swatchesHtml}</div>` +
@@ -1165,7 +1204,7 @@ async function pickSpool(spoolId) {
             throw new Error(`RFID ${formatUid(uid)} is already stored on multiple spools (${owners.map(owner => `#${owner.id}`).join(', ')}). Resolve the duplicate in Spoolman first.`);
         }
         const other = owners.find(owner => Number(owner.id) !== Number(target.id)) || null;
-        const targetUids = parseCardUids(target);
+        const targetUids = parseSpoolUids(target);
 
         // Storing the first UID on a spool is the expected case; taking one off
         // another spool, or adding to a spool that already has tags, is not.
@@ -1223,8 +1262,9 @@ async function clearSpoolForChannel(channel) {
 
 // ── Spool creation ────────────────────────────────────────────────────────
 
-// Spoolman records are created directly, but the RFID link still goes through
-// SET_SPOOL_ID so SpoolLink stays the single writer for UID movement.
+// Spoolman records are created directly, and the new spool gets its tag right
+// away. Moving a UID between spools still goes through SET_SPOOL_ID, so
+// SpoolLink stays the single writer for UID movement.
 
 function setCreateSpoolNotice(message, type = 'warning') {
     const notice = document.getElementById('create-spool-notice');
@@ -1341,10 +1381,11 @@ async function handleCreateSpool(event) {
         if (!vendorName) throw new Error('Brand is required');
 
         ensureChannelUid(context.channel, context.uid);
-        const [spools, vendors, filaments] = await Promise.all([
+        const [spools, vendors, filaments, tagApi] = await Promise.all([
             fetchSpoolmanList('/v1/spool'),
             fetchSpoolmanList('/v1/vendor'),
             fetchSpoolmanList('/v1/filament'),
+            spoolmanSupportsTags(),
         ]);
         ensureChannelUid(context.channel, context.uid);
 
@@ -1377,10 +1418,16 @@ async function handleCreateSpool(event) {
                 uid: context.uid,
                 net_weight: values.net_weight,
                 tare_weight: values.tare_weight,
-            }),
+            }, !tagApi && useSpoollinkUid),
         });
         if (!spool?.id) throw new Error('Spoolman did not return the created spool ID');
         created.push(`spool #${spool.id}`);
+
+        if (tagApi) {
+            setCreateSpoolNotice(`Spool #${spool.id} created. Attaching its RFID tag…`);
+            await spoolmanRequest('POST', `/v1/spool/${spool.id}/tag`, { body: { uid: context.uid } });
+            created.push(`tag ${formatUid(context.uid)} on spool #${spool.id}`);
+        }
 
         setCreateSpoolNotice(`Spool #${spool.id} created. Linking and verifying its RFID…`);
         await executeSpoolAssignment(context.channel, spool, context.uid);
