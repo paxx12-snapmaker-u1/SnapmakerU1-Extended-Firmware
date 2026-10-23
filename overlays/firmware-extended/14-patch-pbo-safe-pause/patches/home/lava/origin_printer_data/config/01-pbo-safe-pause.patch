@@ -1,0 +1,64 @@
+--- a/fluidd.cfg
++++ b/fluidd.cfg
+@@ -336,6 +336,10 @@ gcode:
+ [gcode_macro INNER_PAUSE]
+ description: Pause the actual running print
+ variable_pause_temp: 40
++# Tallest Z printed so far in the current print, maintained by SET_PRINT_STATS_INFO.
++variable_max_printed_z: 0.0
++# Extra distance to lower the bed beyond the tallest printed object before parking, in mm.
++variable_park_clearance: 2.0
+ gcode:
+     ##### get user parameters or use default #####
+     {% set client = printer['gcode_macro _CLIENT_VARIABLE'] | default({}) %}
+@@ -366,6 +370,19 @@ gcode:
+         {% else %}
+             {% set delta_z = 0.0 %}
+         {% endif %}
++        # In a print-by-object job, an object finished earlier can be taller than the one
++        # being printed, and parking 5 mm lower would drive the toolhead through it. Lower
++        # the bed far enough to clear the tallest printed object, capped at the bottom of
++        # its travel. In a print-by-layer job nothing is taller than the current layer, so
++        # this leaves the 5 mm unchanged.
++        {% set stock_delta_z = delta_z %}
++        {% set z_now = printer.toolhead.position.z | float %}
++        {% set clear_delta_z = max_printed_z | float + park_clearance | float - z_now %}
++        {% set delta_z = [[delta_z, clear_delta_z] | max, move_z_max_heigh - z_now] | min %}
++        {% set delta_z = [delta_z, 0.0] | max %}
++        {% if delta_z > stock_delta_z %}
++            RESPOND TYPE=echo MSG="Lowering bed {'%.2f' % delta_z} mm to clear printed objects (tallest {'%.2f' % (max_printed_z | float)} mm)"
++        {% endif %}
+         {% if "xyz" in printer.toolhead.homed_axes %}
+             MOVE_TO_DISCARD_FILAMENT_POSITION SPEED=500 ACCEL=10000 Z_OFFSET={delta_z}
+         {% else %}
+@@ -595,7 +612,10 @@ gcode:
+             CHECK_FILAMENT_RUNOUT SENSOR={runout_sensor_name}
+ 
+             # RESUME_BASE
+-            RESUME_BASE VELOCITY={params.VELOCITY | default(sp_move)} MOVE_ACCEL=10000 EXTRUDE={unretract}
++            # XY_FIRST: cross the plate at the lowered height and only raise the bed once over
++            # the object being resumed, rather than one diagonal move that can pass through
++            # taller objects finished earlier in a print-by-object job.
++            RESUME_BASE VELOCITY={params.VELOCITY | default(sp_move)} MOVE_ACCEL=10000 EXTRUDE={unretract} XY_FIRST=1
+         {% else %}
+             RESUME_BASE VELOCITY={params.VELOCITY | default(sp_move)} MOVE=0
+         {% endif %}
+@@ -650,6 +670,18 @@ description: Overwrite, to get pause_next_layer and pause_at_layer feature
+ variable_pause_next_layer: { 'enable': False, 'call': "PAUSE" }
+ variable_pause_at_layer  : { 'enable': False, 'layer': 0, 'call': "PAUSE" }
+ gcode:
++    # Track the tallest Z printed so far, for INNER_PAUSE to park safely in print-by-object
++    # jobs. The slicer's layer change G-code calls this after every layer change, and the
++    # layer number counts up across the whole print rather than restarting for each object,
++    # so CURRENT_LAYER <= 1 only occurs at the start of a print. Done before any pause below,
++    # so a pause triggered here already sees this layer.
++    {% if params.CURRENT_LAYER is defined %}
++        {% set z = printer.toolhead.position.z | float %}
++        {% set max_printed_z = printer['gcode_macro INNER_PAUSE'].max_printed_z | float %}
++        {% if params.CURRENT_LAYER | int <= 1 or z > max_printed_z %}
++            SET_GCODE_VARIABLE MACRO=INNER_PAUSE VARIABLE=max_printed_z VALUE={z}
++        {% endif %}
++    {% endif %}
+     {% if pause_next_layer.enable %}
+         RESPOND TYPE=echo MSG='{"%s, forced by pause_next_layer" % pause_next_layer.call}'
+         {pause_next_layer.call} ; execute the given gcode to pause, should be either M600 or PAUSE
