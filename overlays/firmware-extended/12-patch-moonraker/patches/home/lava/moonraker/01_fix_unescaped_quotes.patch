@@ -1,0 +1,19 @@
+diff --git a/moonraker/components/klippy_apis.py b/moonraker/components/klippy_apis.py
+index 20e73cd..39c763d 100644
+--- a/moonraker/components/klippy_apis.py
++++ b/moonraker/components/klippy_apis.py
+@@ -304,11 +304,12 @@ class KlippyAPI(APITransport):
+             elif field == 'filament_type':
+                 value = metadata.get(field, None)
+                 if value is not None:
+-                    value = [f'{item}' if item else 'NONE' for item in value.split(';')]
++                    value = [item.strip("'\"") if item else 'NONE' for item in value.split(';')]
+             else:
+                 value = metadata.get(field, None)
+             if value is not None:
+-                new_script_parts.append(f' {field.upper()}="{value}"')
++                val_str = str(value).replace('"', "'")
++                new_script_parts.append(f' {field.upper()}="{val_str}"')
+         if new_script_parts:
+             new_script = ''.join(new_script_parts)
+             script += new_script
