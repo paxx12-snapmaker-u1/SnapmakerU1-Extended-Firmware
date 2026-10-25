@@ -13,6 +13,11 @@ jobs:
     runs-on: ubuntu-24.04-arm
     permissions:
       contents: read
+    outputs:
+      profiles: ${{ steps.profiles.outputs.list }}
+      version: ${{ steps.profiles.outputs.version }}
+      sha_version: ${{ steps.profiles.outputs.sha_version }}
+      job_start: ${{ steps.profiles.outputs.job_start }}
     steps:
     - name: Record start time
       run: echo "JOB_START=$(date +%s)" >> $GITHUB_ENV
@@ -79,57 +84,33 @@ jobs:
       shell: bash
       if: github.event_name == 'pull_request'
       run: |
-        nextVer=$(./scripts/next_version.sh paxx12 test-pr-${{ github.event.pull_request.number }})
+        nextVer=$(./scripts/next_version.sh paxx12 pr${{ github.event.pull_request.number }})
         echo "GIT_VERSION=${nextVer//v/}" | tee -a $GITHUB_ENV
+        echo "SHA_VERSION=$(git describe --abbrev --always)" | tee -a $GITHUB_ENV
 
     - name: Download firmware
       run: ./dev.sh make firmware
 
-    - name: Build with Extended Fluidd firmware
-      run: ./dev.sh make build PROFILE=extended OUTPUT_FILE=U1_extended_${{ env.GIT_VERSION }}_upgrade.bin
-
-    - uses: actions/upload-artifact@v4
-      with:
-        name: extended-build
-        path: U1_extended_*_upgrade.bin
-
-    - name: Build with Extended Fluidd + AFC firmware (experimental)
-      run: ./dev.sh make build PROFILE=extended-afc OUTPUT_FILE=U1_extended-afc_${{ env.GIT_VERSION }}_upgrade.bin
-
-    - uses: actions/upload-artifact@v4
-      with:
-        name: extended-afc-build
-        path: U1_extended-afc_*_upgrade.bin
-
-    - name: Build with Extended Fluidd + multiACE firmware (experimental, rolling only)
-      run: ./dev.sh make build PROFILE=extended-multiace OUTPUT_FILE=U1_extended-multiace_${{ env.GIT_VERSION }}_upgrade.bin
-
-    - uses: actions/upload-artifact@v4
-      with:
-        name: extended-multiace-build
-        path: U1_extended-multiace_*_upgrade.bin
-
-    - name: Save PR info
-      if: github.event_name == 'pull_request'
+    - name: Read rolling profiles
+      id: profiles
       run: |
-        mkdir -p pr-info
-        echo "${{ github.event.pull_request.number }}" > pr-info/number
-        echo "${{ github.event.pull_request.head.sha }}" > pr-info/head_sha
-        echo "${{ github.sha }}" > pr-info/merge_sha
-        echo "${{ github.base_ref }}" > pr-info/base_ref
-        echo "${{ env.GIT_VERSION }}" > pr-info/version
-        echo "${{ env.JOB_START }}" > pr-info/job_start
-        echo "$(date +%s)" > pr-info/job_end
-        echo extended-build >> pr-info/artifacts
-        echo extended-afc-build >> pr-info/artifacts
-        echo extended-multiace-build >> pr-info/artifacts
+        echo "list=$(sed -e 's/#.*//' -e '/^\s*$/d' .github/rolling-profiles.txt | jq -Rnc '[inputs]')" | tee -a $GITHUB_OUTPUT
+        echo "version=$GIT_VERSION" | tee -a $GITHUB_OUTPUT
+        echo "sha_version=$SHA_VERSION" | tee -a $GITHUB_OUTPUT
+        echo "job_start=$JOB_START" | tee -a $GITHUB_OUTPUT
 
-    - name: Upload PR info
-      if: github.event_name == 'pull_request'
+    - name: Build rolling profiles
+      run: |
+        for profile in $(sed -e 's/#.*//' -e '/^\s*$/d' .github/rolling-profiles.txt); do
+          ./dev.sh make build PROFILE=$profile OUTPUT_FILE=U1_${profile}_${{ env.GIT_VERSION }}-${{ env.SHA_VERSION }}_upgrade.bin
+        done
+
+    - name: Upload builds for per-profile artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: pr-info
-        path: pr-info/
+        name: all-builds
+        path: U1_*_upgrade.bin
+        retention-days: 1
 
     - name: Save Firmwares Cache
       if: steps.cache-firmwares.outputs.cache-hit != 'true'
@@ -160,3 +141,59 @@ jobs:
           tmp/cache/**/*.gz
           tmp/cache/**/*.xz
         key: downloads-${{ runner.os }}-${{ runner.arch }}-${{ github.head_ref || github.ref_name }}
+
+  upload-artifacts:
+    needs: custom-firmware-build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      matrix:
+        profile: ${{ fromJSON(needs.custom-firmware-build.outputs.profiles) }}
+    steps:
+    - name: Download builds
+      uses: actions/download-artifact@v4
+      with:
+        name: all-builds
+
+    - name: Upload ${{ matrix.profile }} build
+      uses: actions/upload-artifact@v7
+      with:
+        path: U1_${{ matrix.profile }}_${{ needs.custom-firmware-build.outputs.version }}-${{ needs.custom-firmware-build.outputs.sha_version }}_upgrade.bin
+        archive: false
+
+  pr-info:
+    needs: [custom-firmware-build, upload-artifacts]
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+      with:
+        sparse-checkout: .github/rolling-profiles.txt
+        sparse-checkout-cone-mode: false
+
+    - name: Save PR info
+      env:
+        GIT_VERSION: ${{ needs.custom-firmware-build.outputs.version }}
+        SHA_VERSION: ${{ needs.custom-firmware-build.outputs.sha_version }}
+      run: |
+        mkdir -p pr-info
+        echo "${{ github.event.pull_request.number }}" > pr-info/number
+        echo "${{ github.event.pull_request.head.sha }}" > pr-info/head_sha
+        echo "${{ github.sha }}" > pr-info/merge_sha
+        echo "${{ github.base_ref }}" > pr-info/base_ref
+        echo "$GIT_VERSION" > pr-info/version
+        echo "${{ needs.custom-firmware-build.outputs.job_start }}" > pr-info/job_start
+        echo "$(date +%s)" > pr-info/job_end
+        for profile in $(sed -e 's/#.*//' -e '/^\s*$/d' .github/rolling-profiles.txt); do
+          echo "U1_${profile}_${GIT_VERSION}-${SHA_VERSION}_upgrade.bin" >> pr-info/artifacts
+        done
+
+    - name: Upload PR info
+      uses: actions/upload-artifact@v4
+      with:
+        name: pr-info
+        path: pr-info/

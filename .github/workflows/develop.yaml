@@ -89,14 +89,11 @@ jobs:
     - name: Download firmware
       run: ./dev.sh make firmware
 
-    - name: Build with Extended Fluidd firmware
-      run: ./dev.sh make build PROFILE=extended OUTPUT_FILE=U1_extended_${{ env.GIT_VERSION }}_upgrade.bin
-
-    - name: Build with Extended Fluidd + AFC firmware (experimental)
-      run: ./dev.sh make build PROFILE=extended-afc OUTPUT_FILE=U1_extended-afc_${{ env.GIT_VERSION }}_upgrade.bin
-
-    - name: Build with Extended Fluidd + multiACE firmware (experimental, rolling only)
-      run: ./dev.sh make build PROFILE=extended-multiace OUTPUT_FILE=U1_extended-multiace_${{ env.GIT_VERSION }}_upgrade.bin
+    - name: Build rolling profiles
+      run: |
+        for profile in $(sed -e 's/#.*//' -e '/^\s*$/d' .github/rolling-profiles.txt); do
+          ./dev.sh make build PROFILE=$profile OUTPUT_FILE=U1_${profile}_${{ env.GIT_VERSION }}_upgrade.bin
+        done
 
     - name: Generate rolling release notes
       uses: actions/github-script@v7
@@ -142,7 +139,7 @@ jobs:
           fs.writeFileSync('RELEASE.dev.md', template.replace('<!-- CHANGELOG_PLACEHOLDER -->', changelog));
 
     - name: Append checksums to release notes
-      run: node .github/scripts/append_checksums.js RELEASE.dev.md U1_extended_${{ env.GIT_VERSION }}_upgrade.bin U1_extended-afc_${{ env.GIT_VERSION }}_upgrade.bin U1_extended-multiace_${{ env.GIT_VERSION }}_upgrade.bin
+      run: node .github/scripts/append_checksums.js RELEASE.dev.md U1_*_${{ env.GIT_VERSION }}_upgrade.bin
 
     - name: Move `rolling` tag to this build
       run: |
