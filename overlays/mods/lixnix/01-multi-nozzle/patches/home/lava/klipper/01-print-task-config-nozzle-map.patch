@@ -1,0 +1,114 @@
+From: LixNix <105106115+LixNix@users.noreply.github.com>
+Subject: print_task_config: validate nozzle diameter per mapped filament
+
+Check each used logical filament's nozzle diameter against the physical
+extruder it is mapped to through extruder_map_table, instead of comparing
+nozzle_diameter[0] against every used extruder. Also reject negative
+MAP_TABLE and SET_PRINT_USED_EXTRUDERS indices, refuse to start when
+NOZZLE_DIAMETER_LIST cannot be parsed, and accept LINE_WIDTH_PERCENT.
+
+Original work by @LixNix (patches 01 and 02 of the U1 2.0.0.205
+nozzle-map fix), rebased onto firmware-extended without changes.
+
+--- a/klippy/extras/print_task_config.py
++++ b/klippy/extras/print_task_config.py
+@@ -65,6 +65,7 @@
+ 
+ DEFAULT_PRINT_TASK_CONFIG_2 = {
+     'line_width': 0,
++    'line_width_percent': 0,
+     'layer_height': 0,
+     'outer_wall_speed': 0,
+     'outer_wall_speed_hf': 0,
+@@ -842,6 +843,9 @@
+                 tmp_reprint_info.update({'extruders_used': [False] * PHYSICAL_EXTRUDER_NUM})
+                 used_extruders = [int(value) for value in extruders_str.split(',')]
+                 for i in range(min(len(used_extruders), LOGICAL_EXTRUDER_NUM)):
++                    if used_extruders[i] < 0 or used_extruders[i] >= PHYSICAL_EXTRUDER_NUM:
++                        raise ValueError("[print_task_config] Invalid EXTRUDERS index %s"
++                                         % (used_extruders[i],))
+                     tmp_extruders_used[used_extruders[i]] = True
+                     tmp_reprint_info['extruders_used'][used_extruders[i]] = True
+ 
+@@ -1111,6 +1115,7 @@
+         end_unload_filament = gcmd.get('END_UNLOAD_FILAMENT', None)
+ 
+         line_width = gcmd.get_float('LINE_WIDTH', None)
++        line_width_percent = gcmd.get_float('LINE_WIDTH_PERCENT', None)
+         layer_height = gcmd.get_float('LAYER_HEIGHT', None)
+         outer_wall_speed_list = gcmd.get('OUTER_WALL_SPEED_LIST', None)
+         outer_wall_accel_list = gcmd.get('OUTER_WALL_ACCELERATION_LIST', None)
+@@ -1182,7 +1187,9 @@
+                     else:
+                         if not isinstance(map_table_list[i][0], int) or not isinstance(map_table_list[i][1], int):
+                             raise gcmd.error("[print_task_config] Invalid MAP_TABLE")
+-                        if map_table_list[i][0] >= LOGICAL_EXTRUDER_NUM or map_table_list[i][1] >= PHYSICAL_EXTRUDER_NUM:
++                        if map_table_list[i][0] < 0 or map_table_list[i][1] < 0 or \
++                                map_table_list[i][0] >= LOGICAL_EXTRUDER_NUM or \
++                                map_table_list[i][1] >= PHYSICAL_EXTRUDER_NUM:
+                             raise gcmd.error("[print_task_config] Invalid MAP_TABLE")
+ 
+                     tmp_print_task_config['extruder_map_table'][map_table_list[i][0]] = map_table_list[i][1]
+@@ -1230,6 +1237,8 @@
+             # gcode parameters
+             if line_width is not None:
+                 tmp_print_task_config_2['line_width'] = line_width
++            if line_width_percent is not None:
++                tmp_print_task_config_2['line_width_percent'] = line_width_percent
+             if layer_height is not None:
+                 tmp_print_task_config_2['layer_height'] = layer_height
+ 
+@@ -1248,6 +1257,7 @@
+                 logging.exception(e)
+                 tmp_print_task_config_2['filament_type'] = [None for i in range(LOGICAL_EXTRUDER_NUM)]
+ 
++            nozzle_diameter_parse_failed = False
+             try:
+                 if nozzle_diameter is not None:
+                     nozzle_diameter_list  = self._parse_str_to_list(nozzle_diameter)
+@@ -1262,6 +1272,7 @@
+             except Exception as e:
+                 logging.exception(e)
+                 tmp_print_task_config_2['nozzle_diameter'] = [0 for i in range(LOGICAL_EXTRUDER_NUM)]
++                nozzle_diameter_parse_failed = True
+ 
+             try:
+                 if nozzle_temp is not None:
+@@ -1406,13 +1417,31 @@
+                     tmp_print_task_config['extruders_used'][tmp_print_task_config['extruder_map_table'][i]] = True
+ 
+             # check nozzle diameter
++            # Validate per LOGICAL filament and resolve the physical extruder through
++            # extruder_map_table, exactly like the filament_volume_type check below.
++            # (Previously this compared nozzle_diameter[0] - the first filament's
++            #  diameter - against every used physical extruder, which both rejected
++            #  legitimate multi-nozzle jobs and accepted wrongly mapped ones.)
+             if nozzle_diameter is not None:
+-                for i in range(PHYSICAL_EXTRUDER_NUM):
+-                    if tmp_print_task_config['extruders_used'][i]:
+-                        if abs(tmp_print_task_config_2['nozzle_diameter'][0] - actual_nozzle_diameter[i]) > 0.001:
+-                            exception_code = 14
+-                            raise gcmd.error(f"[print_task_config] nozzle diameter mismatch:" +
+-                                                f"f{i}_{tmp_print_task_config_2['nozzle_diameter'][0]} != e{i}_{actual_nozzle_diameter[i]}")
++                # The slicer stated diameters but they could not be parsed, so the list was zeroed.
++                # Skipping every entry here would silently disable the check entirely; refuse instead.
++                if nozzle_diameter_parse_failed:
++                    exception_code = 14
++                    raise gcmd.error("[print_task_config] NOZZLE_DIAMETER_LIST could not be parsed; "
++                                     "refusing to start without validating nozzle diameters")
++                for i in range(LOGICAL_EXTRUDER_NUM):
++                    if tmp_print_task_config_2['filament_used_g'][i] < 0.0001 and \
++                            tmp_print_task_config_2['filament_used_mm'][i] < 0.0001:
++                        continue
++                    gcode_nozzle_diameter = tmp_print_task_config_2['nozzle_diameter'][i]
++                    if gcode_nozzle_diameter < 0.0001:
++                        # slicer did not state a diameter for this filament
++                        continue
++                    map_e = tmp_print_task_config['extruder_map_table'][i]
++                    if abs(gcode_nozzle_diameter - actual_nozzle_diameter[map_e]) > 0.001:
++                        exception_code = 14
++                        raise gcmd.error(f"[print_task_config] nozzle diameter mismatch:" +
++                                            f"f{i}_{gcode_nozzle_diameter} != e{map_e}_{actual_nozzle_diameter[map_e]}")
+ 
+             # check filament volume type
+             if filament_volume_type is not None:
