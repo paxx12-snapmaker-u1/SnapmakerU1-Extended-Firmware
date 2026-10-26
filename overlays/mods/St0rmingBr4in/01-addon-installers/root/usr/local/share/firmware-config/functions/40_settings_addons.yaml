@@ -1,0 +1,87 @@
+settings:
+  addons:
+    label: Add-ons
+    items:
+      helixscreen:
+        label: HelixScreen
+        description: >-
+          Replace the stock touchscreen UI with HelixScreen, a native Klipper
+          touchscreen UI with a Snapmaker U1 backend (RFID spool recognition,
+          per-slot spool assignment). Updates itself via Moonraker once
+          installed. Requires Overlay Persistence and internet access.
+        help_url: https://helixscreen.org/
+        get_cmd:
+          - bash
+          - -c
+          - test -x /userdata/helixscreen/config/helixscreen.init && echo "installed" || echo "uninstalled"
+        options:
+          installed:
+            label: Installed
+            confirm: >-
+              Download and install HelixScreen, replacing the stock touchscreen
+              UI? The stock UI (including its on-screen calibration wizards)
+              stays disabled until you switch back. Takes a few minutes.
+            cmd:
+              - /usr/local/bin/install-helixscreen.sh
+          uninstalled:
+            label: Not Installed
+            confirm: >-
+              Uninstall HelixScreen and restore the stock touchscreen UI? A
+              reboot is required for the stock UI to come back.
+            cmd:
+              - /usr/local/bin/install-helixscreen.sh
+              - --uninstall
+        default: uninstalled
+      git:
+        label: Git
+        description: >-
+          Working git binary (aarch64, from Debian's official arm64 .deb) plus
+          the libcurl ABI shim its HTTPS remote helper needs. Needed for AFC's
+          update-afc.sh and any git-based workflow on the printer. Requires
+          Overlay Persistence and internet access.
+        get_cmd:
+          - bash
+          - -c
+          - test -x /usr/local/bin/git && echo "installed" || echo "uninstalled"
+        options:
+          installed:
+            label: Installed
+            confirm: Download and install git?
+            cmd:
+              - /usr/local/bin/install-git.sh
+          uninstalled:
+            label: Not Installed
+            confirm: Remove git and its helper files?
+            cmd:
+              - /usr/local/bin/install-git.sh
+              - --uninstall
+        default: uninstalled
+      spoolman:
+        label: Spoolman
+        description: >-
+          Filament spool tracking (web UI + API on port 7912) wired into
+          Moonraker, so AFC and Fluidd/Mainsail get the spool picker. The
+          spool database always survives uninstall and firmware upgrades.
+          Requires Overlay Persistence and internet access.
+        help_url: https://github.com/Donkie/Spoolman
+        get_cmd:
+          - bash
+          - -c
+          - test -x /etc/init.d/S65spoolman && echo "installed" || echo "uninstalled"
+        options:
+          installed:
+            label: Installed
+            confirm: >-
+              Download and install Spoolman? The pip install takes a few
+              minutes, and Moonraker restarts at the end.
+            cmd:
+              - /usr/local/bin/install-spoolman.sh
+          uninstalled:
+            label: Not Installed
+            confirm: >-
+              Uninstall Spoolman? The spool database is preserved and a later
+              reinstall picks it up again. Moonraker restarts at the end.
+            cmd:
+              - /usr/local/bin/install-spoolman.sh
+              - --uninstall
+        default: uninstalled
