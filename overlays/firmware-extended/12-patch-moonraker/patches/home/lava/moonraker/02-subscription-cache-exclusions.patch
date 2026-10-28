@@ -1,0 +1,25 @@
+--- a/moonraker/components/klippy_connection.py
++++ b/moonraker/components/klippy_connection.py
+@@ -745,7 +745,21 @@
+                 if obj not in self.subscription_cache:
+                     missing_cache = True
+                     break
+-            if covered and not missing_cache:
++            # The subscription cache deliberately omits the large immutable
++            # fields listed in CACHE_EXCLUSIONS (configfile.config and
++            # configfile.settings).  If the caller asked for any of them the
++            # cache cannot satisfy the request, so fall through to a real
++            # Klippy query instead of returning a silently truncated response.
++            cache_incomplete = False
++            for obj, fields in requested_sub.items():
++                if obj not in CACHE_EXCLUSIONS:
++                    continue
++                if fields is None or any(
++                    f in CACHE_EXCLUSIONS[obj] for f in fields
++                ):
++                    cache_incomplete = True
++                    break
++            if covered and not missing_cache and not cache_incomplete:
+                 # No new objects or fields need to be subscribed on Klippy's
+                 # side.  Build the response directly from the cached status.
+                 pruned_status: Dict[str, Dict[str, Any]] = {}
