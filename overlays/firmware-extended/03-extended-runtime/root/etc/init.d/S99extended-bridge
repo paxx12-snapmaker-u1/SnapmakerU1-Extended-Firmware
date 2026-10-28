@@ -1,0 +1,58 @@
+#!/bin/sh
+#
+# Run every /extended module's own share/rc.d/<service>/{start,stop}. A module may define
+# any number of services under rc.d/, each with its own start/stop pair. See
+# docs/design/modules.md for the module contract this drives.
+
+log() {
+	logger -p user.err -t "extended[$$]" -- "$1"
+	echo "extended: $1" >&2
+}
+
+run_module() {
+	local action=$1
+	local status=0
+	local service_dir script
+
+	for service_dir in "$MODULE_DIR"/share/rc.d/*; do
+		[ -d "$service_dir" ] || continue
+		script="$service_dir/$action"
+		[ -x "$script" ] || continue
+		SERVICE=$(basename "$service_dir")
+		export SERVICE
+		"$script" || { log "$MODULE/$SERVICE $action failed"; status=1; }
+	done
+	unset SERVICE
+	return "$status"
+}
+
+# start only ever considers enabled modules; stop reaches every module directory
+# regardless of disabled state, so disabling and stopping a module in the same session
+# still stops whatever it started while it was enabled.
+run_all() {
+	local action=$1
+	local status=0
+
+	for MODULE_DIR in /extended/*; do
+		[ -d "$MODULE_DIR" ] || continue
+		[ "$action" != start ] || [ ! -e "$MODULE_DIR/disabled" ] || continue
+		MODULE=$(basename "$MODULE_DIR")
+		export MODULE MODULE_DIR
+		run_module "$action" || status=1
+	done
+	unset MODULE_DIR MODULE
+	return "$status"
+}
+
+case "$1" in
+	start|stop)
+		run_all "$1"
+		;;
+	restart)
+		run_all stop
+		run_all start
+		;;
+	*)
+		echo "Usage: $0 {start|stop|restart}" >&2
+		exit 1
+esac
