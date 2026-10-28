@@ -4,7 +4,7 @@
 
 links:
   remote-screen:
-    url: /screen
+    url: /screen/
     icon: "🖥️"
     label: Remote Screen
     condition:
