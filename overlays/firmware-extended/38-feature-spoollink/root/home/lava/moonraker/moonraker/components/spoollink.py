@@ -5,8 +5,8 @@
 # SpoolLink — bridge between Spoolman and the Snapmaker AFC/RFID stack.
 #
 # Runs inside Moonraker as a component. It registers the
-# `spoollink_resolve_spool` remote method for the Klipper `[spoollink]`
-# router, resolves scanned cards (or explicit spool IDs) against the
+# `spoollink_resolve_spool` and `spoollink_unlink_card` remote methods for
+# the Klipper `[spoollink]` router, resolves scanned cards (or explicit spool IDs) against the
 # Spoolman REST API, binds card UIDs to spools, keeps Moonraker's active
 # spool in sync with the toolhead, and pushes the resolved filament info
 # back into Klipper via the `spoollink/set` endpoint.
@@ -26,6 +26,7 @@ if TYPE_CHECKING:
     from .klippy_apis import KlippyAPI as APIComp
 
 RESOLVE_METHOD = "spoollink_resolve_spool"
+UNLINK_METHOD = "spoollink_unlink_card"
 SET_ENDPOINT = "spoollink/set"
 
 
@@ -67,6 +68,7 @@ class SpoolLink:
         self._active_spool_id: Optional[int] = None
 
         self.server.register_remote_method(RESOLVE_METHOD, self._resolve_spool)
+        self.server.register_remote_method(UNLINK_METHOD, self._unlink_card)
         self.server.register_event_handler(
             "server:klippy_ready", self._handle_klippy_ready)
         self.server.register_event_handler(
@@ -362,6 +364,30 @@ class SpoolLink:
             spool, [u for u in existing if u != uid_upper])
 
     # -- Resolution ---------------------------------------------------------
+
+    async def _unlink_card(self, channel: int, card_uid: Any = None) -> None:
+        """Unbind a card from every spool holding it, so clearing a channel
+        is not undone by the next scan of the same card."""
+        card_uid = str(card_uid or "").upper()
+        if channel is None or not card_uid.strip("0"):
+            return
+        self._delete_cache(card_uid)
+        try:
+            spools = await self._retry(self._spoolman_find_by_card, card_uid)
+        except Exception as e:
+            logging.error("[spoollink] ch%d: unlink card %s failed: %s",
+                          channel, card_uid, e)
+            return
+        for spool in spools:
+            try:
+                await self._retry(
+                    self._spoolman_remove_card_uid, spool, card_uid)
+                logging.info("[spoollink] ch%d: unbound card %s from spool %s",
+                             channel, card_uid, spool["id"])
+            except Exception as e:
+                logging.error(
+                    "[spoollink] ch%d: unbind card %s from spool %s failed: %s",
+                    channel, card_uid, spool["id"], e)
 
     async def _resolve_spool(self, channel: int, spool_id: Any = None,
                              card_uid: Any = None) -> None:

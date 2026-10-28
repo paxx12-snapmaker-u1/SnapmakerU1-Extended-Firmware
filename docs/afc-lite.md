@@ -21,6 +21,9 @@ To provide an ability to manage U1 extruders via `Fluidd/Mainsail` interface.
 - AFC-compatible status endpoints for Fluidd/Mainsail UI
 - Maps U1's 4 extruders to AFC lanes (E0-E3)
 - Displays filament information from `print_task_config`
+- Fluidd print start dialog with per-tool lane selection (Moonraker reports
+  `filament_weights` and `filament_colors` metadata; re-scan metadata of files
+  uploaded before the update)
 
 **Macros:**
 
