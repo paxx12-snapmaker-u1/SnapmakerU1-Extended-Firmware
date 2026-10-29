@@ -59,6 +59,9 @@ class SpoolLink:
         self._cache_dir: Optional[str] = config.get("cache_dir", None)
         self._force_generic_vendor = config.getboolean(
             "force_generic_vendor", False)
+        self._location: str = config.get("location", "snapmaker U1").strip()
+        self._return_location: str = config.get("return_location", "").strip()
+        self._previous_locations: Dict[str, str] = self._load_previous_locations()
         self.http_client: HttpClient = self.server.lookup_component("http_client")
         self.klippy_apis: APIComp = self.server.lookup_component("klippy_apis")
 
@@ -128,10 +131,12 @@ class SpoolLink:
             spool_ids = ptc.get("filament_spool_id")
             new_ids = list(spool_ids or [])
             if new_ids != self._ptc_spool_ids:
+                old_ids = self._ptc_spool_ids
                 logging.info("[spoollink] spool_ids changed: %s → %s",
-                             self._ptc_spool_ids, new_ids)
+                             old_ids, new_ids)
                 self._ptc_spool_ids = new_ids
                 self._fire(self._sync_active_spool())
+                self._fire(self._sync_locations(old_ids, new_ids))
 
         fd = status.get("filament_detect")
         if fd is None:
@@ -338,6 +343,93 @@ class SpoolLink:
         spools = resp.json()
         uid_upper = card_uid.upper()
         return [s for s in spools if uid_upper in _parse_card_uids(s)]
+
+    async def _spoolman_patch_location(self, spool_id: int, location: str) -> None:
+        resp = await self.http_client.request(
+            "PATCH", f"{self._spoolman_url}/api/v1/spool/{spool_id}",
+            body={"location": location})
+        if resp.status_code not in (200, 404):
+            raise RuntimeError(f"HTTP {resp.status_code}: {resp.text()}")
+
+    def _previous_locations_path(self) -> Optional[str]:
+        if not self._cache_dir:
+            return None
+        return os.path.join(self._cache_dir, "previous_locations.json")
+
+    def _load_previous_locations(self) -> Dict[str, str]:
+        path = self._previous_locations_path()
+        if not path:
+            return {}
+        try:
+            with open(path) as f:
+                return {str(k): v for k, v in json.load(f).items()}
+        except FileNotFoundError:
+            return {}
+        except Exception as e:
+            logging.warning("[spoollink] previous locations read failed: %s", e)
+            return {}
+
+    def _save_previous_locations(self) -> None:
+        path = self._previous_locations_path()
+        if not path:
+            return
+        try:
+            os.makedirs(self._cache_dir, exist_ok=True)
+            with open(path, "w") as f:
+                json.dump(self._previous_locations, f)
+        except Exception as e:
+            logging.warning("[spoollink] previous locations write failed: %s", e)
+
+    async def _sync_locations(self, old_ids: List[int], new_ids: List[int]) -> None:
+        if not self._location:
+            return
+        old_set = {s for s in old_ids if s and s > 0}
+        new_set = {s for s in new_ids if s and s > 0}
+        added = new_set - old_set
+        removed = old_set - new_set
+        current: Dict[int, str] = {}
+
+        if not old_ids:
+            try:
+                resp = await self.http_client.get(
+                    f"{self._spoolman_url}/api/v1/spool?limit=1000", enable_cache=False)
+                if resp.status_code == 200:
+                    for s in resp.json():
+                        sid = s.get("id")
+                        loc = s.get("location") or ""
+                        current[sid] = loc
+                        if sid in new_set and loc != self._location:
+                            added.add(sid)
+                        elif sid not in new_set and loc == self._location:
+                            removed.add(sid)
+            except Exception as e:
+                logging.warning("[spoollink] initial location reconcile failed: %s", e)
+
+        for sid in added:
+            try:
+                if sid in current:
+                    previous = current[sid]
+                else:
+                    spool = await self._retry(self._spoolman_get_by_id, sid)
+                    previous = (spool or {}).get("location") or ""
+                if previous and previous != self._location:
+                    self._previous_locations[str(sid)] = previous
+                    self._save_previous_locations()
+                await self._retry(self._spoolman_patch_location, sid, self._location)
+                logging.info("[spoollink] spool %s location set to '%s' (was '%s')",
+                             sid, self._location, previous)
+            except Exception as e:
+                logging.error("[spoollink] set location failed for spool %s: %s", sid, e)
+
+        for sid in removed:
+            try:
+                target = (self._previous_locations.pop(str(sid), "")
+                          or self._return_location)
+                self._save_previous_locations()
+                await self._retry(self._spoolman_patch_location, sid, target)
+                logging.info("[spoollink] spool %s location restored to '%s'", sid, target)
+            except Exception as e:
+                logging.error("[spoollink] restore location failed for spool %s: %s", sid, e)
 
     async def _spoolman_patch_card_uids(self, spool: dict, uids: List[str]) -> dict:
         encoded = json.dumps(",".join(uids))
