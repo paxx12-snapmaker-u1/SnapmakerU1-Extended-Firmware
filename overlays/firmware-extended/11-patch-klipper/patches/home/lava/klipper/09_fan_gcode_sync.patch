@@ -1,0 +1,165 @@
+From: alternativniy <mchack4@gmail.com>
+Subject: [PATCH] fan: Synchronize M106/M107/SET_FAN_SPEED with the motion queue
+
+Snapmaker's fan.py schedules gcode fan changes at "now + 100ms" instead
+of at the print time of the last queued move. Klipper buffers ~2s of
+moves ahead, so the fan switched 2-4s before the toolhead reached the
+command.
+
+Gcode commands now use toolhead.register_lookahead_callback() as
+upstream Klipper does. set_speed_from_command() keeps its immediate
+behavior for webhooks and tool change. Wrapped fans (purifier router)
+keep their own path.
+
+SAVE_GCODE_STATE (pause) and the power loss fan record read the
+requested speed, including changes still waiting in the queue, so
+pausing right after M106 does not save a stale fan speed.
+
+The fan status (screen / Fluidd speed) reports a new speed only once
+its print time is reached, so it no longer runs ahead of the fan.
+
+See https://github.com/Snapmaker/u1-klipper/issues/18
+---
+--- a/klippy/extras/fan.py
++++ b/klippy/extras/fan.py
+@@ -15,6 +15,9 @@
+         self.last_fan_value = 0.
+         self.last_fan_time = 0.
+         self.last_enable_value = 0.
++        self.pending_values = []
++        self.status_value = 0.
++        self.scheduled_values = []
+         # Read config
+         self.max_power = config.getfloat('max_power', 1., above=0., maxval=1.)
+         self.kick_start_time = config.getfloat('kick_start_time', 0.1,
+@@ -66,6 +69,7 @@
+             return
+ 
+         print_time = max(self.last_fan_time + FAN_MIN_TIME, print_time)
++        self.scheduled_values.append((print_time, value))
+         if self.enable_pin and control_enable:
+             if value > 0 and self.last_fan_value == 0 or value == 0 and self.last_fan_value > 0 and enable_value is not None:
+                 self.enable_pin.set_digital(print_time, enable_value)
+@@ -84,13 +88,36 @@
+         system_time += FAN_MIN_TIME
+         print_time = self.get_mcu().estimated_print_time(system_time)
+         self.set_speed(print_time, value, control_enable)
++    def set_speed_from_gcode(self, value):
++        # Apply at the print time of the last queued move so the change
++        # happens when the toolhead reaches the command
++        self.pending_values.append(value)
++        def apply_speed(print_time):
++            self.pending_values.pop(0)
++            self.set_speed(print_time, value)
++        toolhead = self.printer.lookup_object('toolhead')
++        toolhead.register_lookahead_callback(apply_speed)
++    def get_requested_speed(self):
++        # Speed including gcode changes still waiting in the motion queue
++        if not self.pending_values:
++            return self.last_fan_value
++        value = self.pending_values[-1]
++        if value < self.off_below:
++            value = 0.
++        return max(0., min(self.max_power, value * self.max_power))
+     def _handle_request_restart(self, print_time):
+         self.set_speed(print_time, 0.)
+ 
+     def get_status(self, eventtime):
++        # Report the speed the fan actually has now, not the queued one
++        if self.scheduled_values:
++            est_time = self.get_mcu().estimated_print_time(eventtime)
++            while (self.scheduled_values
++                   and self.scheduled_values[0][0] <= est_time):
++                self.status_value = self.scheduled_values.pop(0)[1]
+         tachometer_status = self.tachometer.get_status(eventtime)
+         return {
+-            'speed': self.last_fan_value,
++            'speed': self.status_value,
+             'rpm': tachometer_status['rpm'],
+         }
+ 
+@@ -158,12 +185,12 @@
+ 
+     def get_all_fan_speed(self):
+         fan_speed_dict = {}
+-        fan_speed_dict['main_fan'] = self.fan.last_fan_value
++        fan_speed_dict['main_fan'] = self.fan.get_requested_speed()
+         fan_speed_dict['extendable_fan'] = {}
+         for fan_id in self.extendable_fan:
+             fan_obj = self.printer.lookup_object("fan_generic {}".format(self.extendable_fan[fan_id]), None)
+             if fan_obj is not None:
+-                fan_speed_dict['extendable_fan'][fan_id] = fan_obj.fan.last_fan_value
++                fan_speed_dict['extendable_fan'][fan_id] = fan_obj.fan.get_requested_speed()
+             else:
+                 logging.error("No fan found with ID {}".format(fan_id))
+         return copy.deepcopy(fan_speed_dict)
+@@ -189,13 +216,13 @@
+             if fan_id in self.extendable_fan:
+                 fan_obj = self.printer.lookup_object("fan_generic {}".format(self.extendable_fan[fan_id]), None)
+                 if fan_obj is not None:
+-                    fan_obj.fan.set_speed_from_command(value)
++                    gcode_set_speed(fan_obj.fan, value)
+                 else:
+                     gcmd.respond_info("M106: No fan found with ID {}".format(fan_id))
+             else:
+                 gcmd.respond_info("M106: Unsupported fan ID: {}".format(fan_id))
+         else:
+-            self.fan.set_speed_from_command(value)
++            gcode_set_speed(self.fan, value)
+     def cmd_M107(self, gcmd):
+         # Turn fan off
+         fan_id = gcmd.get_int('P', None)
+@@ -203,13 +230,20 @@
+             if fan_id in self.extendable_fan:
+                 fan_obj = self.printer.lookup_object("fan_generic {}".format(self.extendable_fan[fan_id]), None)
+                 if fan_obj is not None:
+-                    fan_obj.fan.set_speed_from_command(0.)
++                    gcode_set_speed(fan_obj.fan, 0.)
+                 else:
+                     gcmd.respond_info("M107: No fan found with ID {}".format(fan_id))
+             else:
+                 gcmd.respond_info("M107: Unsupported fan ID: {}".format(fan_id))
+         else:
+-            self.fan.set_speed_from_command(0.)
++            gcode_set_speed(self.fan, 0.)
++
++def gcode_set_speed(fan, value):
++    # Fan wrappers (eg a purifier fan router) keep their own scheduling
++    if isinstance(fan, Fan):
++        fan.set_speed_from_gcode(value)
++    else:
++        fan.set_speed_from_command(value)
+ 
+ def load_config(config):
+     return PrinterFan(config)
+--- a/klippy/extras/fan_generic.py
++++ b/klippy/extras/fan_generic.py
+@@ -36,7 +36,7 @@
+         return self.fan.get_status(eventtime)
+     def cmd_SET_FAN_SPEED(self, gcmd):
+         speed = gcmd.get_float('SPEED', 0.)
+-        self.fan.set_speed_from_command(speed)
++        fan.gcode_set_speed(self.fan, speed)
+ 
+ def load_config_prefix(config):
+     return PrinterFanGeneric(config)
+--- a/klippy/extras/virtual_sdcard.py
++++ b/klippy/extras/virtual_sdcard.py
+@@ -993,9 +993,14 @@
+                 fan_obj = self.printer.lookup_object(fan_info[key][0], None)
+                 # self.gcode.respond_info("fan key: {}".format(key))
+                 if fan_obj is not None:
+-                    curtime = self.reactor.monotonic()
+-                    fan_sta = fan_obj.get_status(curtime)
+-                    fan_value = int(fan_sta[fan_info[key][2]] * 255)
++                    # Include fan changes still queued behind motion
++                    fan = getattr(fan_obj, 'fan', None)
++                    if hasattr(fan, 'get_requested_speed'):
++                        fan_value = int(fan.get_requested_speed() * 255)
++                    else:
++                        curtime = self.reactor.monotonic()
++                        fan_sta = fan_obj.get_status(curtime)
++                        fan_value = int(fan_sta[fan_info[key][2]] * 255)
+                     fan_state[key] = fan_info[key][1] + ' S{}'.format(fan_value)
+         fan_state.update(data_dict)
+         self.save_environment_data(self.pl_print_fan_info_env_path, fan_state, sync, flush, safe_write)
