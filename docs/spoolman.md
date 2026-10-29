@@ -14,6 +14,8 @@ Automatic filament metadata sync and spool tracking via
 
 - Resolves a Spoolman spool by ID or RFID card UID and applies its
   metadata (vendor, material, variant, colour) to the extruder channel.
+  A material the printer doesn't know, such as `PLA+`, `PLA Plus` or
+  `PETG-Pro`, is applied as its base material (`PLA`, `PETG`).
 - Associates RFID card UIDs with spools automatically, so scanning a
   known card loads its filament without any manual step.
 - Tracks the active spool in Moonraker so Spoolman can update remaining
