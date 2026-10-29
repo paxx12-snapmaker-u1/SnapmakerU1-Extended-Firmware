@@ -49,18 +49,45 @@ diameter, density, and temperatures under **Advanced**.
 ![Create tab, seeded from the detected tag](screenshots/filament-manager-spoolman-create-spool.png)
 
 UID ownership is rechecked on submit: if the tag turns out to belong to a spool
-already, that spool is assigned instead of a duplicate being created.
+already, that spool is assigned instead of a duplicate being created. On
+Spoolman v0.27.0 or newer the tag is attached to the new spool as a native tag
+right after it is created; older servers get it in `card_uids` instead.
 
 ## Assigning a Spool
 
 The **Assign** tab, which the card's **Spoolman** button opens on, lists each
-spool's stored card UIDs. The spool already assigned to that extruder comes
+spool's stored card UIDs, from both [stores](#card-uid-storage). The spool already assigned to that extruder comes
 first, then those carrying the same filament as the detected tag — same
 vendor, material, variant, colour — under **Suggested spools**. Use it to store
 a spool's second tag, or to link a blank tag to a spool that already exists.
 Hovering the card's Spoolman badge lists the spool's stored UIDs.
 
 ![Assign tab, with the suggested spool listed first](screenshots/filament-manager-spoolman-suggested-spools.png)
+
+## Card UID Storage
+
+SpoolLink records which RFID card belongs to which spool in up to two places,
+both enabled by default via the `[spoolman]` section of `extended2.cfg`:
+
+```ini
+[spoolman]
+use_spoolman_uid: true
+use_spoollink_uid: true
+```
+
+- `use_spoolman_uid` - Spoolman's native NFC/RFID tags, shown in the spool's
+  **Tags** section. Requires Spoolman v0.27.0 or newer; SpoolLink checks the
+  server version and skips this on older releases.
+- `use_spoollink_uid` - the `card_uids` spool extra field SpoolLink has always
+  used. Works with every Spoolman version and with apps that read that field.
+
+With both enabled, a native tag wins over a conflicting `card_uids` entry, and
+SpoolLink keeps the two in sync. Cards bound before upgrading Spoolman are
+copied to native tags the next time they are scanned.
+
+Filament Manager follows the same settings: it lists UIDs from every enabled
+store, treats a native tag as the owner of a UID the same way, and leaves the
+linking itself to SpoolLink.
 
 ## Apps
 
