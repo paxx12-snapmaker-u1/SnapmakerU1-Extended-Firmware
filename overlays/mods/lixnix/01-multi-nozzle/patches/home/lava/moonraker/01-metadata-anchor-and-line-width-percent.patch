@@ -1,0 +1,160 @@
+From: LixNix <105106115+LixNix@users.noreply.github.com>
+Subject: metadata: anchor footer keys and report line_width_percent
+
+Anchor list-parser footer regexes on '; ' so keys ending in the same name
+(e.g. support_nozzle_diameter) do not match, and report a percentage
+line_width as line_width_percent instead of millimetres.
+
+Original work by @LixNix (patch 04 of the U1 2.0.0.205
+nozzle-map fix), rebased onto firmware-extended without changes.
+
+--- a/moonraker/components/file_manager/metadata.py
++++ b/moonraker/components/file_manager/metadata.py
+@@ -384,6 +384,9 @@
+     def parse_line_width(self) -> Optional[float]:
+         return None
+ 
++    def parse_line_width_percent(self) -> Optional[float]:
++        return None
++
+     def parse_outer_wall_speed(self) -> Optional[float]:
+         return None
+ 
+@@ -489,7 +492,7 @@
+         return regex_find_string(r";\sfilament_multi_colors\s=\s(%S)", self.footer_data)
+ 
+     def parse_filament_colour_mode(self) -> Optional[List[float]]:
+-        line = regex_find_string(r'filament_colour_mode\s=\s(%S)\n', self.footer_data)
++        line = regex_find_string(r';\sfilament_colour_mode\s=\s(%S)\n', self.footer_data)
+         if line:
+             filament_colour_mode = regex_find_floats(r"(%F)", line)
+             if filament_colour_mode:
+@@ -497,7 +500,7 @@
+         return None
+ 
+     def parse_filament_weight(self) -> Optional[List[float]]:
+-        line = regex_find_string(r'filament\sused\s\[g\]\s=\s(%S)\n', self.footer_data)
++        line = regex_find_string(r';\sfilament\sused\s\[g\]\s=\s(%S)\n', self.footer_data)
+         if line:
+             filament_weight = regex_find_floats(r"(%F)", line)
+             if filament_weight:
+@@ -505,7 +508,7 @@
+         return None
+ 
+     def parse_filament_total(self) -> Optional[float]:
+-        line = regex_find_string(r'filament\sused\s\[mm\]\s=\s(%S)\n', self.footer_data)
++        line = regex_find_string(r';\sfilament\sused\s\[mm\]\s=\s(%S)\n', self.footer_data)
+         if line:
+             filament = regex_find_floats(
+                 r"(%F)", line
+@@ -551,7 +554,7 @@
+     def parse_filament_retract_length_toolchange(self) -> Optional[List[float]]:
+         # Use (.*)$ to capture empty values as well
+         line = regex_find_string(
+-            r'filament_retract_length_toolchange\s=\s(%S)', self.footer_data
++            r';\sfilament_retract_length_toolchange\s=\s(%S)', self.footer_data
+         )
+         if line:
+             retract_lengths = regex_find_floats(r"(%F)", line)
+@@ -609,7 +612,9 @@
+         )
+ 
+     def parse_nozzle_diameter_list(self) -> Optional[List[float]]:
+-        line = regex_find_string(r'nozzle_diameter\s=\s(%S)\n', self.footer_data)
++        # Anchored on '; ' like parse_nozzle_diameter above: the unanchored form also matches
++        # keys that merely END in 'nozzle_diameter' (e.g. 'support_nozzle_diameter = 0').
++        line = regex_find_string(r';\snozzle_diameter\s=\s(%S)\n', self.footer_data)
+         if line:
+             nozzle_diameter_list = regex_find_floats(r"(%F)", line)
+             if nozzle_diameter_list:
+@@ -619,13 +624,27 @@
+         return regex_find_int(r"; total layers count = (%D)", self.footer_data)
+ 
+     def parse_line_width(self) -> Optional[float]:
++        # Orca states line widths as a percentage of the nozzle diameter ("line_width = 105%").
++        # Reporting that as an absolute 105.0 mm is worse than reporting nothing: every consumer
++        # then rejects it as out of range. Report the percentage separately instead, and let the
++        # consumer resolve it against the diameter of the extruder it is actually working on.
++        if regex_find_string(r";\sline_width\s=\s(%S)\n", self.footer_data or "") is not None:
++            raw = regex_find_string(r";\sline_width\s=\s(%S)\n", self.footer_data)
++            if raw is not None and raw.strip().endswith('%'):
++                return None
+         return regex_find_float(r";\sline_width\s=\s(%F)", self.footer_data)
+ 
++    def parse_line_width_percent(self) -> Optional[float]:
++        raw = regex_find_string(r";\sline_width\s=\s(%S)\n", self.footer_data)
++        if raw is not None and raw.strip().endswith('%'):
++            return regex_find_float(r"(%F)", raw.strip()[:-1])
++        return None
++
+     def parse_outer_wall_speed(self) -> Optional[float]:
+         return regex_find_float(r";\souter_wall_speed\s=\s(%F)", self.footer_data)
+ 
+     def parse_outer_wall_speed_list(self) -> Optional[List[float]]:
+-        line = regex_find_string(r'outer_wall_speed\s=\s(%S)\n', self.footer_data)
++        line = regex_find_string(r';\souter_wall_speed\s=\s(%S)\n', self.footer_data)
+         if line:
+             outer_wall_speed_list = regex_find_floats(r"(%F)", line)
+             if outer_wall_speed_list:
+@@ -636,7 +655,7 @@
+         return regex_find_float(r";\souter_wall_acceleration\s=\s(%F)", self.footer_data)
+ 
+     def parse_outer_wall_acceleration_list(self) -> Optional[List[float]]:
+-        line = regex_find_string(r'outer_wall_acceleration\s=\s(%S)\n', self.footer_data)
++        line = regex_find_string(r';\souter_wall_acceleration\s=\s(%S)\n', self.footer_data)
+         if line:
+             outer_wall_acceleration_list = regex_find_floats(r"(%F)", line)
+             if outer_wall_acceleration_list:
+@@ -645,7 +664,7 @@
+ 
+ 
+     def parse_filament_diameter(self) -> Optional[List[float]]:
+-        line = regex_find_string(r'filament_diameter\s=\s(%S)\n', self.footer_data)
++        line = regex_find_string(r';\sfilament_diameter\s=\s(%S)\n', self.footer_data)
+         if line:
+             filament_diameter = regex_find_floats(r"(%F)", line)
+             if filament_diameter:
+@@ -653,7 +672,7 @@
+         return None
+ 
+     def parse_filament_max_volumetric_speed(self) -> Optional[List[float]]:
+-        line = regex_find_string(r'filament_max_volumetric_speed\s=\s(%S)\n', self.footer_data)
++        line = regex_find_string(r';\sfilament_max_volumetric_speed\s=\s(%S)\n', self.footer_data)
+         if line:
+             filament_max_volumetric_speed = regex_find_floats(r"(%F)", line)
+             if filament_max_volumetric_speed:
+@@ -661,7 +680,7 @@
+         return None
+ 
+     def parse_filament_flow_ratio(self) -> Optional[List[float]]:
+-        line = regex_find_string(r'filament_flow_ratio\s=\s(%S)\n', self.footer_data)
++        line = regex_find_string(r';\sfilament_flow_ratio\s=\s(%S)\n', self.footer_data)
+         if line:
+             filament_flow_ratio = regex_find_floats(r"(%F)", line)
+             if filament_flow_ratio:
+@@ -669,7 +688,7 @@
+         return None
+ 
+     def parse_filament_used_mm(self) -> Optional[List[float]]:
+-        line = regex_find_string(r'filament\sused\s\[mm\]\s=\s(%S)\n', self.footer_data)
++        line = regex_find_string(r';\sfilament\sused\s\[mm\]\s=\s(%S)\n', self.footer_data)
+         if line:
+             filament_used_mm = regex_find_floats(r"(%F)", line)
+             if filament_used_mm:
+@@ -677,7 +696,7 @@
+         return None
+ 
+     def parse_nozzle_temp(self) -> Optional[List[float]]:
+-        line = regex_find_string(r'nozzle_temperature\s=\s(%S)\n', self.footer_data)
++        line = regex_find_string(r';\snozzle_temperature\s=\s(%S)\n', self.footer_data)
+         if line:
+             nozzle_temp = regex_find_floats(r"(%F)", line)
+             if nozzle_temp:
+@@ -1245,6 +1264,7 @@
+     'filament_weights',
+     'filament_retract_length_toolchange',
+     'line_width',
++    'line_width_percent',
+     'outer_wall_speed',
+     'outer_wall_acceleration',
+     'outer_wall_speed_list',

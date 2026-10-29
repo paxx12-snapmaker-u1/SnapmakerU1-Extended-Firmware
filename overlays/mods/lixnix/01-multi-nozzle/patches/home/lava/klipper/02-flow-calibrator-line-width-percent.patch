@@ -1,0 +1,39 @@
+From: LixNix <105106115+LixNix@users.noreply.github.com>
+Subject: flow_calibrator: resolve percentage line width per extruder
+
+Orca states line widths as a percentage of the nozzle diameter. Resolve it
+against the calibrated extruder's diameter instead of failing the range
+check and falling back to the built-in flow parameters.
+
+Original work by @LixNix (patch 03 of the U1 2.0.0.205
+nozzle-map fix), rebased onto firmware-extended without changes.
+
+--- a/klippy/extras/flow_calibrator.py
++++ b/klippy/extras/flow_calibrator.py
+@@ -768,7 +768,16 @@
+                         nozzle_volume_type == 'high_flow':
+                     gcode_print_accel = gcode_parameters['outer_wall_accel_hf']
+ 
+-                if gcode_parameters['line_width'] < 0.00001 or gcode_parameters['line_width'] > nozzle_diameter * 2 or \
++                # Orca states line widths as a percentage of the nozzle diameter. Resolve it here,
++                # where the diameter of the extruder being calibrated is known; without this the
++                # value never passes the range check below and every job silently falls back to the
++                # built-in flow parameters.
++                gcode_line_width = gcode_parameters['line_width']
++                gcode_line_width_percent = gcode_parameters.get('line_width_percent', 0)
++                if gcode_line_width < 0.00001 and gcode_line_width_percent > 0.00001:
++                    gcode_line_width = nozzle_diameter * gcode_line_width_percent / 100.0
++
++                if gcode_line_width < 0.00001 or gcode_line_width > nozzle_diameter * 2 or \
+                         gcode_parameters['layer_height'] < 0.00001 or gcode_parameters['layer_height'] > nozzle_diameter * 1.1 or \
+                         gcode_max_vol_speed < 0.00001 or gcode_max_vol_speed > 1000.0 or \
+                         gcode_print_accel < 0.00001 or gcode_print_accel > 100000.0 or \
+@@ -776,7 +785,7 @@
+                         gcode_temp < extruder.heater.min_extrude_temp or gcode_temp > extruder.heater.max_temp:
+                     raise
+ 
+-                area_line = gcode_parameters['layer_height'] * (gcode_parameters['line_width'] - gcode_parameters['layer_height'] * ( \
++                area_line = gcode_parameters['layer_height'] * (gcode_line_width - gcode_parameters['layer_height'] * ( \
+                                 1.0 - 3.1415926 / 4.0))
+                 area_filament = 0.875 * 0.875 * 3.1415926
+ 
