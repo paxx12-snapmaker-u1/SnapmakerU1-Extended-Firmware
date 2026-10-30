@@ -55,7 +55,8 @@ if [[ -n "$CI" ]] || [[ ! -f "$KERNEL_BUILD_DIR/done" ]]; then
   mkdir -p "$KERNEL_BUILD_DIR"
   cp -v "$KERNEL_CONFIG" "$KERNEL_BUILD_DIR/.config"
   scripts/config --file "$KERNEL_BUILD_DIR/.config" \
-    --module CONFIG_TUN
+    --module CONFIG_TUN \
+    --module CONFIG_SND_ALOOP
   : | kernel_make olddefconfig
   kernel_make modules_prepare
   touch "$KERNEL_BUILD_DIR/done"
@@ -64,6 +65,7 @@ fi
 # Individual modules
 echo ">> Compiling individual kernel modules"
 kernel_make drivers/net/tun.ko
+kernel_make sound/drivers/aloop.ko
 
 echo ">> Copying compiled modules to output directory"
 mkdir -p "$OUT_DIR"
