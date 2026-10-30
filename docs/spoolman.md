@@ -50,6 +50,8 @@ diameter, density, and temperatures under **Advanced**.
 
 UID ownership is rechecked on submit: if the tag turns out to belong to a spool
 already, that spool is assigned instead of a duplicate being created.
+On Spoolman v0.27.0 or newer the tag is linked to the new spool as a native
+tag right after it is created; older servers get it in `card_uids`.
 
 ## Assigning a Spool
 
@@ -61,6 +63,22 @@ a spool's second tag, or to link a blank tag to a spool that already exists.
 Hovering the card's Spoolman badge lists the spool's stored UIDs.
 
 ![Assign tab, with the suggested spool listed first](screenshots/filament-manager-spoolman-suggested-spools.png)
+
+## Card UID Storage
+
+Where SpoolLink records which RFID card belongs to which spool depends on the
+Spoolman version, checked at startup and before each card lookup:
+
+- Spoolman v0.27.0 or newer - Spoolman's native NFC/RFID tags, shown in the
+  spool's **Tags** section and usable by other tag readers.
+- Older Spoolman - the `card_uids` spool extra field.
+
+When SpoolLink first sees a server with native tags, it moves every
+`card_uids` entry onto a tag and clears it from the field. A card listed on
+more than one spool is left in `card_uids` and logged, as is one that could
+not be linked; it is retried on the next Moonraker start once corrected in
+Spoolman. A card already tagged on another spool is dropped from `card_uids`,
+as the tag wins. Filament Manager follows the same rule.
 
 ## Apps
 
