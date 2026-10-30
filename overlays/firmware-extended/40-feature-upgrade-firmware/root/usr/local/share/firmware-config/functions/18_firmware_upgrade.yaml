@@ -30,9 +30,11 @@ quick_actions:
                     except FileNotFoundError:
                         pass
 
+            # No `-f`: the update server returns a JSON error body on
+            # failure (e.g. GitHub rate-limited), which `-f` would discard.
             def curl_json(url):
                 out = subprocess.run(
-                    ["curl", "-L", "-f", "-sS", url],
+                    ["curl", "-L", "-sS", url],
                     capture_output=True, text=True, check=True,
                 )
                 return json.loads(out.stdout)
@@ -64,6 +66,10 @@ quick_actions:
                     desc = curl_json(latest["data"]["note"])
                 except Exception as e:
                     print(f"ERROR: Failed to fetch release notes: {e}")
+                    return 1
+
+                if desc.get("error"):
+                    print(f"ERROR: Failed to fetch release notes: {desc['error']}")
                     return 1
 
                 fullversion = desc.get("fullversion")
