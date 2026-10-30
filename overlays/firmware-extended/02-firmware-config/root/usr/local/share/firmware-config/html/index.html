@@ -84,7 +84,11 @@
         .notice { display: none; background: var(--warning); color: #000; padding: 12px 16px; border-radius: 8px; margin-bottom: 16px; font-size: 14px; }
         .notice.visible { display: block; }
         .notice a { color: #000; font-weight: 600; }
+        @media (max-width: 640px) {
+            body { padding: 12px; }
+        }
     </style>
+    <link rel="stylesheet" href="fan-curves.css">
 </head>
 <body>
     <div class="container">
@@ -177,9 +181,17 @@
         </div>
     </div>
 
+    <script src="fan-curves.js"></script>
     <script>
         // Helper function to get element by ID
         const $ = id => document.getElementById(id);
+
+        // Helper function to escape text that goes into the markup
+        function escapeHtml(value) {
+            return String(value ?? '').replace(/[&<>"']/g, character => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            })[character]);
+        }
 
         // Auth functions for Moonraker/Fluidd token
         function getJWT() {
@@ -338,24 +350,62 @@
                     `<div class="group-section">
                         <div class="group-title">${group.label}</div>
                         ${group.items.filter(setting => !setting.hidden || showHidden).map(setting => {
-                            const options = Object.entries(setting.options)
-                                .filter(([optKey, optVal]) => !optVal.hidden || optKey === setting.current || showHidden)
-                                .map(([optKey, optVal]) => {
+                            const optionEntries = Object.entries(setting.options)
+                                .filter(([optKey, optVal]) => !optVal.hidden || optKey === setting.current || showHidden);
+                            // A profile the option list does not cover is still the current
+                            // one, so the dropdown has to name it instead of showing a
+                            // different profile.
+                            const listed = optionEntries.some(([optKey]) => optKey === setting.current);
+                            const currentOption = listed || !setting.current ? '' :
+                                `<option value="${escapeHtml(setting.current)}" data-label="${encodeURIComponent(setting.current)}" data-confirm="" data-inputs="null" selected>${escapeHtml(setting.current)}</option>`;
+                            const options = currentOption + optionEntries.map(([optKey, optVal]) => {
                                 return `<option value="${optKey}" data-label="${encodeURIComponent(optVal.label)}" data-confirm="${encodeURIComponent(optVal.confirm || '')}" data-inputs="${encodeURIComponent(JSON.stringify(optVal.inputs || null))}"${optKey === setting.current ? ' selected' : ''}>${optVal.label}</option>`;
                             }).join('');
-                            return `<div class="row"${setting.help_url ? ` onclick="if(!event.target.closest('select'))window.open('${setting.help_url}','_blank')"` : ''}>
+                            return `<div class="row"${setting.help_url ? ` onclick="if(!event.target.closest('select') && !event.target.closest('button'))window.open('${setting.help_url}','_blank')"` : ''}>
                                 <div class="row-label-wrap">
                                     <span class="row-label">${setting.label}${setting.help_url ? `<a class="row-help" href="${setting.help_url}" target="_blank" onclick="event.stopPropagation()">↗</a>` : ''}</span>
                                     ${setting.description ? `<span class="row-desc">${setting.description}</span>` : ''}
                                 </div>
                                 <select data-prev-value="${setting.current}" data-help-url="${setting.help_url || ''}" onchange="updateSetting('${setting.id}', this)">${options}</select>
-                            </div>`;
+                            </div>${setting.id === 'fan_curves' ? '<div data-fan-curves-anchor></div>' : ''}`;
                         }).join('')}
                     </div>`
                 ).join('');
+
+                // The editor goes under the fan curve setting. It keeps its
+                // place when the settings are drawn again, so a refresh does
+                // not throw away an edit that was not saved.
+                const anchor = container.querySelector('[data-fan-curves-anchor]');
+                if (anchor) {
+                    anchor.replaceWith(fanCurvesEditorHost());
+                    if (!fanCurvesEditor) {
+                        fanCurvesEditor = window.FanCurveEditor.create({
+                            onApplied: () => refreshAll()
+                        });
+                        fanCurvesEditor.mount(fanCurvesHost);
+                    }
+                }
             } catch (e) {
                 container.innerHTML = `<div class="loading" style="color:var(--error)">Error: ${e.message}</div>`;
             }
+        }
+
+        // ========================================
+        // Fan Curves
+        // ========================================
+
+        // The editor is a component of this page. It is mounted under the
+        // fan curve setting, so there is no second page to open and no
+        // second copy of the state to keep in step.
+        let fanCurvesEditor = null;
+        let fanCurvesHost = null;
+
+        function fanCurvesEditorHost() {
+            if (!fanCurvesHost) {
+                fanCurvesHost = document.createElement('div');
+                fanCurvesHost.className = 'fc-editor-host';
+            }
+            return fanCurvesHost;
         }
 
         // ========================================
@@ -834,6 +884,7 @@
                 btn.innerHTML = '&#x21bb; Refresh';
                 btn.disabled = false;
             }
+            if (fanCurvesEditor) fanCurvesEditor.refresh();
         }
 
         // ========================================
