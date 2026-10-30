@@ -38,8 +38,11 @@ if [ "$1" = start ]; then
 		# Keep settings under the extended config dir, which survives a firmware upgrade;
 		# `$HELIX_ROOT` doesn't.
 		export HELIX_CONFIG_DIR="$HELIX_CFG_DIR"
-		if [ ! -d "$HELIX_CFG_DIR" ]; then
-			mkdir -p "$HELIX_CFG_DIR"
+		# HelixScreen runs as root and creates `themes/` with mode 0750, which Moonraker
+		# (as `lava`) can't list, failing its scan of the whole `config` root. Create it
+		# first so HelixScreen skips its own `mkdir`.
+		if [ ! -d "$HELIX_CFG_DIR/themes" ]; then
+			mkdir -p "$HELIX_CFG_DIR/themes"
 			chown -R lava:lava "$HELIX_CFG_DIR"
 		fi
 
