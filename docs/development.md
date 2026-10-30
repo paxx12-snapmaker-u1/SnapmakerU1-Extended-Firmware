@@ -228,6 +228,62 @@ The `20-klipper-patches` overlay in `firmware-extended/` backports upstream Klip
 
 Edit `vars.mk` to configure base firmware and kernel.
 
+## Firmware Config Settings With a Form
+
+A setting in a `functions/*.yaml` file normally offers a fixed list of
+`options`. A setting with many fields (addresses, tokens, checkboxes) can
+open a form instead: give it `form` in place of `options`.
+
+```yaml
+settings:
+  monitoring_debugging:
+    items:
+      example:
+        label: Example
+        description: Shown in the settings list.
+        help_url: https://example.com/docs
+        get_cmd:                      # optional: a status line for the list
+          - /usr/local/bin/example-config.py
+          - status
+        form:
+          html: forms/example.html    # under html/, served with the page
+          get_cmd:                    # prints the form's values as JSON
+            - /usr/local/bin/example-config.py
+            - get
+          commands:
+            test:
+              label: Send Test
+              style: secondary        # btn-secondary; default primary
+              cmd:
+                - /usr/local/bin/example-config.py
+                - test
+            save:
+              label: Save & Apply
+              close_on_success: true  # close the form, reload the list
+              cmd:
+                - /usr/local/bin/example-config.py
+                - save
+```
+
+How it runs:
+
+- The settings list shows the setting with a **Configure** button (and the
+  `get_cmd` output as a status line, if any).
+- Opening it loads `form.html` into a modal and runs `form.get_cmd`, whose
+  stdout must be a JSON document; the page passes it to the fragment.
+- The HTML fragment registers a handler:
+  `window.firmwareConfigForms.<id> = { render(container, data), collect(),
+  confirm?(command, payload, dirty) }`. `render` fills the form from the
+  JSON, `collect` returns the JSON to submit (throw an `Error` to show a
+  validation message instead), and the optional `confirm` may ask the user
+  before a command runs (return `false` to cancel).
+- Each command POSTs `collect()`'s JSON (`Content-Type: application/json`,
+  same origin only, at most 64 KB) to `api/form/<id>/<command>`; the server
+  pipes the body to the command's stdin and streams its stdout to the
+  action log, like an action. Exit code 0 is success. Lines starting with
+  `ERROR` or `WARNING` are shown in red.
+- Closing a form with unsaved changes asks for confirmation.
+
 ## Extract Firmware
 
 To extract and examine the base firmware:
