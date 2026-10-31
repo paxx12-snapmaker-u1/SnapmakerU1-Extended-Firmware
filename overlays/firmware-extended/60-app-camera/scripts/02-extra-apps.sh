@@ -18,11 +18,15 @@ export CROSS_COMPILE=aarch64-linux-gnu-
 echo ">> Compiling v4l2-imposter..."
 make -C "$CUR_DIR/../apps/v4l2-imposter" install DESTDIR="$1"
 
+echo ">> Compiling rockit-imposter..."
+make -C "$CUR_DIR/../apps/rockit-imposter" install DESTDIR="$1"
+
 echo ">> Compiling fake-service..."
 make -C "$CUR_DIR/../apps/fake-service" install DESTDIR="$1"
 
 echo ">> Validate binaries..."
 stat "$1/usr/local/lib/libv4l2-imposter.so" >/dev/null
+stat "$1/usr/local/lib/librockit-imposter.so" >/dev/null
 stat "$1/usr/local/bin/fake-service" >/dev/null
 
 echo ">> Extra apps installation completed successfully."
