@@ -79,6 +79,7 @@ Heavily expanded firmware with extensive features and customization:
 
 **Remote Access:**
 
+- [HTTPS](https.md) - Self-signed, manual or ACME certificates (Let's Encrypt, ZeroSSL, private CAs, EAB, works offline) with auto-renewal, and optional client certificate (mTLS) authentication
 - [VPN Remote Access](vpn.md) - Secure remote access via Tailscale
 - [Cloud Remote Access](cloud.md) - Cloud-based remote access service for 3D printers
 

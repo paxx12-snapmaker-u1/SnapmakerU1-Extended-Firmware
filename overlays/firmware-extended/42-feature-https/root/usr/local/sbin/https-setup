@@ -1,0 +1,638 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-PackageHomePage: https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware
+# SPDX-FileCopyrightText: Copyright (c) 2026 @paxx12
+
+#
+# Configures HTTPS for nginx from the `[https]` section of extended2.cfg.
+#
+# Usage: https-setup apply           Write nginx listen config and pick the active certificate
+#        https-setup renew [--force] Obtain/renew the ACME certificate, reload nginx on change
+#        https-setup cron            `renew`, but quiet unless mode is `acme` (crontab entry)
+#        https-setup regen           Regenerate the self-signed certificate and reload nginx
+#        https-setup reload          `apply` and reload nginx, after files in extended/tls changed
+#        https-setup recover         Turn off client certificates (mTLS) after a lockout
+#        https-setup validate <what> Check `manual` cert/key or `mtls` client CA, for the UI
+#        https-setup status <field>  Print one status field, for the UI
+#
+# The certificate nginx serves is always `$STATE_DIR/active/`. Whenever the
+# configured source is unusable (manual files missing, ACME not issued yet),
+# a self-signed certificate is served instead so nginx keeps starting.
+#
+
+set -u
+
+# cron runs with a minimal PATH
+export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+EXTENDED_CFG="/home/lava/printer_data/config/extended/extended2.cfg"
+USER_DIR="/home/lava/printer_data/config/extended/tls"
+STATE_DIR="/home/lava/printer_data/tls"
+ACTIVE_DIR="$STATE_DIR/active"
+SELF_DIR="$STATE_DIR/self-signed"
+ACME_DIR="$STATE_DIR/acme"
+ACME_CERT="$ACME_DIR/installed/fullchain.pem"
+ACME_KEY="$ACME_DIR/installed/key.pem"
+ACME_WEBROOT="/run/acme-webroot"
+ACMESH_DIR="/usr/local/share/acme.sh"
+ACMESH="$ACMESH_DIR/acme.sh"
+LISTEN_DIR="/etc/nginx/listen.d"
+PORT80_SITE="/etc/nginx/sites-enabled/00-https-port80"
+CHECK_SITE="/etc/nginx/sites-enabled/00-https-check"
+CHECK_PORT=4443
+MOONRAKER_TWEAK="/usr/local/share/firmware-config/tweaks/moonraker/bind-localhost.cfg"
+MOONRAKER_LINK="/home/lava/printer_data/config/extended/moonraker/https-bind-localhost.cfg"
+LOG_FILE="/home/lava/printer_data/logs/https.log"
+RECOVER_FLAG="/run/https-recover"
+
+log() {
+    echo "$*"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') $*" >> "$LOG_FILE" 2>/dev/null
+}
+
+cfg() {
+    /usr/local/bin/extended-config.py get "$EXTENDED_CFG" https "$1" "$2"
+}
+
+load_config() {
+    MODE=$(cfg mode none)
+    HTTP_MODE=$(cfg http redirect)
+    PORT=$(cfg port 443)
+    MTLS=$(cfg mtls false)
+    MOONRAKER_BIND=$(cfg moonraker_bind all)
+
+    case "$MODE" in
+        none|self_signed|manual|acme) ;;
+        *) log "Unknown https mode '$MODE', using 'none'"; MODE=none ;;
+    esac
+    case "$HTTP_MODE" in
+        redirect|serve|off) ;;
+        *) log "Unknown http mode '$HTTP_MODE', using 'redirect'"; HTTP_MODE=redirect ;;
+    esac
+    if ! [[ "$PORT" =~ ^[0-9]+$ ]] || [[ "$PORT" -lt 1 || "$PORT" -gt 65535 || "$PORT" -eq 80 ]]; then
+        log "Invalid https port '$PORT', using 443"
+        PORT=443
+    fi
+}
+
+# cert_matches_key <cert> <key>
+cert_matches_key() {
+    [[ -s "$1" && -s "$2" ]] || return 1
+    local cert_pub key_pub
+    cert_pub=$(openssl x509 -noout -pubkey -in "$1" 2>/dev/null) || return 1
+    key_pub=$(openssl pkey -pubout -in "$2" 2>/dev/null) || return 1
+    [[ -n "$cert_pub" && "$cert_pub" == "$key_pub" ]]
+}
+
+# cert_valid_for <cert> <seconds>: not expiring within <seconds>
+cert_valid_for() {
+    openssl x509 -noout -checkend "$2" -in "$1" >/dev/null 2>&1
+}
+
+fingerprint() {
+    openssl x509 -noout -fingerprint -sha256 -in "$1" 2>/dev/null | cut -d= -f2
+}
+
+self_signed_names() {
+    local host names ip
+    host=$(hostname)
+    names="DNS:$host,DNS:$host.local,DNS:localhost,IP:127.0.0.1"
+    for ip in $(ip -o -4 addr show scope global 2>/dev/null | awk '{split($4, a, "/"); print a[1]}'); do
+        names="$names,IP:$ip"
+    done
+    local extra entry
+    extra=$(cfg self_signed_names "")
+    IFS=',' read -ra entries <<< "$extra"
+    for entry in "${entries[@]}"; do
+        entry=$(echo "$entry" | tr -d '[:space:]')
+        [[ -z "$entry" ]] && continue
+        if [[ "$entry" =~ ^[0-9.]+$ || "$entry" == *:* ]]; then
+            names="$names,IP:$entry"
+        else
+            names="$names,DNS:$entry"
+        fi
+    done
+    echo "$names"
+}
+
+# Only the configured names decide when to regenerate: IPs are captured at
+# generation time, so a DHCP change does not silently replace a certificate
+# users may have trusted. `regen` picks up new IPs.
+self_signed_config_id() {
+    echo "$(hostname)|$(cfg self_signed_names "")" | sha256sum | cut -d' ' -f1
+}
+
+generate_self_signed() {
+    local names
+    names=$(self_signed_names)
+    log "Generating self-signed certificate for $names"
+    mkdir -p "$SELF_DIR"
+    chmod 700 "$SELF_DIR"
+    if ! openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes \
+            -days 825 -subj "/CN=$(hostname)" \
+            -addext "subjectAltName=$names" \
+            -addext "basicConstraints=critical,CA:FALSE" \
+            -addext "keyUsage=critical,digitalSignature" \
+            -addext "extendedKeyUsage=serverAuth" \
+            -keyout "$SELF_DIR/key.pem.tmp" -out "$SELF_DIR/cert.pem.tmp" 2>/dev/null; then
+        log "ERROR: Failed to generate self-signed certificate"
+        rm -f "$SELF_DIR/key.pem.tmp" "$SELF_DIR/cert.pem.tmp"
+        return 1
+    fi
+    chmod 600 "$SELF_DIR/key.pem.tmp"
+    mv "$SELF_DIR/key.pem.tmp" "$SELF_DIR/key.pem"
+    mv "$SELF_DIR/cert.pem.tmp" "$SELF_DIR/cert.pem"
+    self_signed_config_id > "$SELF_DIR/config-id"
+}
+
+ensure_self_signed() {
+    if cert_matches_key "$SELF_DIR/cert.pem" "$SELF_DIR/key.pem" &&
+            cert_valid_for "$SELF_DIR/cert.pem" $((30 * 86400)) &&
+            [[ "$(cat "$SELF_DIR/config-id" 2>/dev/null)" == "$(self_signed_config_id)" ]]; then
+        return 0
+    fi
+    generate_self_signed
+}
+
+# activate <cert> <key>: copy into the directory nginx reads from
+activate() {
+    mkdir -p "$ACTIVE_DIR"
+    chmod 700 "$ACTIVE_DIR"
+    cp "$1" "$ACTIVE_DIR/fullchain.pem.tmp" &&
+        cp "$2" "$ACTIVE_DIR/key.pem.tmp" &&
+        chmod 600 "$ACTIVE_DIR/key.pem.tmp" &&
+        mv "$ACTIVE_DIR/fullchain.pem.tmp" "$ACTIVE_DIR/fullchain.pem" &&
+        mv "$ACTIVE_DIR/key.pem.tmp" "$ACTIVE_DIR/key.pem"
+}
+
+activate_self_signed() {
+    ensure_self_signed || return 1
+    activate "$SELF_DIR/cert.pem" "$SELF_DIR/key.pem"
+    echo "self_signed" > "$ACTIVE_DIR/source"
+}
+
+# Pick the certificate for the configured mode and copy it into place.
+select_certificate() {
+    case "$MODE" in
+        manual)
+            if cert_matches_key "$USER_DIR/cert.pem" "$USER_DIR/key.pem"; then
+                activate "$USER_DIR/cert.pem" "$USER_DIR/key.pem"
+                echo "manual" > "$ACTIVE_DIR/source"
+                return
+            fi
+            log "ERROR: $USER_DIR/cert.pem and key.pem are missing or do not match; serving self-signed certificate instead"
+            ;;
+        acme)
+            if cert_matches_key "$ACME_CERT" "$ACME_KEY" && cert_valid_for "$ACME_CERT" 0; then
+                activate "$ACME_CERT" "$ACME_KEY"
+                echo "acme" > "$ACTIVE_DIR/source"
+                return
+            fi
+            log "No valid ACME certificate yet; serving self-signed certificate until one is issued"
+            ;;
+    esac
+    activate_self_signed
+}
+
+valid_client_ca() {
+    [[ -s "$USER_DIR/client-ca.pem" ]] && openssl x509 -noout -in "$USER_DIR/client-ca.pem" >/dev/null 2>&1
+}
+
+write_listen_config() {
+    mkdir -p "$LISTEN_DIR"
+    local conf="$LISTEN_DIR/00-listen.conf"
+
+    if [[ "$MODE" == "none" ]]; then
+        cat > "$conf" <<'EOF'
+listen 80 default_server;
+listen [::]:80 default_server;
+set $https_mtls_mode off;
+EOF
+        rm -f "$PORT80_SITE" "$CHECK_SITE"
+        return
+    fi
+
+    # required: mtls on. test: client-ca.pem uploaded but mtls off; a separate
+    # server on $CHECK_PORT asks for a certificate without requiring one, so
+    # /https-check there shows whether it would pass, while the main site
+    # never asks (a bad certificate offered there would fail every request).
+    # off: nothing to check against.
+    local mtls_mode=off
+    if valid_client_ca; then
+        cp "$USER_DIR/client-ca.pem" "$ACTIVE_DIR/client-ca.pem"
+        mtls_mode="test"
+        [[ "$MTLS" == "true" ]] && mtls_mode=required
+    elif [[ "$MTLS" == "true" ]]; then
+        log "ERROR: mtls is enabled but $USER_DIR/client-ca.pem is missing or invalid; client certificates are NOT required"
+    fi
+    local mtls_enabled=false
+    [[ "$mtls_mode" == "required" ]] && mtls_enabled=true
+
+    local http_mode="$HTTP_MODE"
+    if [[ "$mtls_enabled" == "true" && "$http_mode" == "serve" ]]; then
+        log "WARNING: http=serve would bypass client certificates; redirecting port 80 to HTTPS instead"
+        http_mode=redirect
+    fi
+
+    {
+        echo "listen $PORT ssl http2 default_server;"
+        echo "listen [::]:$PORT ssl http2 default_server;"
+        if [[ "$http_mode" == "serve" ]]; then
+            echo "listen 80 default_server;"
+            echo "listen [::]:80 default_server;"
+        fi
+        echo "ssl_certificate $ACTIVE_DIR/fullchain.pem;"
+        echo "ssl_certificate_key $ACTIVE_DIR/key.pem;"
+        echo "ssl_protocols TLSv1.2 TLSv1.3;"
+        echo "ssl_session_cache shared:SSL:1m;"
+        echo "ssl_session_timeout 1d;"
+        if [[ "$mtls_mode" == "required" ]]; then
+            echo "ssl_client_certificate $ACTIVE_DIR/client-ca.pem;"
+            echo "ssl_verify_client on;"
+            echo "ssl_verify_depth 3;"
+            # Missing or rejected certificates (expired, wrong purpose, ...)
+            # get the check page explaining why instead of a bare 400
+            echo "error_page 495 496 =400 /https-check;"
+        fi
+        echo "set \$https_mtls_mode $mtls_mode;"
+    } > "$conf"
+
+    if [[ "$mtls_mode" == "test" ]]; then
+        cat > "$CHECK_SITE" <<EOF
+# Generated by https-setup: client certificate test page, see /https-check
+server {
+    listen $CHECK_PORT ssl;
+    listen [::]:$CHECK_PORT ssl;
+    server_name _;
+    access_log off;
+    ssl_certificate $ACTIVE_DIR/fullchain.pem;
+    ssl_certificate_key $ACTIVE_DIR/key.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_client_certificate $ACTIVE_DIR/client-ca.pem;
+    ssl_verify_client optional_no_ca;
+    ssl_verify_depth 3;
+    error_page 495 496 =400 /https-check;
+    set \$https_mtls_mode check_port;
+
+    include /etc/nginx/fluidd.d/https-check.conf;
+
+    location / {
+        return 302 /https-check;
+    }
+}
+EOF
+    else
+        rm -f "$CHECK_SITE"
+    fi
+
+    if [[ "$http_mode" == "serve" ]]; then
+        rm -f "$PORT80_SITE"
+        return
+    fi
+
+    local target='https://$host$request_uri'
+    [[ "$PORT" != "443" ]] && target="https://\$host:$PORT\$request_uri"
+    # 302, not 301: browsers cache permanent redirects, which would keep
+    # sending them to HTTPS after switching port 80 to serve
+    local action="return 302 $target;"
+    [[ "$http_mode" == "off" ]] && action="return 404;"
+
+    cat > "$PORT80_SITE" <<EOF
+# Generated by https-setup: plain HTTP on port 80 when HTTPS is enabled
+server {
+    listen 80 default_server;
+    listen [::]:80 default_server;
+    server_name _;
+    access_log off;
+
+    location ^~ /.well-known/acme-challenge/ {
+        root $ACME_WEBROOT;
+        default_type text/plain;
+    }
+
+    location / {
+        $action
+    }
+}
+EOF
+}
+
+apply_moonraker_bind() {
+    if [[ "$MOONRAKER_BIND" == "localhost" ]]; then
+        mkdir -p "$(dirname "$MOONRAKER_LINK")"
+        ln -sf "$MOONRAKER_TWEAK" "$MOONRAKER_LINK"
+    else
+        rm -f "$MOONRAKER_LINK"
+    fi
+}
+
+apply() {
+    load_config
+    mkdir -p "$STATE_DIR" "$ACME_WEBROOT"
+    chmod 700 "$STATE_DIR"
+    if [[ "$MODE" != "none" ]]; then
+        select_certificate || log "ERROR: No usable certificate; HTTPS will fail to start"
+    fi
+    write_listen_config
+    apply_moonraker_bind
+    log "Applied: mode=$MODE http=$HTTP_MODE port=$PORT mtls=$MTLS moonraker_bind=$MOONRAKER_BIND"
+}
+
+reload_nginx() {
+    if ! /usr/sbin/nginx -p /home/lava -t >/dev/null 2>&1; then
+        log "ERROR: nginx configuration test failed; not reloading"
+        /usr/sbin/nginx -p /home/lava -t
+        return 1
+    fi
+    /etc/init.d/S50nginx reload >/dev/null
+}
+
+# Export KEY=VALUE lines from acme.env (EAB and DNS provider credentials).
+# The file is user-editable and acme.sh runs as root, so it is parsed here
+# rather than sourced, and names that would change how acme.sh or the shell
+# behave are refused. Runs with output already going to the log, hence echo.
+load_acme_env() {
+    local file="$USER_DIR/acme.env" line key value
+    [[ -f "$file" ]] || return 0
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        line="${line%$'\r'}"
+        [[ "$line" =~ ^[[:space:]]*(#|$) ]] && continue
+        line="${line#export }"
+        if [[ ! "$line" =~ ^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]]; then
+            echo "Ignoring invalid line in $file: $line"
+            continue
+        fi
+        key="${BASH_REMATCH[1]}"
+        value="${BASH_REMATCH[2]}"
+        case "$key" in
+            PATH|IFS|ENV|BASH_ENV|BASH_FUNC_*|SHELLOPTS|BASHOPTS|PS4|LD_*|GCONV_PATH|HOME|DEBUG|\
+            _*|LE_*|Le_*|CA_*|CERT_*|ACCOUNT_*|ACME_DIRECTORY|*_HOME|*_PATH)
+                echo "Ignoring $key in $file"
+                continue
+                ;;
+        esac
+        if [[ "$value" =~ ^\"(.*)\"$ || "$value" =~ ^\'(.*)\'$ ]]; then
+            value="${BASH_REMATCH[1]}"
+        fi
+        export "$key=$value"
+    done < "$file"
+}
+
+# Directory URL for an acme.sh server shortcode (mirrors CA_NAMES in acme.sh)
+acme_server_url() {
+    case "$1" in
+        https://*) echo "$1" ;;
+        letsencrypt) echo "https://acme-v02.api.letsencrypt.org/directory" ;;
+        letsencrypt_test|letsencrypttest) echo "https://acme-staging-v02.api.letsencrypt.org/directory" ;;
+        zerossl) echo "https://acme.zerossl.com/v2/DV90" ;;
+        sslcom) echo "https://acme.ssl.com/sslcom-dv-rsa" ;;
+        google) echo "https://dv.acme-v02.api.pki.goog/directory" ;;
+        googletest|google_test) echo "https://dv.acme-v02.test-api.pki.goog/directory" ;;
+        actalis|actalis.com) echo "https://acme-api.actalis.com/acme/directory" ;;
+        *) return 1 ;;
+    esac
+}
+
+# Fail fast with a useful message: acme.sh itself retries an unreachable or
+# untrusted server for many minutes.
+acme_preflight() {
+    local url=$1 curl_args=(-fsS -o /dev/null --max-time 20) rc
+    [[ -f "$USER_DIR/acme-ca.pem" ]] && curl_args+=(--cacert "$USER_DIR/acme-ca.pem")
+    /usr/local/bin/curl "${curl_args[@]}" "$url" 2>/dev/null
+    rc=$?
+    case "$rc" in
+        0) return 0 ;;
+        60|77|35)
+            log "ERROR: The TLS certificate of $url is not trusted (curl error $rc)."
+            log "For a private CA, upload its root certificate as $USER_DIR/acme-ca.pem"
+            ;;
+        *)
+            log "ERROR: Cannot reach the ACME server $url (curl error $rc)."
+            ;;
+    esac
+    return 1
+}
+
+acme_run() {
+    local force=$1
+    local server email domains challenge provider dns_sleep
+    server=$(cfg acme_server letsencrypt)
+    email=$(cfg acme_email "")
+    domains=$(cfg acme_domains "" | tr -d '[:space:]')
+    challenge=$(cfg acme_challenge http)
+    provider=$(cfg acme_dns_provider "")
+    dns_sleep=$(cfg acme_dns_sleep "")
+
+    if [[ -z "$domains" ]]; then
+        log "ERROR: acme_domains is not set in [https]"
+        return 1
+    fi
+    local server_url
+    if ! server_url=$(acme_server_url "$server"); then
+        log "ERROR: Unknown ACME server '$server'; use a directory URL or one of letsencrypt, letsencrypt_test, zerossl, sslcom, google, googletest, actalis"
+        return 1
+    fi
+    acme_preflight "$server_url" || return 1
+
+    local common=(--home "$ACME_DIR" --config-home "$ACME_DIR" --cert-home "$ACME_DIR/certs"
+        --server "$server")
+    [[ -n "$email" ]] && common+=(--accountemail "$email")
+    if [[ -f "$USER_DIR/acme-ca.pem" ]]; then
+        common+=(--ca-bundle "$USER_DIR/acme-ca.pem")
+    elif [[ -f "$ACME_DIR/account.conf" ]]; then
+        # acme.sh remembers --ca-bundle; forget it once the file is removed
+        sed -i '/^CA_BUNDLE=/d' "$ACME_DIR/account.conf"
+    fi
+
+    local args=(--issue "${common[@]}" --keylength ec-256
+        --fullchain-file "$ACME_CERT" --key-file "$ACME_KEY")
+    local domain
+    IFS=',' read -ra domain_list <<< "$domains"
+    for domain in "${domain_list[@]}"; do
+        [[ -n "$domain" ]] && args+=(-d "$domain")
+    done
+    [[ "$force" == "true" ]] && args+=(--force)
+
+    case "$challenge" in
+        http)
+            mkdir -p "$ACME_WEBROOT"
+            args+=(--webroot "$ACME_WEBROOT")
+            ;;
+        dns)
+            if [[ -z "$provider" ]]; then
+                log "ERROR: acme_challenge is dns but acme_dns_provider is not set"
+                return 1
+            fi
+            provider="dns_${provider#dns_}"
+            if [[ ! -f "$ACMESH_DIR/dnsapi/$provider.sh" ]]; then
+                log "ERROR: Unknown acme.sh DNS provider '$provider'"
+                return 1
+            fi
+            args+=(--dns "$provider")
+            # Without a fixed wait acme.sh checks propagation through public
+            # DNS-over-HTTPS resolvers, which offline printers cannot reach.
+            # RFC 2136 updates the authoritative server directly.
+            [[ -z "$dns_sleep" && "$provider" == "dns_rfc2136" ]] && dns_sleep=10
+            [[ -n "$dns_sleep" ]] && args+=(--dnssleep "$dns_sleep")
+            ;;
+        *)
+            log "ERROR: Unknown acme_challenge '$challenge' (use http or dns)"
+            return 1
+            ;;
+    esac
+
+    mkdir -p "$ACME_DIR" "$(dirname "$ACME_CERT")"
+    chmod 700 "$ACME_DIR"
+
+    log "Running acme.sh for $domains ($challenge challenge, server $server)"
+    . /usr/local/sbin/limits-helper.sh
+    limits_enter https 96M
+    (
+        load_acme_env
+        if [[ -n "${ACME_EAB_KID:-}" && -n "${ACME_EAB_HMAC_KEY:-}" ]]; then
+            "$ACMESH" --register-account "${common[@]}" \
+                --eab-kid "$ACME_EAB_KID" --eab-hmac-key "$ACME_EAB_HMAC_KEY" || exit
+        fi
+        exec "$ACMESH" "${args[@]}"
+    ) 2>&1 | tee -a "$LOG_FILE"
+    local rc=${PIPESTATUS[0]}
+    case "$rc" in
+        0) ;;
+        2) log "Certificate is not due for renewal" ; rc=0 ;;
+        *) log "ERROR: acme.sh failed with exit code $rc" ;;
+    esac
+    return "$rc"
+}
+
+renew() {
+    local force=false
+    [[ "${1:-}" == "--force" ]] && force=true
+
+    load_config
+    local before=""
+    [[ -f "$ACTIVE_DIR/fullchain.pem" ]] && before=$(fingerprint "$ACTIVE_DIR/fullchain.pem")
+
+    local rc=0
+    if [[ "$MODE" == "acme" ]]; then
+        acme_run "$force" || rc=$?
+    fi
+
+    # Re-select even if acme.sh failed: an expiring self-signed fallback or
+    # manual certificate replaced on disk is still picked up here.
+    if [[ "$MODE" != "none" ]]; then
+        select_certificate
+        if [[ "$(fingerprint "$ACTIVE_DIR/fullchain.pem")" != "$before" ]]; then
+            log "Certificate changed, reloading nginx"
+            reload_nginx || rc=1
+        fi
+    fi
+    return "$rc"
+}
+
+# Picks up changed files in extended/tls (client-ca.pem, manual cert.pem and
+# key.pem), which nginx only reads from the copies made here. Boot does the
+# same through S49https.
+reload() {
+    apply
+    # Only reload when nginx is up; during boot S50nginx starts it afterwards
+    if [[ -f /run/nginx.pid ]]; then
+        reload_nginx || return
+    fi
+    echo "Client certificates: $(status mtls)"
+}
+
+# Lockout recovery, triggered by `https-recover.txt` on a USB drive (see
+# /etc/usbmount/mount.d/50_https_recover) or run by hand over SSH.
+recover() {
+    rm -f "$RECOVER_FLAG"
+    /usr/local/bin/extended-config.py add "$EXTENDED_CFG" https mtls false >/dev/null
+    log "Recovery: client certificates (mTLS) turned off"
+    reload
+}
+
+regen() {
+    load_config
+    rm -rf "$SELF_DIR"
+    generate_self_signed || return 1
+    if [[ "$MODE" == "self_signed" ]] || [[ "$(cat "$ACTIVE_DIR/source" 2>/dev/null)" == "self_signed" ]]; then
+        apply && reload_nginx
+    fi
+}
+
+validate() {
+    case "${1:-}" in
+        manual)
+            if cert_matches_key "$USER_DIR/cert.pem" "$USER_DIR/key.pem"; then
+                echo "Certificate and key in $USER_DIR match."
+                return 0
+            fi
+            echo "ERROR: Upload a PEM certificate (full chain) as $USER_DIR/cert.pem"
+            echo "and its private key as $USER_DIR/key.pem, then try again."
+            echo "In Fluidd/Mainsail these are under Configuration > extended > tls."
+            return 1
+            ;;
+        mtls)
+            if valid_client_ca; then
+                openssl x509 -noout -subject -in "$USER_DIR/client-ca.pem"
+                return 0
+            fi
+            echo "ERROR: Upload the PEM certificate of the CA that signs your client"
+            echo "certificates as $USER_DIR/client-ca.pem, then try again."
+            echo "In Fluidd/Mainsail it is under Configuration > extended > tls."
+            return 1
+            ;;
+        *)
+            echo "Usage: https-setup validate manual|mtls"
+            return 1
+            ;;
+    esac
+}
+
+status() {
+    local cert="$ACTIVE_DIR/fullchain.pem"
+    case "${1:-}" in
+        source)
+            # The applied nginx config rather than extended2.cfg: no Python
+            # helper per status refresh
+            if grep -q " ssl " "$LISTEN_DIR/00-listen.conf" 2>/dev/null; then
+                cat "$ACTIVE_DIR/source" 2>/dev/null || echo "-"
+            else
+                echo "disabled"
+            fi
+            ;;
+        subject) openssl x509 -noout -subject -nameopt oneline -in "$cert" 2>/dev/null | sed 's/^subject= *//' || echo "-" ;;
+        issuer) openssl x509 -noout -issuer -nameopt oneline -in "$cert" 2>/dev/null | sed 's/^issuer= *//' || echo "-" ;;
+        names) openssl x509 -noout -ext subjectAltName -in "$cert" 2>/dev/null | tail -n +2 | sed 's/^ *//' || echo "-" ;;
+        expires) openssl x509 -noout -enddate -in "$cert" 2>/dev/null | cut -d= -f2 || echo "-" ;;
+        mtls)
+            case "$(sed -n 's/^set \$https_mtls_mode \(.*\);/\1/p' "$LISTEN_DIR/00-listen.conf" 2>/dev/null)" in
+                required) echo "required" ;;
+                test) echo "not required yet, test at https://<printer>:$CHECK_PORT/https-check" ;;
+                *) echo "off" ;;
+            esac
+            ;;
+        *) echo "Usage: https-setup status source|subject|issuer|names|expires|mtls"; return 1 ;;
+    esac
+}
+
+case "${1:-}" in
+    apply) apply ;;
+    renew) shift; renew "$@" ;;
+    cron)
+        [[ "$(cfg mode none)" == "none" ]] && exit 0
+        # Keep the log small; it is not covered by logrotate
+        if [[ $(stat -c %s "$LOG_FILE" 2>/dev/null || echo 0) -gt 262144 ]]; then
+            tail -n 500 "$LOG_FILE" > "$LOG_FILE.tmp" && mv "$LOG_FILE.tmp" "$LOG_FILE"
+        fi
+        renew >/dev/null 2>&1
+        ;;
+    regen) regen ;;
+    reload) reload ;;
+    recover) recover ;;
+    validate) shift; validate "$@" ;;
+    status) shift; status "$@" ;;
+    *)
+        echo "Usage: $0 apply|renew [--force]|cron|regen|reload|recover|validate manual|mtls|status <field>"
+        exit 1
+        ;;
+esac

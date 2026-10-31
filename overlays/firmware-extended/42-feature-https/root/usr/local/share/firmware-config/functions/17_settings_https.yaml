@@ -1,0 +1,266 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-PackageHomePage: https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware
+# SPDX-FileCopyrightText: Copyright (c) 2026 @paxx12
+
+status:
+  https:
+    title: HTTPS
+    if_config: {section: https, key: mode, default: none, not: none}
+    items:
+      - label: Certificate Source
+        cmd: /usr/local/sbin/https-setup status source
+      - label: Subject
+        cmd: /usr/local/sbin/https-setup status subject
+      - label: Issuer
+        cmd: /usr/local/sbin/https-setup status issuer
+      - label: Names
+        cmd: /usr/local/sbin/https-setup status names
+      - label: Expires
+        cmd: /usr/local/sbin/https-setup status expires
+      - label: Client Certificates
+        cmd: /usr/local/sbin/https-setup status mtls
+
+settings:
+  https:
+    items:
+      https:
+        label: HTTPS (Experimental)
+        description: Serve the web interface over HTTPS. Certificate files go in Configuration > extended > tls.
+        help_url: http://snapmakeru1-extended-firmware.pages.dev/https
+        get_cmd:
+          - /usr/local/bin/extended-config.py
+          - get
+          - /home/lava/printer_data/config/extended/extended2.cfg
+          - https
+          - mode
+          - none
+        options:
+          none:
+            label: Disabled
+            confirm: "Disable HTTPS? The web interface will only be available over plain HTTP."
+            cmd:
+              - bash
+              - -ec
+              - |
+                /usr/local/bin/extended-config.py add /home/lava/printer_data/config/extended/extended2.cfg https mode none
+                /etc/init.d/S49https restart
+                /etc/init.d/S50nginx reload
+          self_signed:
+            label: Self-Signed
+            confirm: "Enable HTTPS with a self-signed certificate? Browsers will show a security warning until you trust the certificate. Reload the page over https:// afterwards."
+            cmd:
+              - bash
+              - -ec
+              - |
+                /usr/local/bin/extended-config.py add /home/lava/printer_data/config/extended/extended2.cfg https mode self_signed
+                /etc/init.d/S49https restart
+                /etc/init.d/S50nginx reload
+          manual:
+            label: Manual Certificate
+            confirm: "Enable HTTPS with your own certificate? Upload cert.pem (full chain) and key.pem to Configuration > extended > tls first."
+            cmd:
+              - bash
+              - -ec
+              - |
+                /usr/local/sbin/https-setup validate manual
+                /usr/local/bin/extended-config.py add /home/lava/printer_data/config/extended/extended2.cfg https mode manual
+                /etc/init.d/S49https restart
+                /etc/init.d/S50nginx reload
+          acme:
+            label: ACME (Let's Encrypt, ZeroSSL, ...)
+            confirm: "Request a certificate over ACME? Enter the domain name(s) and the CA: a directory URL or a shortcode such as letsencrypt, letsencrypt_test or zerossl.\n\nThe http challenge (default) needs port 80 of this printer reachable by the CA. For a private CA, upload its root certificate as extended/tls/acme-ca.pem. For DNS challenges, email, or External Account Binding (EAB), set acme_challenge, acme_dns_provider and acme_email in extended2.cfg and the credentials in extended/tls/acme.env first."
+            inputs:
+              - name: ACME_DOMAINS
+                label: Domain names (comma separated)
+                placeholder: "printer.example.com"
+                regex: "^[A-Za-z0-9*][A-Za-z0-9.*-]*(,[A-Za-z0-9*][A-Za-z0-9.*-]*)*$"
+              - name: ACME_SERVER
+                label: ACME server
+                placeholder: "letsencrypt"
+                regex: "^(https://[^ ]+|[a-z_]+)$"
+            cmd:
+              - bash
+              - -ec
+              - |
+                CFG=/home/lava/printer_data/config/extended/extended2.cfg
+                PREVIOUS=$(/usr/local/bin/extended-config.py get "$CFG" https mode none)
+                /usr/local/bin/extended-config.py add "$CFG" https acme_domains "$ACME_DOMAINS"
+                /usr/local/bin/extended-config.py add "$CFG" https acme_server "$ACME_SERVER"
+                /usr/local/bin/extended-config.py add "$CFG" https mode acme
+                if ! /usr/local/sbin/https-setup renew; then
+                  echo ""
+                  echo "ERROR: Certificate request failed, see the output above and logs/https.log."
+                  echo "Restoring previous HTTPS mode: $PREVIOUS"
+                  /usr/local/bin/extended-config.py add "$CFG" https mode "$PREVIOUS"
+                  /etc/init.d/S49https restart
+                  /etc/init.d/S50nginx reload
+                  exit 1
+                fi
+                /etc/init.d/S49https restart
+                /etc/init.d/S50nginx reload
+                echo "Certificate issued. It is renewed automatically."
+        default: none
+
+      https-http:
+        label: Plain HTTP on Port 80
+        description: What port 80 does while HTTPS is enabled. Some slicers only upload over plain HTTP.
+        if_config: {section: https, key: mode, default: none, not: none}
+        get_cmd:
+          - /usr/local/bin/extended-config.py
+          - get
+          - /home/lava/printer_data/config/extended/extended2.cfg
+          - https
+          - http
+          - redirect
+        options:
+          redirect:
+            label: Redirect to HTTPS
+            cmd:
+              - bash
+              - -ec
+              - |
+                /usr/local/bin/extended-config.py add /home/lava/printer_data/config/extended/extended2.cfg https http redirect
+                /etc/init.d/S49https restart
+                /etc/init.d/S50nginx reload
+          serve:
+            label: Serve HTTP and HTTPS
+            cmd:
+              - bash
+              - -ec
+              - |
+                if [ "$(/usr/local/bin/extended-config.py get /home/lava/printer_data/config/extended/extended2.cfg https mtls false)" = "true" ]; then
+                  echo "ERROR: Plain HTTP would bypass client certificates. Disable client certificates first."
+                  exit 1
+                fi
+                /usr/local/bin/extended-config.py add /home/lava/printer_data/config/extended/extended2.cfg https http serve
+                /etc/init.d/S49https restart
+                /etc/init.d/S50nginx reload
+          "off":  # quoted: YAML would read a bare off as false
+            label: Disabled
+            cmd:
+              - bash
+              - -ec
+              - |
+                /usr/local/bin/extended-config.py add /home/lava/printer_data/config/extended/extended2.cfg https http off
+                /etc/init.d/S49https restart
+                /etc/init.d/S50nginx reload
+        default: redirect
+
+      https-mtls:
+        label: Require Client Certificates (mTLS)
+        description: Only browsers and tools presenting a certificate signed by extended/tls/client-ca.pem can connect over HTTPS. Test your certificate first with Quick Links > Test Client Certificate.
+        help_url: http://snapmakeru1-extended-firmware.pages.dev/https#testing-a-client-certificate
+        if_config: {section: https, key: mode, default: none, not: none}
+        get_cmd:
+          - /usr/local/bin/extended-config.py
+          - get
+          - /home/lava/printer_data/config/extended/extended2.cfg
+          - https
+          - mtls
+          - "false"
+        options:
+          "true":
+            label: Enabled
+            confirm: "Require client certificates? Browsers without a valid client certificate will be locked out of the web interface.\n\nTest before enabling:\n1. Upload the CA certificate that signs your client certificates as Configuration > extended > tls > client-ca.pem, then run Actions > HTTPS > Apply HTTPS Configuration.\n2. Install a client certificate signed by that CA in your browser, then restart the browser.\n3. Open Quick Links > Test Client Certificate (https://<printer>:4443/https-check), pick your certificate when asked, and check that the result is OK.\n\nIf you get locked out anyway, plug in a USB drive containing an empty file named https-recover.txt: client certificates are turned off within seconds.\n\nPort 80 will redirect to HTTPS."
+            cmd:
+              - bash
+              - -ec
+              - |
+                CFG=/home/lava/printer_data/config/extended/extended2.cfg
+                /usr/local/sbin/https-setup validate mtls
+                if [ "$(/usr/local/bin/extended-config.py get "$CFG" https http redirect)" = "serve" ]; then
+                  echo "Switching plain HTTP on port 80 to redirect, so it cannot bypass client certificates."
+                  /usr/local/bin/extended-config.py add "$CFG" https http redirect
+                fi
+                /usr/local/bin/extended-config.py add "$CFG" https mtls true
+                /etc/init.d/S49https restart
+                /etc/init.d/S50nginx reload
+                if [ "$(/usr/local/bin/extended-config.py get "$CFG" https moonraker_bind all)" != "localhost" ]; then
+                  echo ""
+                  echo "NOTE: Moonraker is still reachable directly on port 7125 without a client certificate."
+                  echo "Set HTTPS > Moonraker Port 7125 to Printer Only to close it."
+                fi
+          "false":
+            label: Disabled
+            cmd:
+              - bash
+              - -ec
+              - |
+                /usr/local/bin/extended-config.py add /home/lava/printer_data/config/extended/extended2.cfg https mtls false
+                /etc/init.d/S49https restart
+                /etc/init.d/S50nginx reload
+        default: "false"
+
+      https-moonraker-bind:
+        label: Moonraker Port 7125
+        description: Moonraker's own port bypasses HTTPS and client certificates. Restrict it to the printer to force all access through the web server.
+        if_config: {section: https, key: mode, default: none, not: none}
+        get_cmd:
+          - /usr/local/bin/extended-config.py
+          - get
+          - /home/lava/printer_data/config/extended/extended2.cfg
+          - https
+          - moonraker_bind
+          - all
+        options:
+          all:
+            label: All Networks
+            cmd:
+              - bash
+              - -ec
+              - |
+                /usr/local/bin/extended-config.py add /home/lava/printer_data/config/extended/extended2.cfg https moonraker_bind all
+                /etc/init.d/S49https restart
+                echo "Restarting Moonraker..."
+                /etc/init.d/S61moonraker restart
+          localhost:
+            label: Printer Only
+            confirm: "Restrict Moonraker to the printer itself? Slicers and apps that connect to port 7125 directly will stop working and must use the web address (http(s)://<printer>/) instead."
+            cmd:
+              - bash
+              - -ec
+              - |
+                /usr/local/bin/extended-config.py add /home/lava/printer_data/config/extended/extended2.cfg https moonraker_bind localhost
+                /etc/init.d/S49https restart
+                echo "Restarting Moonraker..."
+                /etc/init.d/S61moonraker restart
+        default: all
+
+links:
+  https-check:
+    url: /https-check
+    icon: "🔐"
+    label: Test Client Certificate
+    condition: null
+    if_config: {section: https, key: mode, default: none, not: none}
+    if_cmd: test -s /home/lava/printer_data/config/extended/tls/client-ca.pem
+
+actions:
+  https:
+    items:
+      https-apply:
+        label: Apply HTTPS Configuration
+        description: Use changed files in extended/tls (client-ca.pem, cert.pem, key.pem) without rebooting.
+        if_config: {section: https, key: mode, default: none, not: none}
+        cmd: [/usr/local/sbin/https-setup, reload]
+        message: "Applying HTTPS configuration..."
+      https-renew:
+        label: Renew HTTPS Certificate
+        description: Request a new ACME certificate now, even if the current one is not due for renewal.
+        if_config: {section: https, key: mode, default: none, is: acme}
+        confirm: true
+        cmd: [/usr/local/sbin/https-setup, renew, --force]
+        message: "Renewing certificate..."
+      https-regen:
+        label: Regenerate Self-Signed Certificate
+        description: Create a new self-signed certificate, e.g. after the printer's IP address changed.
+        if_config: {section: https, key: mode, default: none, not: none}
+        confirm: "Regenerate the self-signed certificate? Browsers that trusted the old one will warn again."
+        cmd: [/usr/local/sbin/https-setup, regen]
+        message: "Regenerating certificate..."
+      https-log:
+        label: Show HTTPS Log
+        description: Show the last lines of the HTTPS/certificate log.
+        if_config: {section: https, key: mode, default: none, not: none}
+        cmd: [tail, -n, "50", /home/lava/printer_data/logs/https.log]
+        message: "Reading log..."
