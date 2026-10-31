@@ -53,6 +53,7 @@ Toggle settings directly from the web interface:
 | Klipper Metrics Exporter | Enabled, Disabled | Enable Prometheus metrics |
 | VPN Provider | None, Tailscale | Enable VPN remote access (Experimental) |
 | Cloud | None, OctoEverywhere | Enable Cloud-based remote access (Experimental) |
+| HTTPS | Disabled, Self-Signed, Manual Certificate, ACME | Serve the web interface over HTTPS, with optional client certificates (Experimental, [HTTPS](https.md)) |
 | Tweaks | Max Speed, TMC AutoTune, TMC Reduced Current, Object Processing, AFC Stub | Experimental Klipper tweaks ([tweaks](tweaks.md)) |
 | Troubleshooting | Faulty Toolhead Bypass | Temporary toolhead thermistor bypass so the remaining toolheads can still be used ([faulty_toolhead](faulty_toolhead.md)) |
 | RFID Detection System | External, Snapmaker, OpenRFID, OpenRFID (force generic vendor) | Set how filament is detected ([RFID Format & Reader Design](design/rfid.md)) |
@@ -195,6 +196,16 @@ See [VPN Remote Access](vpn.md) for setup instructions.
 - `octoeverywhere` - [OctoEverywhere.com](https://octoeverywhere.com) remote access
 
 See the [3D Printing Clouds](cloud.md) for setup instructions.
+
+#### [https]
+
+**mode** - Serve the web interface over HTTPS
+- `none` (default) - HTTPS disabled
+- `self_signed` - Certificate generated on the printer
+- `manual` - Your own certificate in `extended/tls/`
+- `acme` - Automatically issued and renewed certificate from an ACME CA
+
+See [HTTPS](https.md) for all options, including client certificates (mTLS).
 
 #### [monitoring]
 

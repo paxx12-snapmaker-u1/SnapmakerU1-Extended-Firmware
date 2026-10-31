@@ -9,6 +9,8 @@ settings:
     label: Camera
   remote_access:
     label: Remote Access
+  https:
+    label: HTTPS
   snapmaker_components:
     label: Snapmaker Components
   print_preferences:

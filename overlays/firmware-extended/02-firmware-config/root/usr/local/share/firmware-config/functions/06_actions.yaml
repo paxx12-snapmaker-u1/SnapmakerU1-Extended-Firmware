@@ -13,5 +13,7 @@ actions:
     label: Recovery
   services:
     label: Services
+  https:
+    label: HTTPS
   system:
     label: System
