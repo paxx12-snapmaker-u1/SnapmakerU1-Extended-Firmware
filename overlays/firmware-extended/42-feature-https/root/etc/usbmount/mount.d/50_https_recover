@@ -1,0 +1,24 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-PackageHomePage: https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware
+# SPDX-FileCopyrightText: Copyright (c) 2026 @paxx12
+
+# Lockout recovery: a USB drive with `https-recover.txt` turns off the
+# client certificate (mTLS) requirement. Runs on every USB mount, including
+# drives present at boot, where it only leaves a flag for S49https because
+# printer data is not set up yet this early.
+# `.txt.txt` covers Windows hiding the extension of `https-recover.txt`.
+
+for file in "$UM_MOUNTPOINT/https-recover.txt" "$UM_MOUNTPOINT/https-recover.txt.txt"; do
+    [ -f "$file" ] || continue
+    rm -f "$file"
+    sync
+    touch /run/https-recover
+    if [ -f /run/nginx.pid ]; then
+        # Already booted; udev limits how long RUN scripts may take
+        setsid /usr/local/sbin/https-setup recover > /dev/null 2>&1 < /dev/null &
+    fi
+    break
+done
+
+exit 0

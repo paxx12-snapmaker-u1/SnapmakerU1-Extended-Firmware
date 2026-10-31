@@ -1,0 +1,52 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-PackageHomePage: https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware
+# SPDX-FileCopyrightText: Copyright (c) 2026 @paxx12
+
+# Runs before S50nginx (and S61moonraker) so the generated listen config,
+# certificate and Moonraker bind tweak are in place when they start.
+
+HTTPS_SETUP="/usr/local/sbin/https-setup"
+ACTIVE_SOURCE="/home/lava/printer_data/tls/active/source"
+EXTENDED_CFG="/home/lava/printer_data/config/extended/extended2.cfg"
+
+start() {
+    # Lockout recovery requested by a USB drive with https-recover.txt. The
+    # usbmount hook normally handles it and leaves the flag; the direct check
+    # covers a drive mounted before the hook was in place.
+    if [ -f /run/https-recover ] || [ -f /mnt/udisk/https-recover.txt ] || [ -f /mnt/udisk/https-recover.txt.txt ]; then
+        rm -f /mnt/udisk/https-recover.txt /mnt/udisk/https-recover.txt.txt
+        "$HTTPS_SETUP" recover
+    else
+        "$HTTPS_SETUP" apply
+    fi
+
+    # ACME mode without an issued certificate falls back to self-signed;
+    # request the real one once the network and clock are up, rather than
+    # waiting for the next cron run.
+    if [ "$(/usr/local/bin/extended-config.py get "$EXTENDED_CFG" https mode none)" = "acme" ] &&
+            [ "$(cat "$ACTIVE_SOURCE" 2>/dev/null)" != "acme" ]; then
+        echo "Requesting ACME certificate in the background"
+        (sleep 120; "$HTTPS_SETUP" renew) > /dev/null 2>&1 &
+    fi
+}
+
+case "$1" in
+    start)
+        start
+        ;;
+
+    stop)
+        ;;
+
+    restart|reload)
+        start
+        ;;
+
+    *)
+        echo "Usage: $0 {start|stop|restart|reload}"
+        exit 1
+        ;;
+esac
+
+exit $?
