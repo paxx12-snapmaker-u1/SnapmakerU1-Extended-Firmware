@@ -4,16 +4,26 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 @paxx12
 
 import argparse
+import configparser
 import glob
 import json
 import os
 import re
 import subprocess
+import threading
 import time
 import fcntl
 import yaml
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 from urllib.parse import urlparse
+
+EXTENDED_CFG = "/home/lava/printer_data/config/extended/extended2.cfg"
+
+# A page load requests status, settings, links and actions in parallel, and
+# each evaluates many get_cmd/if_cmd/status commands, often Python scripts of
+# ~10 MB each. Cap how many of these short checks run at once so the service
+# stays within its 48 MB memory limit. User-triggered actions are not limited.
+COMMAND_SLOTS = threading.BoundedSemaphore(2)
 
 def deep_merge(base, override):
     """Deep merge override into base, modifying base in place."""
@@ -70,6 +80,7 @@ class FirmwareConfigHandler(SimpleHTTPRequestHandler):
         pass
 
     def do_GET(self):
+        self._config_cache = {}
         path = urlparse(self.path).path
         if path == "/api/status":
             self.handle_status()
@@ -85,6 +96,7 @@ class FirmwareConfigHandler(SimpleHTTPRequestHandler):
             super().do_GET()
 
     def do_POST(self):
+        self._config_cache = {}
         parsed = urlparse(self.path)
         if parsed.path == "/api/upgrade/url":
             self.handle_upgrade_url()
@@ -226,19 +238,73 @@ class FirmwareConfigHandler(SimpleHTTPRequestHandler):
 
     def _run_status_cmd(self, cmd):
         try:
-            result = subprocess.run(
-                cmd, shell=True, capture_output=True, text=True, timeout=5
-            )
+            with COMMAND_SLOTS:
+                result = subprocess.run(
+                    cmd, shell=True, capture_output=True, text=True, timeout=5
+                )
             return result.stdout.strip() if result.returncode == 0 else None
         except Exception:
             return None
 
     def _check_condition(self, cmd):
         try:
-            result = subprocess.run(cmd, shell=True, capture_output=True, timeout=5)
+            with COMMAND_SLOTS:
+                result = subprocess.run(cmd, shell=True, capture_output=True, timeout=5)
             return result.returncode == 0
         except Exception:
             return False
+
+    def _config_value(self, path, section, key, default=None):
+        """In-process `extended-config.py get`: same parser and defaults, without
+        starting a Python process per value. Each file is parsed once per
+        request. Returns None where the script would fail."""
+        try:
+            cfg = self._config_cache.get(path)
+            if cfg is None:
+                cfg = configparser.ConfigParser()
+                cfg.read(path)
+                self._config_cache[path] = cfg
+            if default is None and not cfg.has_option(section, key):
+                return None
+            return cfg.get(section, key, fallback=default).strip()
+        except Exception:
+            return None
+
+    def _run_get_cmd(self, cmd):
+        """A setting's current value, or None when its get_cmd fails."""
+        if (isinstance(cmd, list) and len(cmd) in (5, 6) and cmd[1] == "get"
+                and os.path.basename(cmd[0]) == "extended-config.py"):
+            return self._config_value(*cmd[2:])
+        try:
+            with COMMAND_SLOTS:
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+            return result.stdout.strip() if result.returncode == 0 else None
+        except Exception:
+            return None
+
+    def _check_if_config(self, cond):
+        """`if_config: {section, key, default, is: <value(s)>, not: <value(s)>}`,
+        compared against extended2.cfg (or `file`) without running a command."""
+        value = self._config_value(cond.get("file", EXTENDED_CFG), cond["section"],
+                                   cond["key"], str(cond.get("default", "")))
+
+        def values(v):
+            return [str(x).lower() if isinstance(x, bool) else str(x)
+                    for x in (v if isinstance(v, list) else [v])]
+
+        if "is" in cond and value not in values(cond["is"]):
+            return False
+        if "not" in cond and value in values(cond["not"]):
+            return False
+        return True
+
+    def _visible(self, cfg):
+        """Both `if_config` and `if_cmd` must pass when present."""
+        if_config = cfg.get("if_config")
+        if if_config and not self._check_if_config(if_config):
+            return False
+        if_cmd = cfg.get("if_cmd")
+        return not if_cmd or self._check_condition(if_cmd)
 
     def handle_status(self):
         try:
@@ -246,9 +312,9 @@ class FirmwareConfigHandler(SimpleHTTPRequestHandler):
             result = {}
 
             for section_key, section_cfg in status_config.items():
-                if_cmd = section_cfg.get('if_cmd')
-                if if_cmd and not self._check_condition(if_cmd):
+                if not self._visible(section_cfg):
                     continue
+                conditional = section_cfg.get('if_cmd') or section_cfg.get('if_config')
 
                 section_items = []
                 has_value = False
@@ -261,7 +327,7 @@ class FirmwareConfigHandler(SimpleHTTPRequestHandler):
                         'value': value
                     })
 
-                if if_cmd and not has_value:
+                if conditional and not has_value:
                     continue
 
                 result[section_key] = {
@@ -292,19 +358,11 @@ class FirmwareConfigHandler(SimpleHTTPRequestHandler):
                 items = group_cfg.get('items', {})
                 settings_list = []
                 for setting_id, config in items.items():
-                    if_cmd = config.get('if_cmd')
-                    if if_cmd and not self._check_condition(if_cmd):
+                    if not self._visible(config):
                         continue
 
-                    try:
-                        cmd_result = subprocess.run(
-                            config["get_cmd"],
-                            capture_output=True,
-                            text=True,
-                            timeout=5
-                        )
-                        current_value = cmd_result.stdout.strip() if cmd_result.returncode == 0 else config.get("default", "")
-                    except Exception:
+                    current_value = self._run_get_cmd(config["get_cmd"])
+                    if current_value is None:
                         current_value = config.get("default", "")
 
                     options_data = {}
@@ -350,19 +408,14 @@ class FirmwareConfigHandler(SimpleHTTPRequestHandler):
                     if setting_key not in settings_cache:
                         setting_config = self._get_setting_config(setting_key)
                         if setting_config:
-                            try:
-                                result = subprocess.run(
-                                    setting_config["get_cmd"],
-                                    capture_output=True,
-                                    text=True,
-                                    timeout=5
-                                )
-                                settings_cache[setting_key] = result.stdout.strip() if result.returncode == 0 else setting_config.get("default", "")
-                            except Exception:
-                                settings_cache[setting_key] = setting_config.get("default", "")
+                            value = self._run_get_cmd(setting_config["get_cmd"])
+                            settings_cache[setting_key] = value if value is not None else setting_config.get("default", "")
 
             links_list = []
             for _, link_config in links.items():
+                if not self._visible(link_config):
+                    continue
+
                 condition = link_config.get("condition")
 
                 if condition is None:
@@ -405,8 +458,7 @@ class FirmwareConfigHandler(SimpleHTTPRequestHandler):
                 items = group_cfg.get('items', {})
                 actions_list = []
                 for action_id, cfg in items.items():
-                    if_cmd = cfg.get('if_cmd')
-                    if if_cmd and not self._check_condition(if_cmd):
+                    if not self._visible(cfg):
                         continue
 
                     actions_list.append({
