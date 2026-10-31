@@ -51,6 +51,7 @@ Toggle settings directly from the web interface:
 | USB Camera Resolution | 1080p30, 1080p25, 1080p5, 720p30, 720p25, 720p5, 360p30, 360p25, 360p5 | Resolution and framerate for the USB camera (paxx12 service only) |
 | Remote Screen | Enabled, Disabled | Enable remote screen access |
 | Klipper Metrics Exporter | Enabled, Disabled | Enable Prometheus metrics |
+| Push Notifications | Configure | Print, progress, error and filament notifications with images via ntfy, Pushover, Telegram, Discord, email or a webhook ([Push Notifications](notifications.md)) |
 | VPN Provider | None, Tailscale | Enable VPN remote access (Experimental) |
 | Cloud | None, OctoEverywhere | Enable Cloud-based remote access (Experimental) |
 | Tweaks | Max Speed, TMC AutoTune, TMC Reduced Current, Object Processing, AFC Stub | Experimental Klipper tweaks ([tweaks](tweaks.md)) |
