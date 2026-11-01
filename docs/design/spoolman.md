@@ -171,3 +171,26 @@ it does not maintain its own WebSocket connection.
 8. Klipper stores the metadata in `print_task_config` and notifies subscribers.
    `AFC_lane.get_status()` surfaces `spool_id` to Fluidd/Mainsail.
 
+## Active Spool
+
+Moonraker tracks a single active spool, while the U1 has four channels. `spoollink`
+bridges the two in both directions:
+
+- **Printer to Moonraker.** When the toolhead changes, or a channel's
+  `filament_spool_id` changes, `spoollink` sets Moonraker's active spool to whatever the
+  toolhead in use is carrying, so usage is reported against the right spool.
+- **Moonraker to printer.** When a client sets the active spool — Fluidd's Spoolman
+  panel, a mobile app — `spoollink` assigns that spool to the channel of the toolhead in
+  use, resolving it exactly as `SET_SPOOL_ID` would: the filament metadata is applied to
+  the channel. No card is bound: a client's selection says nothing about which card
+  is in the channel, so binding stays on the detection path.
+
+A frontend that knows nothing about the U1's channels can only say *which* spool, never
+*where*, so the toolhead in use is taken as the answer. To assign a spool to a specific
+channel, use the Filament Manager or `SET_SPOOL_ID`.
+
+Clearing the active spool does not unassign the channel: the spool is still physically
+loaded, and `print_task_config` remains the authority on what is where. `spoollink`
+restores the active spool from the channel. Release a channel with the Filament Manager
+or `SET_SPOOL_ID SPOOL_ID=0`.
+
