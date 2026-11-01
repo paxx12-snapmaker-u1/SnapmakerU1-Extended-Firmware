@@ -8,6 +8,7 @@ import configparser
 import glob
 import json
 import os
+import pwd
 import re
 import subprocess
 import threading
@@ -18,6 +19,7 @@ from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 from urllib.parse import urlparse
 
 EXTENDED_CFG = "/home/lava/printer_data/config/extended/extended2.cfg"
+MAINSAIL_NAVI = "/home/lava/printer_data/config/.theme/navi.json"
 
 # A page load requests status, settings, links and actions in parallel, and
 # each evaluates many get_cmd/if_cmd/status commands, often Python scripts of
@@ -398,48 +400,74 @@ class FirmwareConfigHandler(SimpleHTTPRequestHandler):
 
     def handle_get_links(self):
         try:
-            links = self.functions.get('links', {})
-            settings_cache = {}
-
-            for _, link_config in links.items():
-                condition = link_config.get("condition")
-                if condition:
-                    setting_key = condition["setting"]
-                    if setting_key not in settings_cache:
-                        setting_config = self._get_setting_config(setting_key)
-                        if setting_config:
-                            value = self._run_get_cmd(setting_config["get_cmd"])
-                            settings_cache[setting_key] = value if value is not None else setting_config.get("default", "")
-
-            links_list = []
-            for _, link_config in links.items():
-                if not self._visible(link_config):
-                    continue
-
-                condition = link_config.get("condition")
-
-                if condition is None:
-                    links_list.append({
-                        "url": link_config["url"],
-                        "icon": link_config["icon"],
-                        "label": link_config["label"]
-                    })
-                else:
-                    setting_key = condition["setting"]
-                    required_value = condition["value"]
-                    current_value = settings_cache.get(setting_key)
-
-                    if current_value == required_value:
-                        links_list.append({
-                            "url": link_config["url"],
-                            "icon": link_config["icon"],
-                            "label": link_config["label"]
-                        })
-
-            self.send_json(links_list)
+            self.send_json(self._visible_links())
         except Exception as e:
             log(f"Get links error: {e}")
             self.send_error(500, str(e))
+
+    def _visible_links(self):
+        links = self.functions.get('links', {})
+        settings_cache = {}
+
+        for _, link_config in links.items():
+            condition = link_config.get("condition")
+            if condition:
+                setting_key = condition["setting"]
+                if setting_key not in settings_cache:
+                    setting_config = self._get_setting_config(setting_key)
+                    if setting_config:
+                        value = self._run_get_cmd(setting_config["get_cmd"])
+                        settings_cache[setting_key] = value if value is not None else setting_config.get("default", "")
+
+        links_list = []
+        for _, link_config in links.items():
+            if not self._visible(link_config):
+                continue
+
+            condition = link_config.get("condition")
+            if condition is not None and settings_cache.get(condition["setting"]) != condition["value"]:
+                continue
+
+            links_list.append({
+                "url": link_config["url"],
+                "icon": link_config["icon"],
+                "label": link_config["label"]
+            })
+
+        return links_list
+
+    def _sync_mainsail_navi(self):
+        """Mainsail shows .theme/navi.json entries in its sidebar. Keep ours
+        (marked "extended": true) in step with the visible links, leaving any
+        entries the user added alone. Fluidd gets the same links from nav.js."""
+        try:
+            entries = []
+            if os.path.exists(MAINSAIL_NAVI):
+                with open(MAINSAIL_NAVI) as f:
+                    entries = [e for e in json.load(f) if isinstance(e, dict) and not e.get("extended")]
+        except Exception as e:
+            log(f"Not updating {MAINSAIL_NAVI}: {e}")
+            return
+
+        if self._config_value(EXTENDED_CFG, "web", "frontend", "fluidd") == "mainsail":
+            links = [{"url": "/firmware-config/", "label": "Firmware Config"}]
+            links += [l for l in self._visible_links() if l["url"] != "/"]
+            for i, link in enumerate(links):
+                entries.append({"title": link["label"], "href": link["url"], "target": "_blank",
+                                "position": 900 + i, "extended": True})
+
+        if not entries and not os.path.exists(MAINSAIL_NAVI):
+            return
+        try:
+            os.makedirs(os.path.dirname(MAINSAIL_NAVI), exist_ok=True)
+            tmp = MAINSAIL_NAVI + ".tmp"
+            with open(tmp, "w") as f:
+                json.dump(entries, f, indent=2)
+            lava = pwd.getpwnam("lava")
+            os.chown(tmp, lava.pw_uid, lava.pw_gid)
+            os.replace(tmp, MAINSAIL_NAVI)
+        except Exception as e:
+            log(f"Failed to write {MAINSAIL_NAVI}: {e}")
 
     def _get_action_config(self, action_key):
         for actions_cfg in (self.functions.get('quick_actions', {}), self.functions.get('actions', {})):
@@ -537,6 +565,8 @@ class FirmwareConfigHandler(SimpleHTTPRequestHandler):
             rc, _ = self._stream_command(option_config["cmd"], env=cmd_env)
 
             self._write_stream_chunk(f"\n{'=' * 40}\n")
+            self._config_cache = {}
+            self._sync_mainsail_navi()
             if rc == 0:
                 self._write_stream_chunk(f"SUCCESS: Setting updated successfully\n")
             else:
@@ -769,6 +799,11 @@ def main():
 
     FirmwareConfigHandler.html_dir = os.fspath(args.html_dir)
     FirmwareConfigHandler.functions = functions
+
+    # Bring Mainsail's sidebar links up to date with the settings at boot
+    startup = FirmwareConfigHandler.__new__(FirmwareConfigHandler)
+    startup._config_cache = {}
+    startup._sync_mainsail_navi()
 
     server = ThreadingHTTPServer((args.bind, args.port), FirmwareConfigHandler)
     log(f"Firmware Tool Control Server running on http://{args.bind}:{args.port}")

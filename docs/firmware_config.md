@@ -20,6 +20,8 @@ Access the Firmware Config tool at `http://<printer-ip>/firmware-config/`
 
 ![Firmware Config overview](screenshots/firmware-config.png)
 
+You don't need to type the address: in Fluidd, open the three-dots menu at the top right, where the **Extended Firmware** section links to Firmware Config and the other enabled pages. The section is hidden while Fluidd's printer switcher shows another printer, since the links always open this printer's pages. In Mainsail the same links are added to the sidebar (through `config/.theme/navi.json`; entries you add there yourself are kept).
+
 ### Status
 
 Displays system information including:
@@ -35,6 +37,7 @@ Dynamic links based on current settings:
 - **Internal Camera** - Camera stream (when paxx12 service is enabled)
 - **USB Camera** - USB camera stream (when enabled)
 - **Remote Screen** - Remote screen access (when enabled)
+- **Filament Manager** - Filament and RFID tag management
 - **Push Notifications** - Notification settings ([Push Notifications](notifications.md))
 
 ### Settings

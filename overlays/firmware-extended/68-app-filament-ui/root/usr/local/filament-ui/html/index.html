@@ -8,9 +8,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Filament Manager</title>
-<link rel="stylesheet" href="style.css?v=2">
+<link rel="stylesheet" href="style.css?v=3">
 </head>
 <body>
+<nav id="back-links" class="back-links" hidden>
+    <a href="/">&larr; Web Interface</a>
+    <a href="/firmware-config/">Firmware Config</a>
+</nav>
 <header>
     <h1>Filament Manager</h1>
     <div class="status-bar">
@@ -209,6 +213,10 @@
     </div>
 </div>
 
+<script>
+// Not when embedded as a Fluidd camera
+if (window.top === window) document.getElementById('back-links').hidden = false;
+</script>
 <script src="script.js?v=3"></script>
 </body>
 </html>

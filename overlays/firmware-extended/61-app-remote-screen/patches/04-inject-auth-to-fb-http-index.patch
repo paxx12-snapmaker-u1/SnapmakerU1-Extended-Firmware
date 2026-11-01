@@ -29,7 +29,7 @@
  }
 
  function onDown(clientX, clientY) {
-@@ -166,5 +169,12 @@
+@@ -166,5 +169,19 @@
      }
  });
  </script>
@@ -39,6 +39,13 @@
 +    navigator.serviceWorker.register('sw.js').catch(() => {});
 +}
 +initAuth();
++</script>
++<a id="back-link" href="/" style="display:none;position:fixed;top:8px;left:8px;color:#888;font:12px monospace;text-decoration:none">&larr; Web Interface</a>
++<script>
++// Not when embedded as a Fluidd camera
++if (window.top === window) {
++    document.getElementById('back-link').style.display = 'block';
++}
 +</script>
  </body>
  </html>
