@@ -1180,6 +1180,7 @@ async def test_chamber():
                               ("chamber_waiting", "chamber_reached",
                                "chamber_fault")})
         nc_mod = sys.modules[type(c).__module__]
+        nc_mod.CHAMBER_WAIT_MIN = 0.15
         await start_job(server)
         return log, c
 
@@ -1194,6 +1195,7 @@ async def test_chamber():
     log, c = await setup({DB: {"temperature": 25, "target": 0},
                           "dragonbreath": {"connected": True, "fault": False}})
     await upd(c, db={"temperature": 30, "target": 45})
+    await asyncio.sleep(0.3)       # the wait counts after CHAMBER_WAIT_MIN
     await upd(c, db={"temperature": 38})
     await upd(c, db={"temperature": 41})
     await upd(c, layer=1, db={"temperature": 42})
@@ -1226,6 +1228,7 @@ async def test_chamber():
                           "dragonbreath": {"connected": True, "fault": False}})
     nc_mod.CHAMBER_STALL_TIME = 0.1
     await upd(c, db={"temperature": 33, "target": 45})
+    await asyncio.sleep(0.3)
     await upd(c, db={"temperature": 33.5})
     await asyncio.sleep(0.15)
     await upd(c, db={"temperature": 33.6})
@@ -1260,7 +1263,7 @@ async def test_chamber():
             "machine_state_manager": {"main_state": 1, "action_code": 0}})
         await upd(c, machine_state_manager={"action_code": 3},
                   cav={"temperature": 32})
-        await asyncio.sleep(0.3)   # minutes apart on a printer
+        await asyncio.sleep(0.4)   # minutes apart on a printer
         await upd(c, cav={"temperature": final})
         await upd(c, machine_state_manager={"action_code": 0})
         await upd(c, layer=1)
@@ -1268,6 +1271,20 @@ async def test_chamber():
         check(f"Snapmaker's chamber wait ending at {final} °C",
               [t for t, _b in out(log)] == [
                   "🌡️ U1 waiting for chamber temperature", title], out(log))
+
+    # The printer's wait that ends within seconds (keep-warm mode asking
+    # for 45 °C, lid off): not a wait anyone needs to hear about
+    log, c = await setup({
+        "purifier": {"power_detected": True, "desired_chamber_temp": 45},
+        "temperature_sensor cavity": {"temperature": 30},
+        "machine_state_manager": {"main_state": 1, "action_code": 0}})
+    await upd(c, machine_state_manager={"action_code": 3},
+              cav={"temperature": 31})
+    await upd(c, machine_state_manager={"action_code": 0})
+    await upd(c, layer=1)
+    await asyncio.sleep(0.5)
+    check("a chamber wait over in seconds sends nothing", log == [],
+          out(log))
 
     # No target from anywhere (bed only; purifier not connected): nothing
     log, c = await setup({

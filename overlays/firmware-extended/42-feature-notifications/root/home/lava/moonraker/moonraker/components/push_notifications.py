@@ -175,6 +175,11 @@ CHAMBER_TOLERANCE = 5.
 # Waiting with no rise of this much for this long: "not heating"
 CHAMBER_STALL_RISE = 1.
 CHAMBER_STALL_TIME = 600.
+# A chamber wait counts once it has lasted this long: the printer's own
+# wait can end within seconds (it asks for 45 °C in keep-warm mode and
+# gives up at once with the lid off), and that is not worth two
+# notifications. Nothing is sent about a wait that ended sooner.
+CHAMBER_WAIT_MIN = 30.
 CHAMBER_SENSOR = "temperature_sensor cavity"
 ACTION_PREHEAT_CHAMBER = 3
 DRAGONBREATH = "dragonbreath"
@@ -1533,7 +1538,8 @@ class PushNotifications:
         self._ch = {"phase": "done" if int(layer) >= 1 else "none",
                     "target": 0., "source": "", "ref": None, "ref_time": 0.,
                     "stall_sent": False, "used": False, "faults": set(),
-                    "fault": None, "connected": None}
+                    "fault": None, "connected": None,
+                    "wait_start": 0., "announced": False, "gen": 0}
         self._by_object = await self.eventloop.run_in_thread(
             self._is_by_object, filename)
         self._obj_start = {}
@@ -1778,7 +1784,7 @@ class PushNotifications:
         state = lambda t, T: f"Chamber {deg(t)}, target {deg(T)}."
         if ch["phase"] in ("none", "waiting") and temp is not None:
             if layer >= 1:
-                if ch["phase"] == "waiting":
+                if ch["phase"] == "waiting" and ch["announced"]:
                     T = ch["target"]
                     if temp >= T - CHAMBER_TOLERANCE:
                         self._chamber_send("chamber_reached", "chamber_reached",
@@ -1795,10 +1801,9 @@ class PushNotifications:
                         temp < target if source == "purifier"
                         else temp < target - CHAMBER_TOLERANCE):
                 ch.update(phase="waiting", target=target, source=source,
-                          ref=temp, ref_time=now)
-                self._chamber_send("chamber_waiting", "chamber_waiting",
-                                   filename, state(temp, target),
-                                   "Printer waiting…")
+                          ref=temp, ref_time=now, wait_start=now,
+                          announced=False, gen=ch["gen"] + 1)
+                self._spawn(self._chamber_announce(ch["gen"], filename))
             elif ch["phase"] == "waiting":
                 if target > 0 and source != "purifier_idle":
                     ch["target"] = target
@@ -1806,7 +1811,9 @@ class PushNotifications:
                 purifier_done = ch["source"] == "purifier" and \
                     source != "purifier"
                 if temp >= T or purifier_done:
-                    if temp >= T:
+                    if not ch["announced"]:
+                        pass    # over before it counted as a wait: silent
+                    elif temp >= T:
                         self._chamber_send("chamber_reached",
                                            "chamber_reached", filename,
                                            state(temp, T), "Printing…")
@@ -1862,6 +1869,22 @@ class PushNotifications:
             ch["fault"] = reason
         else:
             ch["fault"] = None
+
+    async def _chamber_announce(self, gen: int, filename: str) -> None:
+        """"Waiting for chamber temperature", once the wait has lasted
+        CHAMBER_WAIT_MIN (a wait that ended sooner sends nothing)."""
+        await asyncio.sleep(CHAMBER_WAIT_MIN)
+        ch = self._ch
+        if not self._job_active or ch.get("gen") != gen or \
+                ch["phase"] != "waiting":
+            return
+        ch["announced"] = True
+        _target, temp, _source = self._chamber_now()
+        if temp is None:
+            temp = ch["ref"] or 0.
+        self._chamber_send("chamber_waiting", "chamber_waiting", filename,
+                           f"Chamber {temp:.0f} °C, target "
+                           f"{ch['target']:.0f} °C.", "Printer waiting…")
 
     def _chamber_send(self, rid: str, title: str, filename: str,
                       *lines: str) -> None:
