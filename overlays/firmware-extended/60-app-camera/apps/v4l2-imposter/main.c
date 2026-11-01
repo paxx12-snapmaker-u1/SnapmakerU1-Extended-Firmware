@@ -58,6 +58,34 @@ typedef struct {
 
 static buffer_t g_buffers[MAX_BUFFERS];
 
+static bool is_compressed(void)
+{
+    return cfg_format == V4L2_PIX_FMT_MJPEG || cfg_format == V4L2_PIX_FMT_JPEG;
+}
+
+static size_t bytes_per_line(void)
+{
+    switch (cfg_format) {
+    case V4L2_PIX_FMT_NV12:
+        return cfg_width;
+    case V4L2_PIX_FMT_YUYV:
+        return cfg_width * 2;
+    default:
+        return 0;
+    }
+}
+
+// Raw formats have a fixed frame size, compressed ones get a worst-case buffer
+static size_t image_size(void)
+{
+    switch (cfg_format) {
+    case V4L2_PIX_FMT_NV12:
+        return (size_t)cfg_width * cfg_height * 3 / 2;
+    default:
+        return (size_t)cfg_width * cfg_height * 2;
+    }
+}
+
 static void free_buffers(void)
 {
     int i;
@@ -294,7 +322,7 @@ static ssize_t read_fully(int fd, void *buf, size_t count, int timeout_ms)
     return total;
 }
 
-static int fetch_frame(buffer_t *buf)
+static int fetch_frame_once(buffer_t *buf)
 {
     ssize_t n;
     int fd;
@@ -305,6 +333,8 @@ static int fetch_frame(buffer_t *buf)
     if (fd < 0)
         return -1;
 
+    // The raw frame socket streams frames back to back without closing,
+    // so read exactly one frame (buffer is sized to it) and disconnect.
     n = read_fully(fd, buf->ptr, buf->size, cfg_socket_timeout);
     close(fd);
 
@@ -316,8 +346,9 @@ static int fetch_frame(buffer_t *buf)
         LOG_ERROR("No data received");
         return -1;
     }
-    if ((size_t)n > buf->size) {
-        LOG_ERROR("Frame size %zd exceeds buffer size %zu", n, buf->size);
+    // The server drops slow clients mid-frame, which shows up as a short read
+    if (!is_compressed() && (size_t)n != buf->size) {
+        LOG_ERROR("Truncated frame: got %zd of %zu bytes", n, buf->size);
         return -1;
     }
 
@@ -328,6 +359,15 @@ static int fetch_frame(buffer_t *buf)
     buf->used = n;
     LOG_DEBUG("Fetched frame: %zd bytes in %ld ms", n, diff_ms);
     return 0;
+}
+
+static int fetch_frame(buffer_t *buf)
+{
+    for (int attempt = 0; attempt < 3; attempt++) {
+        if (fetch_frame_once(buf) == 0)
+            return 0;
+    }
+    return -1;
 }
 
 static int handle_querycap(struct v4l2_capability *cap)
@@ -359,7 +399,7 @@ static int handle_enum_fmt(struct v4l2_fmtdesc *fmt)
     fmt->index = 0;
     fmt->type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
     fmt->pixelformat = cfg_format;
-    if (cfg_format == V4L2_PIX_FMT_MJPEG || cfg_format == V4L2_PIX_FMT_JPEG)
+    if (is_compressed())
         fmt->flags = V4L2_FMT_FLAG_COMPRESSED;
     strncpy((char *)fmt->description, cfg_format_str, sizeof(fmt->description) - 1);
     LOG_DEBUG("ENUM_FMT index=%u format=%s", fmt->index, cfg_format_str);
@@ -377,8 +417,8 @@ static int handle_g_fmt(struct v4l2_format *fmt)
     fmt->fmt.pix.height = cfg_height;
     fmt->fmt.pix.pixelformat = cfg_format;
     fmt->fmt.pix.field = V4L2_FIELD_NONE;
-    fmt->fmt.pix.bytesperline = 0;
-    fmt->fmt.pix.sizeimage = cfg_width * cfg_height * 2;
+    fmt->fmt.pix.bytesperline = bytes_per_line();
+    fmt->fmt.pix.sizeimage = image_size();
     if (fmt->fmt.pix.sizeimage > MAX_BUFFER_SIZE) {
         LOG_ERROR("G_FMT: sizeimage overflow");
         return -EINVAL;
@@ -409,8 +449,8 @@ static int handle_s_fmt(struct v4l2_format *fmt)
     }
 
     fmt->fmt.pix.field = V4L2_FIELD_NONE;
-    fmt->fmt.pix.bytesperline = 0;
-    fmt->fmt.pix.sizeimage = cfg_width * cfg_height * 2;
+    fmt->fmt.pix.bytesperline = bytes_per_line();
+    fmt->fmt.pix.sizeimage = image_size();
     if (fmt->fmt.pix.sizeimage > MAX_BUFFER_SIZE) {
         LOG_ERROR("S_FMT: sizeimage overflow");
         return -EINVAL;
@@ -442,7 +482,7 @@ static int handle_reqbufs(struct v4l2_requestbuffers *req)
     if (req->count > MAX_BUFFERS)
         req->count = MAX_BUFFERS;
 
-    size = cfg_width * cfg_height * 2;
+    size = image_size();
     if (size > MAX_BUFFER_SIZE) {
         LOG_ERROR("REQBUFS: buffer size overflow");
         return -EINVAL;
