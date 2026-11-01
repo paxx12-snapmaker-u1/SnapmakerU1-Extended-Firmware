@@ -4,7 +4,7 @@
 
 links:
   internal-camera:
-    url: /webcam
+    url: /webcam/
     icon: "📷"
     label: Internal Camera
     condition:
@@ -12,7 +12,7 @@ links:
       value: paxx12
 
   usb-camera:
-    url: /webcam2
+    url: /webcam2/
     icon: "📹"
     label: USB Camera
     condition:

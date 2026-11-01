@@ -223,9 +223,9 @@ index d6048cddf..9b8bbf449 100644
          self.delta_freq = config.getfloat('delta_freq', 10., minval=5.)
          self.log_path = config.get('log_path', None)
          debug = config.getint('debug', 0)
-@@ -175,12 +252,9 @@ class ResonanceTester:
-         toolhead = self.printer.lookup_object('toolhead')
-         calibration_data = {axis: None for axis in axes}
+@@ -182,12 +259,9 @@ class ResonanceTester:
+             accel_chips = [self._resolve_accel_chip(chip)
+                            for chip in accel_chips]
  
 -        self.test.prepare_test(gcmd)
 +        self.generator.prepare_test(gcmd)

@@ -64,7 +64,7 @@ Run the complete project test target:
 ./dev.sh make test
 ```
 
-The complete target runs the download tests, startup-guard tests, builds the image tools, and checks that the pinned stock firmware survives unpack and repack byte-for-byte. It downloads the stock image if it is not already cached. The startup tests cover staged CRLF shebang rejection and the camera hook's normal, disabled, invalid-setting, and helper-failure paths.
+The complete target runs the download tests, build-guard tests, builds the image tools, and checks that the pinned stock firmware survives unpack and repack byte-for-byte. It downloads the stock image if it is not already cached. The build-guard tests cover the WSL filesystem check, staged CRLF shebang rejection, and the camera hook's normal, disabled, invalid-setting, and helper-failure paths.
 
 Pull-request CI runs this test target before building the standard, AFC, and multiACE profiles. A newer run for the same pull request cancels its superseded run; separate pull requests run independently. Manual workflow runs are grouped separately.
 
