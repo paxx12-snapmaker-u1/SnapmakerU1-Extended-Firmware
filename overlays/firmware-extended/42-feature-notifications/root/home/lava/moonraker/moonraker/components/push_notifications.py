@@ -99,7 +99,7 @@ ROW_IDS = (
     "filament_change",
     "macro_min", "macro_low", "macro_default", "macro_high", "macro_max",
     "error", "warning", "shutdown", "power_loss", "driver_hot",
-    "filament_short", "filament_low", "spool_switch",
+    "filament_short", "filament_low", "spool_switch", "slot_empty",
 )
 SPOOLMAN_ROWS = ("filament_short", "filament_low", "spool_switch")
 TITLES = {
@@ -116,7 +116,8 @@ TITLES = {
     "calibration": "📐 {name} {what} complete",
     "macro": "📣 {name} {title}",
     "calibration_failed": "📐 {name} {what} failed",
-    "intervention": "🖐️ {name} user intervention needed",
+    "intervention": "👋 {name} user intervention needed",
+    "file_pause": "👋 {name} paused by the print job",
     "chamber_waiting": "🌡️ {name} waiting for chamber temperature",
     "chamber_reached": "🌡️ {name} chamber temperature reached",
     "chamber_timeout": "⚠️ {name} timed out waiting for chamber "
@@ -138,6 +139,7 @@ TITLES = {
     "filament_low": "🧵 {name} spool running low",
     "filament_lows": "🧵 {name} spools running low on {n} toolheads",
     "spool_switch": "🔄 {name} switched to backup spool",
+    "slot_empty": "🧵 {name} ACE slot ran empty",
 }
 IMAGE_KINDS = ("render", "snapshot", "spool", "none")
 # machine_state_manager.main_state values of the manual calibrations run
@@ -196,6 +198,15 @@ PAUSE_SNAPSHOT_DELAY = 3.
 # error is held this long and dropped if the refill happens (the "Switched
 # to backup spool" notification says it instead)
 REFILL_WAIT = 25.
+# multiACE (klipper/extras/ace.py): with Quad Replenish on, a runout on a
+# head fed by an ACE is reloaded from another slot of the ACE (a full load
+# takes ~90 s) and the print job resumes by itself: the error is held
+# this long instead. Status fields read from the `ace` object; indices in
+# it are 0-based, shown 1-based like multiACE's own messages.
+ACE_OBJECT = "ace"
+ACE_FIELDS = ["head_source", "aces", "mode", "head_ace",
+              "quad_replenish", "quad_first", "swap_in_progress"]
+ACE_REFILL_WAIT = 180.
 MACRO_PREFIX = "notify "
 MACRO_SEP = " || "
 MACRO_LEVELS = ("min", "low", "default", "high", "max")
@@ -227,7 +238,8 @@ NOTIFY_TYPES = {"complete": "success", "object_complete": "success",
                 "warning": "failure", "shutdown": "failure",
                 "power_loss": "failure", "filament_short": "failure",
                 "cancelled": "warning", "paused": "warning",
-                "filament_low": "warning", "spool_switch": "warning"}
+                "filament_low": "warning", "spool_switch": "warning",
+                "slot_empty": "warning"}
 FILE_CAP = 30
 # Emails about one print go in one thread (see _email_prepare). Faults
 # join it while printing and this long after the print ended.
@@ -236,7 +248,8 @@ THREAD_ROWS = ("started", "layer_started", "first_layer",
                "progress_75", "paused", "resumed", "object_complete",
                "complete", "cancelled",
                "chamber_waiting", "chamber_reached", "chamber_fault",
-               "filament_change", "filament_short", "filament_low", "spool_switch")
+               "filament_change", "filament_short", "filament_low",
+               "spool_switch", "slot_empty")
 THREAD_FAULT_WINDOW = 120.
 NAME_CAP_MIN = 8
 PTC_FIELDS = ["extruder_map_table", "filament_spool_id", "extruders_used",
@@ -303,6 +316,19 @@ DRIVER_HOT_DEFAULT = 105
 # Klipper which object is being printed. Layer numbers run on across the
 # objects, so an object's own layer is counted from the layer it began on.
 CONFIG_TAIL = 256 * 1024
+# Pauses the print job itself asks for, put there by the slicer ("add
+# pause", "change filament") or by hand: PAUSE, M601, M226, M0, M1, M600,
+# and Orca's ;PAUSE_PRINT marker (followed by the printer's pause G-code).
+# A marker and a command within PAUSE_MERGE bytes are one pause. The
+# pause is told from a person's by virtual_sdcard.file_position, which
+# sits just past the pause line when the file did it.
+RX_PAUSE_CMD = re.compile(rb"^(PAUSE|M601|M226|M0|M1|M600)\b[ \t]*([^;\r\n]*)"
+                          rb"(?:;[ \t]*([^\r\n]*))?", re.I)
+RX_PAUSE_MARK = re.compile(rb"^;[ \t]*PAUSE_PRINT\b", re.I)
+RX_LAYER = re.compile(rb"^;[ \t]*(LAYER_CHANGE|LAYER:[ \t]*(\d+))", re.I)
+RX_M117 = re.compile(rb"^M117[ \t]+([^\r\n]*)", re.I)
+PAUSE_MERGE = 400
+PAUSE_WINDOW = 2048
 RX_BY_OBJECT = re.compile(rb"^; *print_sequence *= *by object *$", re.M)
 RX_OBJECT_NAME = re.compile(r"^(.*?)_id_(\d+)_copy_(\d+)$")
 
@@ -746,13 +772,17 @@ class PushNotifications:
         # Print-by-object: the object being printed, the layer each began
         # on, and the objects already reported
         self._by_object = False
+        # Pauses in the print job's file (see _scan_pauses) and the ones
+        # already reported, by index
+        self._job_pauses: List[Dict[str, Any]] = []
+        self._pauses_seen: Set[int] = set()
         self._obj_cur: Optional[str] = None
         self._obj_start: Dict[str, int] = {}
         self._obj_first_sent: Set[str] = set()
         self._status: Dict[str, Dict[str, Any]] = {
             "print_stats": {}, "virtual_sdcard": {}, "print_task_config": {},
             "exclude_object": {}, "machine_state_manager": {},
-            "idle_timeout": {},
+            "idle_timeout": {}, ACE_OBJECT: {},
             **{d: {} for d in DRIVERS}, **{e: {} for e in EXTRUDERS}}
         self._cal_busy_at = 0.      # when Klipper was last seen busy
         # Filament loaded / unloaded: last reported filament_exist per
@@ -771,6 +801,13 @@ class PushNotifications:
         self._ch: Dict[str, Any] = {}
         self._calibrating: Optional[int] = None  # main_state of a running one
         self._refills = 0      # refills from a backup spool seen so far
+        # multiACE (see _track_ace): found at klippy_ready; the last
+        # head_source seen; heads with a runout being held; slots already
+        # reported empty this job
+        self._ace_on = False
+        self._ace_src: Dict[str, Any] = {}
+        self._ace_runouts: Set[int] = set()
+        self._slot_empty_sent: Set[Tuple[int, int]] = set()
         self._cal_action: Optional[int] = None   # its last action_code
         self._cal_hold = 0                       # bumps on every action change
 
@@ -1449,7 +1486,8 @@ class PushNotifications:
                     "started", self._title("started"),
                     self._lines(shown(filename),
                                 self._slicer_estimate(filename),
-                                self._queue_line(filename, starting=True)),
+                                self._queue_line(filename, starting=True),
+                                self._pauses_line()),
                     filename=filename))
             # After the started notification has taken its place in the
             # queues, so filament warnings always arrive after it
@@ -1465,6 +1503,8 @@ class PushNotifications:
                     "error", self._title("error", kind="paused"),
                     f"{shown(filename)}\n{describe(ex)}",
                     delay=PAUSE_SNAPSHOT_DELAY))
+            elif "paused" in self.rows and self._job_pauses:
+                self._spawn(self._file_pause_alert(filename))
             else:
                 self._spawn(self._send(
                     "paused", self._title("paused"), shown(filename),
@@ -1542,6 +1582,9 @@ class PushNotifications:
                     "wait_start": 0., "announced": False, "gen": 0}
         self._by_object = await self.eventloop.run_in_thread(
             self._is_by_object, filename)
+        self._job_pauses = await self.eventloop.run_in_thread(
+            self._scan_pauses, filename)
+        self._pauses_seen = set()
         self._obj_start = {}
         self._obj_first_sent = set()
         self._obj_cur = self._status["exclude_object"].get("current_object")
@@ -2039,11 +2082,12 @@ class PushNotifications:
         self._ready_once = True
         kapis: APIComp = self.server.lookup_component("klippy_apis")
         chamber = {}
+        try:
+            objs = await kapis.get_object_list(default=[])
+        except Exception:
+            objs = []
+        self._ace_on = ACE_OBJECT in objs
         if any(r in self.rows for r in CHAMBER_ROWS):
-            try:
-                objs = await kapis.get_object_list(default=[])
-            except Exception:
-                objs = []
             self._ch_heaters = [o for o in objs
                                 if o.startswith("heater_generic ")]
             self._ch_sensor = CHAMBER_SENSOR in objs
@@ -2078,6 +2122,7 @@ class PushNotifications:
                         or self._ch_purifier else {}),
                      **({"idle_timeout": ["state"]}
                         if "calibration" in self.rows else {}),
+                     **({ACE_OBJECT: ACE_FIELDS} if self._ace_on else {}),
                      **chamber),
                 self._on_status_update, default={})
         except Exception as e:
@@ -2086,6 +2131,7 @@ class PushNotifications:
         for obj in self._status:
             self._status[obj].update(status.get(obj) or {})
         self._calibrating = self._cal_action = None   # Klipper restarted
+        self._ace_src = self._ace_sources()
         self._exist_seen = None
         self._exist_gen += 1
         self._track_filament_change()
@@ -2116,6 +2162,8 @@ class PushNotifications:
             self._track_calibration()
         if "filament_exist" in (data.get("print_task_config") or {}):
             self._track_filament_change()
+        if ACE_OBJECT in data:
+            self._track_ace()
         if self._job_active and self._ch:
             self._track_chamber()
         if not self._job_active or ps.get("state") != "printing":
@@ -2191,6 +2239,113 @@ class PushNotifications:
             logging.warning("[push_notifications] could not read %s: %s",
                             shown(filename), e)
             return False
+
+    def _scan_pauses(self, filename: str) -> List[Dict[str, Any]]:
+        """The pauses the print job's file asks for: [{offset, layer,
+        message, kind}], in file order. Runs in a thread: it reads the
+        file."""
+        if not filename:
+            return []
+        out: List[Dict[str, Any]] = []
+        try:
+            fm = self.server.lookup_component("file_manager")
+            path = os.path.join(fm.get_directory("gcodes"), filename)
+            layer = 0
+            m117 = (b"", -10 ** 9)   # last M117 text and where
+            with open(path, "rb") as f:
+                pos = 0
+                for line in f:
+                    at, pos = pos, pos + len(line)
+                    if not line.startswith((b";", b"P", b"p", b"M", b"m")):
+                        continue
+                    m = RX_LAYER.match(line)
+                    if m:
+                        layer = int(m.group(2)) + 1 if m.group(2) else layer + 1
+                        continue
+                    m = RX_M117.match(line)
+                    if m:
+                        m117 = (m.group(1).strip(), at)
+                        continue
+                    if RX_PAUSE_MARK.match(line):
+                        if out and at - out[-1]["offset"] <= PAUSE_MERGE:
+                            continue
+                        out.append(dict(offset=at, layer=layer, message="",
+                                        kind=""))
+                        continue
+                    m = RX_PAUSE_CMD.match(line)
+                    if not m:
+                        continue
+                    kind = ("filament change"
+                            if m.group(1).upper() == b"M600" else "")
+                    msg = (m.group(3) or b"").strip()
+                    if not msg and at - m117[1] <= PAUSE_MERGE:
+                        msg = m117[0]
+                    text = msg.decode("utf-8", "replace")
+                    if out and at - out[-1]["offset"] <= PAUSE_MERGE \
+                            and not out[-1]["kind"]:
+                        out[-1].update(message=out[-1]["message"] or text,
+                                       kind=kind)
+                        continue
+                    out.append(dict(offset=at, layer=layer, kind=kind,
+                                    message=text))
+        except Exception as e:
+            logging.warning("[push_notifications] could not read %s: %s",
+                            shown(filename), e)
+        if out:
+            logging.info("[push_notifications] %s has %d pause(s) in the "
+                         "file: %s", shown(filename), len(out),
+                         ", ".join(f"layer {p['layer']} @{p['offset']}"
+                                   for p in out))
+        return out
+
+    def _pauses_line(self) -> str:
+        """For the started notification: how many pauses the file has."""
+        ps = self._job_pauses
+        if not ps:
+            return ""
+        layers = [p["layer"] for p in ps if p["layer"]]
+        where = ""
+        if len(layers) == len(ps):
+            where = (f" (layer {layers[0]})" if len(layers) == 1 else
+                     " (layers " + ", ".join(str(n) for n in layers[:-1])
+                     + f" and {layers[-1]})")
+        return ("\nPrint job contains a pause" if len(ps) == 1 else
+                f"\nPrint job contains {len(ps)} pauses") + where + "."
+
+    def _file_pause(self, position: Any) -> Optional[int]:
+        """Index of the file's pause the print job stopped at, if the file
+        position is just past one of them and it hasn't been reported."""
+        try:
+            pos = int(position)
+        except (TypeError, ValueError):
+            return None
+        for i, p in enumerate(self._job_pauses):
+            if i not in self._pauses_seen and \
+                    p["offset"] <= pos <= p["offset"] + PAUSE_WINDOW:
+                return i
+        return None
+
+    async def _file_pause_alert(self, filename: str) -> None:
+        state = await self._query({"virtual_sdcard": ["file_position"]})
+        pos = (state.get("virtual_sdcard") or {}).get("file_position")
+        i = self._file_pause(pos)
+        if i is None:
+            await self._send("paused", self._title("paused"), shown(filename),
+                             delay=PAUSE_SNAPSHOT_DELAY)
+            return
+        self._pauses_seen.add(i)
+        p = self._job_pauses[i]
+        n = len(self._job_pauses)
+        what = (f"Pause {i + 1} of {n}" if n > 1 else "Pause") + (
+            f" at layer {p['layer']}" if p["layer"] else "") + (
+            " for a filament change" if p["kind"] else "")
+        line = f"{what}, as planned in the print job."
+        if p["message"]:
+            line += f' "{p["message"]}"'
+        await self._send("paused", self._title("file_pause"),
+                         self._lines(shown(filename), line,
+                                     "Waiting for you to resume…"),
+                         delay=PAUSE_SNAPSHOT_DELAY)
 
     def _objects(self) -> List[str]:
         return [str(o.get("name") or "") for o in
@@ -2349,6 +2504,7 @@ class PushNotifications:
         self._job_tools = set()
         self._job_weights = {}
         self._switched_to = set()
+        self._slot_empty_sent = set()
         self._job_progress0 = progress
         self._spool_start = {}
         self._spool_now = {}
@@ -2812,6 +2968,15 @@ class PushNotifications:
                 ch=c, sid=b_sid, name=self._spool_name(b), rem=b_rem,
                 full=self._full_weight(b), colour=self._spool_colour(b, c),
                 own=own, exact=self._colour_multi(ptc, c) == own_colour))
+        # multiACE: the slots Quad Replenish would reload from, before the
+        # other toolheads (quad_first, the default) or after them. Their
+        # amounts are not known here.
+        ace_backups = self._ace_backups(ch)
+        if ace_backups:
+            unknown_backup = True
+            it["backups"] = (ace_backups + it["backups"]
+                             if self._ace().get("quad_first", True)
+                             else it["backups"] + ace_backups)
         it["total"] = total
         it["together"] = self._status_of(total, need)
         it["unknown_backup"] = unknown_backup
@@ -2831,10 +2996,14 @@ class PushNotifications:
                     else "remaining filament may be insufficient.")
             lines = [f"{desc}: {what} Needs ~{it['need']:.0f} g, "
                      f"{it['rem']:.0f} g left."]
-        if it["refill_on"] and it["backups"]:
+        if it["backups"]:
             for b in it["backups"]:
+                if b.get("ace"):
+                    lines.append(f"Quad Replenish is on: "
+                                 f"{self._bdesc(b, cap)}, is an exact match.")
+                    continue
                 lines.append(
-                    f"Refill is on: {self._desc(b['ch'], b['name'], b['sid'], cap)}"
+                    f"Refill is on: {self._bdesc(b, cap)}"
                     + (f", {b['rem']:.0f} g left" if b["rem"] > 0
                        else ", amount left unknown")
                     + f", is {self._match_text(b)}." + (
@@ -2857,6 +3026,8 @@ class PushNotifications:
                 "No exact match spool for refill found on printer."
                 if it["exact"] else
                 "No compatible spool for refill found on printer."))
+        if not it["backups"]:
+            lines.extend(self._ace_none_lines(it["ch"]))
         lines.extend(self._blocker_lines(it))
         return "\n".join(lines)
 
@@ -2870,9 +3041,10 @@ class PushNotifications:
         if it["backups"]:
             # The whole chain, in the order the printer would use it
             row["refills"] = [dict(
-                toolhead=self._toolhead(b["ch"]), remaining=b["rem"],
+                toolhead=self._blabel(b), remaining=b["rem"],
                 full=b["full"], colour=b["colour"], name=b["name"],
-                status=it["together"], unknown=b["rem"] <= 0,
+                status=it["together"],
+                unknown=b["rem"] is not None and b["rem"] <= 0,
                 match="Exact match" if b.get("exact") else "Inexact match")
                 for b in it["backups"]]
         elif it["refill_on"]:
@@ -2886,6 +3058,8 @@ class PushNotifications:
                                "No exact match spool for" if it["exact"]
                                else "No compatible spool for",
                                "refill found on printer."]
+        elif self._ace_head(it["ch"]) is not None:
+            row["note"] = self._ace_none_lines(it["ch"])
         return row
 
     def _short_title(self, issues: List[Dict[str, Any]]) -> str:
@@ -3054,19 +3228,27 @@ class PushNotifications:
             return False
         ptc = self._status["print_task_config"]
         return runout and ch >= 0 and bool(
-            self._backups(ptc, ch, self._job_ptc or None))
+            self._backups(ptc, ch, self._job_ptc or None)
+            or self._ace_candidates(ch))
 
     async def _runout_hold(self, filename: str, ex: Dict[str, Any]) -> None:
         refills = self._refills
-        deadline = time.monotonic() + REFILL_WAIT
-        while time.monotonic() < deadline:
-            await asyncio.sleep(0.5)
-            if self._refills != refills:
-                self._skip("error", "runout refilled from a backup spool "
-                           "(reported as Switched to backup spool)")
-                return
-            if self._status["print_stats"].get("state") != "paused":
-                break       # resumed or ended without a refill being seen
+        ch = int(ex.get("index", -1))
+        ace = self._ace_head(ch) is not None
+        if ace:
+            self._ace_runouts.add(ch)
+        deadline = time.monotonic() + (ACE_REFILL_WAIT if ace else REFILL_WAIT)
+        try:
+            while time.monotonic() < deadline:
+                await asyncio.sleep(0.5)
+                if self._refills != refills:
+                    self._skip("error", "runout refilled from a backup "
+                               "spool (reported as Switched to backup spool)")
+                    return
+                if self._status["print_stats"].get("state") != "paused":
+                    break   # resumed or ended without a refill being seen
+        finally:
+            self._ace_runouts.discard(ch)
         await self._send("error", self._title("error", kind="paused"),
                          f"{shown(filename)}\n{describe(ex)}")
 
@@ -3146,6 +3328,254 @@ class PushNotifications:
                        colour=self._spool_colour(t_spool, to), name=t_name,
                        status=(self._status_of(t_rem, need)
                                if need and t_rem is not None else "ink"))])
+        await self._send_parts("spool_switch", [(
+            self._title("spool_switch"), body, [row])])
+
+    # -- multiACE --
+    #
+    # klipper/extras/ace.py exposes an `ace` object: head_source (the ACE
+    # and slot feeding each head), aces[].slots[] (status, material,
+    # brand, colour), mode, head_ace, quad_replenish, quad_first. Quad
+    # Replenish (ace.py _quad_replenish_candidate) reloads a head that ran
+    # out from the first slot whose gate has filament and whose declared
+    # material equals the head's (colour too, when both declare one):
+    # head mode, the other slots of the head's own ACE in slot order;
+    # otherwise the same slot of the other ACEs. Nothing in the status
+    # says "refilled": head_source changing while the runout is held is
+    # the signal. Indices are 0-based, shown 1-based as multiACE does.
+
+    def _ace(self) -> Dict[str, Any]:
+        return self._status.get(ACE_OBJECT) or {}
+
+    def _ace_sources(self) -> Dict[str, Tuple[int, int]]:
+        """head_source as {head: (ace, slot)} for the heads an ACE feeds."""
+        out: Dict[str, Tuple[int, int]] = {}
+        for h, src in (self._ace().get("head_source") or {}).items():
+            if isinstance(src, dict) and src.get("ace_index") is not None \
+                    and src.get("slot") is not None:
+                out[str(h)] = (int(src["ace_index"]), int(src["slot"]))
+        return out
+
+    def _ace_head(self, ch: int) -> Optional[Tuple[int, int]]:
+        return self._ace_sources().get(str(ch))
+
+    def _ace_slot(self, a: int, s: int) -> Dict[str, Any]:
+        for i, unit in enumerate(self._ace().get("aces") or []):
+            if int(unit.get("idx", i)) == a:
+                slots = list(unit.get("slots") or [])
+                return slots[s] if 0 <= s < len(slots) else {}
+        return {}
+
+    def _ace_ident(self, a: int, s: int) -> Optional[Tuple[str, str]]:
+        """A slot's declared identity, (material, colour): material in
+        lower case, colour as 6 hex digits or "" when not declared; None
+        when the slot declares no material."""
+        slot = self._ace_slot(a, s)
+        mat = str(slot.get("material") or "").strip().lower()
+        if not mat:
+            return None
+        col = slot.get("color")
+        if isinstance(col, (list, tuple)) and len(col) == 3:
+            try:
+                hexcol = "%02X%02X%02X" % tuple(int(c) for c in col)
+            except (TypeError, ValueError):
+                hexcol = ""
+        else:
+            hexcol = str(col or "").strip().lstrip("#").upper()[:6]
+        return mat, hexcol
+
+    def _ace_candidates(self, ch: int) -> List[Tuple[int, int]]:
+        """The slots Quad Replenish would reload head `ch` from, in the
+        order it tries them (ace.py _quad_replenish_candidate)."""
+        ace = self._ace()
+        if not ace.get("quad_replenish"):
+            return []
+        src = (ace.get("head_source") or {}).get(str(ch))
+        if not isinstance(src, dict) or src.get("ace_index") is None \
+                or src.get("slot") is None:
+            return []
+        sa, ss = int(src["ace_index"]), int(src["slot"])
+        want_t = str(src.get("type") or "").strip().lower()
+        want_c = str(src.get("color") or "").strip().lstrip("#").upper()[:6]
+        if not want_t:
+            ident = self._ace_ident(sa, ss)
+            if ident is None:
+                return []
+            want_t, want_c = ident
+        if ace.get("mode") == "head":
+            try:
+                wired = int((ace.get("head_ace") or {}).get(str(ch), ch))
+            except (TypeError, ValueError):
+                wired = ch
+            lanes = [(wired, s) for s in range(4)
+                     if not (wired == sa and s == ss)]
+        else:
+            idxs = sorted(int(u.get("idx", i)) for i, u in
+                          enumerate(ace.get("aces") or []))
+            lanes = [(a, ch) for a in idxs if a != sa]
+        out = []
+        for a, s in lanes:
+            if self._ace_slot(a, s).get("status") != "ready":
+                continue    # gate empty, or busy
+            ident = self._ace_ident(a, s)
+            if ident is None:
+                continue
+            mat, col = ident
+            if mat != want_t or (want_c and col and col != want_c):
+                continue
+            out.append((a, s))
+        return out
+
+    @staticmethod
+    def _ace_label(a: int, s: int) -> str:
+        return f"ACE {a + 1} slot {s + 1}"
+
+    def _ace_name(self, a: int, s: int, ch: int) -> str:
+        """Brand and material of a slot ("Generic PLA"), falling back to
+        what head `ch` captured when it loaded from it."""
+        slot = self._ace_slot(a, s)
+        parts = [str(slot.get(k) or "").strip() for k in ("brand", "material")]
+        name = " ".join(x for x in parts if x)
+        if name:
+            return name
+        src = (self._ace().get("head_source") or {}).get(str(ch)) or {}
+        parts = [str(src.get(k) or "").strip() for k in ("brand", "type")]
+        return " ".join(x for x in parts if x)
+
+    def _ace_colour(self, a: int, s: int, ch: int) -> Any:
+        if images is None:
+            return None
+        ident = self._ace_ident(a, s)
+        if ident and ident[1]:
+            return images.parse_hex(ident[1])
+        src = (self._ace().get("head_source") or {}).get(str(ch)) or {}
+        return images.parse_hex(src.get("color"))
+
+    def _ace_backups(self, ch: int) -> List[Dict[str, Any]]:
+        """Quad Replenish's slots for head `ch` as backup entries (like
+        _issue's toolhead backups; amounts unknown)."""
+        return [dict(ch=ch, ace=(a, s), sid=0, name=self._ace_name(a, s, ch),
+                     rem=None, full=None, colour=self._ace_colour(a, s, ch),
+                     own=0., exact=True)
+                for a, s in self._ace_candidates(ch)]
+
+    def _ace_none_lines(self, ch: int) -> List[str]:
+        """Why Quad Replenish has nothing for head `ch` (an ACE-fed head
+        only)."""
+        src = self._ace_head(ch)
+        if src is None:
+            return []
+        if not self._ace().get("quad_replenish"):
+            return ["Quad Replenish is off."]
+        where = f"ACE {src[0] + 1}" if self._ace().get("mode") == "head" \
+            else "the other ACEs"
+        return ["Quad Replenish is on.",
+                f"No matching slot on {where}."]
+
+    def _blabel(self, b: Dict[str, Any]) -> str:
+        return self._ace_label(*b["ace"]) if b.get("ace") \
+            else self._toolhead(b["ch"])
+
+    def _bdesc(self, b: Dict[str, Any], cap: Optional[int] = None) -> str:
+        if b.get("ace"):
+            name = self._cap(b["name"], cap)
+            return f"{self._ace_label(*b['ace'])} ({name})" if name \
+                else self._ace_label(*b["ace"])
+        return self._desc(b["ch"], b["name"], b["sid"], cap)
+
+    def _job_channels(self) -> Set[int]:
+        emap = self._job_map or []
+        chs = {emap[t] for t in self._job_tools
+               if t < len(emap) and isinstance(emap[t], int)}
+        return chs or set(range(len(EXTRUDERS)))
+
+    def _track_ace(self) -> None:
+        """head_source changing for a head whose runout is being held: a
+        Quad Replenish reload (the print job resumes by itself). A slot
+        feeding a toolhead of the job going empty: the toolhead is on the
+        last of that spool (the filament path between the ACE and the
+        nozzle), reported once per slot."""
+        new = self._ace_sources()
+        old, self._ace_src = self._ace_src, new
+        state = self._status["print_stats"].get("state")
+        if not self._job_active or state not in ("printing", "paused"):
+            return
+        for h in list(self._ace_runouts):
+            o, n = old.get(str(h)), new.get(str(h))
+            if n is not None and n != o:
+                self._ace_runouts.discard(h)
+                self._refills += 1
+                logging.info("[push_notifications] filament: Toolhead %d "
+                             "reloaded from %s", h + 1, self._ace_label(*n))
+                if "spool_switch" in self.rows:
+                    self._spawn(self._ace_switch_alert(h, o, n))
+        if "slot_empty" not in self.rows or state != "printing":
+            return
+        for h, (a, s) in new.items():
+            ch = int(h)
+            if ch not in self._job_channels() or (a, s) in self._slot_empty_sent:
+                continue
+            if self._ace_slot(a, s).get("status") == "empty":
+                self._slot_empty_sent.add((a, s))
+                self._spawn(self._slot_empty_alert(ch, a, s))
+
+    def _ace_next_lines(self, ch: int, runs_out: str) -> List[str]:
+        nxt = self._ace_candidates(ch)
+        if nxt:
+            return [f"Next: {self._bdesc(b)}, an exact match."
+                    for b in self._ace_backups(ch)]
+        none = self._ace_none_lines(ch)
+        if none:
+            none[-1] = none[-1].rstrip(".") + f": {runs_out}"
+        return none
+
+    def _ace_row(self, ch: int, a: int, s: int, word: str,
+                 remaining: Optional[float], status: str,
+                 refills: List[Dict[str, Any]]) -> Dict[str, Any]:
+        row = dict(toolhead=self._ace_label(a, s), word=word, status=status,
+                   needs="", remaining=remaining, full=None,
+                   colour=self._ace_colour(a, s, ch),
+                   name=self._ace_name(a, s, ch))
+        if refills:
+            row["refills"] = [dict(
+                toolhead=self._blabel(b), remaining=None, full=None,
+                colour=b["colour"], name=b["name"], status="ink",
+                match="Exact match") for b in refills]
+        elif self._ace_none_lines(ch):
+            row["note"] = self._ace_none_lines(ch)
+        return row
+
+    async def _slot_empty_alert(self, ch: int, a: int, s: int) -> None:
+        filename = self._status["print_stats"].get("filename") or ""
+        th = self._toolhead(ch)
+        body = self._lines(
+            shown(filename),
+            f"{self._ace_label(a, s)} ({self._ace_name(a, s, ch)}), feeding "
+            f"{th}, has run out. {th} is printing what is left in the "
+            "filament path.",
+            *self._ace_next_lines(
+                ch, f"the print job will pause when {th} runs out."))
+        row = self._ace_row(ch, a, s, "Ran empty.", 0., "red",
+                            self._ace_backups(ch))
+        await self._send_parts("slot_empty", [(
+            self._title("slot_empty"), body, [row])])
+
+    async def _ace_switch_alert(self, ch: int, old: Optional[Tuple[int, int]],
+                                new: Tuple[int, int]) -> None:
+        filename = self._status["print_stats"].get("filename") or ""
+        frm = (f"{self._ace_label(*old)} ({self._ace_name(*old, ch)})"
+               if old else "an empty slot")
+        body = self._lines(
+            shown(filename),
+            f"From {frm} on {self._toolhead(ch)}.",
+            f"To {self._ace_label(*new)} ({self._ace_name(*new, ch)}).",
+            *self._ace_next_lines(
+                ch, f"the print job will pause when it runs out."))
+        row = self._ace_row(ch, *(old or new), "Switched to refill.", 0.,
+                            "red", [dict(ace=new, ch=ch,
+                                         name=self._ace_name(*new, ch),
+                                         colour=self._ace_colour(*new, ch))]
+                            + self._ace_backups(ch))
         await self._send_parts("spool_switch", [(
             self._title("spool_switch"), body, [row])])
 

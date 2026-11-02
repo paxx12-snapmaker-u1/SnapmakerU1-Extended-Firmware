@@ -140,6 +140,9 @@ ROWS = [
     # Spoolman: Spoolman only adds the spools' names and weights
     ("spool_switch", "Switched to backup spool", "🔄", True, "default",
      "spool", "refill", False),
+    # multiACE: the slot feeding a toolhead went empty mid-print
+    ("slot_empty", "ACE slot ran empty", "🧵", True, "default", "spool",
+     "refill", False),
 ]
 ROW_IDS = [r[0] for r in ROWS]
 # Print-by-object: "Print complete" for each object is sent as its own

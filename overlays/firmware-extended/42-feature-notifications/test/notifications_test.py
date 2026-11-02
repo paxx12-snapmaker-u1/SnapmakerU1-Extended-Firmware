@@ -263,7 +263,7 @@ def make(values, services):
         os.remove(state)
     c = pn.PushNotifications(Config(server, dict(
         dict(name="U1", settle_time="0.1"), **values)))
-    c.rows = {rid: ("snapshot" if not rid.startswith(("filament", "spool"))
+    c.rows = {rid: ("snapshot" if not rid.startswith(("filament", "spool", "slot"))
                     else "spool",
                     [pn.Destination(ch, fake, em) for ch, fake, em in dests])
               for rid, dests in services.items()}
@@ -918,6 +918,262 @@ async def test_spool_switch():
           not c._refill_expected(tangle))
 
 
+def ace_state(slots, head=3, src_slot=3, mode="head", quad=True,
+              quad_first=True, units=1):
+    """A multiACE status: `slots` = [(status, material, colour)] of ACE 1
+    (other units get the same), head `head` fed from ACE 1 slot `src_slot`."""
+    def unit(i):
+        return {"idx": i, "connected": True, "status": "ready",
+                "slots": [{"index": n, "status": st, "material": mat,
+                           "brand": "Generic" if mat else "", "color": col}
+                          for n, (st, mat, col) in enumerate(slots)]}
+    return {"head_source": {str(h): ({"ace_index": 0, "slot": src_slot,
+                                      "type": "PLA", "color": "7A4A1E",
+                                      "brand": "Generic"} if h == head
+                                     else None) for h in range(4)},
+            "aces": [unit(i) for i in range(units)], "mode": mode,
+            "head_ace": {"0": 0, "1": 1, "2": 2, "3": 0},
+            "quad_replenish": quad, "quad_first": quad_first,
+            "swap_in_progress": False}
+
+
+ACE_PTC = {
+    "extruder_map_table": [3, 0, 1, 2], "filament_spool_id": [0, 0, 0, 10],
+    "extruders_used": [False, False, False, True],
+    "auto_replenish_filament": False, "replenish_ignore_color": False,
+    "filament_exist": [True] * 4, "filament_vendor": ["X"] * 4,
+    "filament_type": ["PLA"] * 4, "filament_sub_type": [""] * 4,
+    "filament_color_rgba": ["7A4A1EFF"] * 4}
+BROWN = [0x7A, 0x4A, 0x1E]
+
+
+async def test_ace():
+    print("multiACE: Quad Replenish backups, reload hold, slot ran empty")
+    reset_world()
+    log = []
+    ntfy = FakeService(log, "ntfy")
+    server, c = make({}, {"spool_switch": [("ntfy", ntfy, False)],
+                          "slot_empty": [("ntfy", ntfy, False)],
+                          "error": [("ntfy", ntfy, False)]})
+    STATE["print_task_config"] = dict(ACE_PTC)
+    STATE["ace"] = ace_state([("ready", "", [0, 0, 0]),
+                              ("ready", "PLA", BROWN),
+                              ("ready", "PETG", BROWN),
+                              ("ready", "PLA", BROWN)])
+    await start_job(server)
+    await asyncio.sleep(0.3)
+    check("found the ace object", c._ace_on)
+    check("head mode: the other slots of the head's ACE with the same "
+          "material and colour, in slot order",
+          c._ace_candidates(3) == [(0, 1)], c._ace_candidates(3))
+    STATE["ace"]["aces"][0]["slots"][2]["material"] = "PLA"
+    STATE["ace"]["head_source"]["3"]["type"] = "pla"
+    c._status["ace"] = STATE["ace"]
+    check("material compared ignoring case; a chain of matches",
+          c._ace_candidates(3) == [(0, 1), (0, 2)], c._ace_candidates(3))
+    STATE["ace"]["head_source"]["3"]["type"] = "PLA"
+    STATE["ace"]["aces"][0]["slots"][1]["status"] = "empty"
+    check("a slot without filament at the gate is skipped",
+          c._ace_candidates(3) == [(0, 2)], c._ace_candidates(3))
+    STATE["ace"]["aces"][0]["slots"][1]["status"] = "ready"
+    STATE["ace"]["quad_replenish"] = False
+    check("Quad Replenish off: no candidates", c._ace_candidates(3) == [])
+    STATE["ace"]["quad_replenish"] = True
+    check("a head no ACE feeds has none", c._ace_candidates(0) == [])
+    multi = ace_state([("ready", "PLA", BROWN)] * 4, head=1, src_slot=1,
+                      mode="multi", units=3)
+    c._status["ace"] = multi
+    check("multi mode: the same slot of the other ACEs",
+          c._ace_candidates(1) == [(1, 1), (2, 1)], c._ace_candidates(1))
+    c._status["ace"] = STATE["ace"]
+    check("1-based labels", c._ace_label(0, 1) == "ACE 1 slot 2"
+          and c._ace_name(0, 1, 3) == "Generic PLA")
+
+    # The slot feeding Toolhead 4 runs empty mid-print
+    STATE["ace"]["aces"][0]["slots"][3]["status"] = "empty"
+    await c._on_status_update({"ace": {"aces": STATE["ace"]["aces"]}}, 0)
+    await asyncio.sleep(0.5)
+    titles = [e["title"].split(" ", 2)[2] for e in log]
+    check("slot ran empty is reported", titles == ["ACE slot ran empty"],
+          titles)
+    body = log[0]["body"] if log else ""
+    check("...naming the slot, the toolhead and the next slots",
+          "ACE 1 slot 4 (Generic PLA), feeding Toolhead 4, has run out."
+          in body and "Next: ACE 1 slot 2 (Generic PLA), an exact match."
+          in body and "Next: ACE 1 slot 3 (Generic PLA)" in body, body)
+    check("...with a spool picture", log and log[0].get("attach"))
+    await c._on_status_update({"ace": {"aces": STATE["ace"]["aces"]}}, 0)
+    await asyncio.sleep(0.3)
+    check("...once per slot", len(log) == 1, len(log))
+
+    # Then the runout: held until Quad Replenish reloads the head
+    pn.ACE_REFILL_WAIT = 1.5
+    log.clear()
+    ex = {"id": 523, "index": 3, "code": 0, "level": 2,
+          "message": "[multiACE] Runout on Head 4 (ACE 1 / Slot 4) - "
+                     "reload filament, then RESUME"}
+    STATE["print_stats"] = ps("paused", exception=ex)
+    c._status["print_stats"]["state"] = "paused"
+    await server.handlers["job_state:state_changed"](
+        JobEvent.PAUSED, {}, STATE["print_stats"])
+    await asyncio.sleep(0.5)
+    check("the runout is held", not log, [e["title"] for e in log])
+    STATE["ace"]["head_source"]["3"]["slot"] = 1
+    await c._on_status_update(
+        {"ace": {"head_source": STATE["ace"]["head_source"]}}, 0)
+    await asyncio.sleep(1.8)
+    titles = [e["title"].split(" ", 2)[2] for e in log]
+    check("the reload is the switch, no error",
+          titles == ["switched to backup spool"], titles)
+    body = log[0]["body"] if log else ""
+    check("...from the empty slot to the new one, with what is next",
+          "From ACE 1 slot 4 (Generic PLA) on Toolhead 4." in body
+          and "To ACE 1 slot 2 (Generic PLA)." in body
+          and "Next: ACE 1 slot 3 (Generic PLA), an exact match." in body,
+          body)
+    # The last slot: nothing after it
+    log.clear()
+    c._status["print_stats"]["state"] = "printing"
+    STATE["ace"]["aces"][0]["slots"][2]["status"] = "empty"
+    STATE["ace"]["aces"][0]["slots"][1]["status"] = "empty"
+    await c._on_status_update({"ace": {"aces": STATE["ace"]["aces"]}}, 0)
+    await asyncio.sleep(0.5)
+    body = log[0]["body"] if log else ""
+    check("the last slot empty: says the print job will pause",
+          len(log) == 1 and "No matching slot on ACE 1: the print job will "
+          "pause when Toolhead 4 runs out." in body, body)
+    # A runout with nothing to reload from: the error after the wait
+    log.clear()
+    STATE["print_stats"] = ps("paused", exception=ex)
+    c._status["print_stats"]["state"] = "paused"
+    await server.handlers["job_state:state_changed"](
+        JobEvent.PAUSED, {}, STATE["print_stats"])
+    await asyncio.sleep(0.5)
+    titles = [e["title"].split(" ", 2)[2] for e in log]
+    check("no slot left: the runout error at once", titles == ["Error: paused"],
+          titles)
+    # A reload that never comes: the error after the hold
+    log.clear()
+    STATE["ace"]["aces"][0]["slots"][2]["status"] = "ready"
+    c._status["ace"] = STATE["ace"]
+    STATE["print_stats"] = ps("paused", exception=ex)
+    await server.handlers["job_state:state_changed"](
+        JobEvent.PAUSED, {}, STATE["print_stats"])
+    await asyncio.sleep(0.5)
+    check("held...", not log)
+    await asyncio.sleep(1.5)
+    titles = [e["title"].split(" ", 2)[2] for e in log]
+    check("...then the error", titles == ["Error: paused"], titles)
+    pn.ACE_REFILL_WAIT = 180.
+
+    # Print-start forecast: the ACE slots come before the toolheads
+    reset_world()
+    log = []
+    ntfy = FakeService(log, "ntfy")
+    server, c = make({"spoolman_url": "http://spoolman:7912"},
+                     {"filament_short": [("ntfy", ntfy, False)]})
+    SPOOLS[10] = {"id": 10, "remaining_weight": 20.0, "initial_weight": 1000,
+                  "filament": {"name": "PLA", "vendor": {"name": "X"},
+                               "color_hex": "7A4A1E", "weight": 1000}}
+    SPOOLS[20] = {"id": 20, "remaining_weight": 500.0, "initial_weight": 1000,
+                  "filament": {"name": "PLA", "vendor": {"name": "X"},
+                               "color_hex": "7A4A1E", "weight": 1000}}
+    META["filament_weight"] = [50.0]
+    STATE["print_task_config"] = dict(
+        ACE_PTC, filament_spool_id=[20, 0, 0, 10], auto_replenish_filament=True)
+    for first in (True, False):
+        log.clear()
+        STATE["ace"] = ace_state([("ready", "PLA", BROWN)] * 4,
+                                 quad_first=first)
+        await start_job(server)
+        await asyncio.sleep(0.8)
+        body = log[0]["body"] if log else ""
+        lines = body.splitlines()
+        ace_at = next((i for i, l in enumerate(lines)
+                       if l.startswith("Quad Replenish is on: ACE 1 slot 1")),
+                      -1)
+        th_at = next((i for i, l in enumerate(lines)
+                      if l.startswith("Refill is on: Toolhead 1")), -1)
+        check(f"forecast lists the ACE slots and the toolhead "
+              f"(quad_first={first})",
+              ace_at >= 0 and th_at >= 0
+              and (ace_at < th_at) == first
+              and "Together at least 520 g" in body, body)
+        check("...with the picture", log and log[0].get("attach"))
+    await server.handlers["job_state:state_changed"](
+        JobEvent.COMPLETE, {}, ps("complete"))
+
+
+async def test_file_pauses():
+    print("Pauses in the print job's file")
+    reset_world()
+    log = []
+    ntfy = FakeService(log, "ntfy")
+    server, c = make({}, {"started": [("ntfy", ntfy, False)],
+                          "paused": [("ntfy", ntfy, False)]})
+    body = ["; start\n", "G28\n"]
+    for layer in range(1, 60):
+        body.append(";LAYER_CHANGE\n;Z:%d\n" % layer)
+        body.append("G1 X10 Y10 E1\n" * 20)
+        if layer == 12:
+            body.append(";PAUSE_PRINT\nM117 Insert magnet now\nM601\n")
+        if layer == 40:
+            body.append("PAUSE ; swap to the red spool\n")
+        if layer == 55:
+            body.append("M600\n")
+    text = "".join(body)
+    with open(os.path.join(GCODES, "Magnets.gcode"), "w") as f:
+        f.write(text)
+    offsets = {k: text.index(k) for k in (";PAUSE_PRINT", "PAUSE ;", "M600")}
+    await start_job(server, "Magnets.gcode")
+    await asyncio.sleep(0.4)
+    check("three pauses found, merged marker+M117+M601 as one",
+          [(p["layer"], p["message"], p["kind"]) for p in c._job_pauses]
+          == [(12, "Insert magnet now", ""), (40, "swap to the red spool", ""),
+              (55, "", "filament change")],
+          c._job_pauses)
+    check("started says so", log and log[0]["body"].endswith(
+        "\n\nPrint job contains 3 pauses (layers 12, 40 and 55)."),
+        log and log[0]["body"])
+    log.clear()
+    # The file's pause: file position just past the pause line
+    STATE["virtual_sdcard"] = {"file_position": offsets["PAUSE ;"] + 30,
+                               "progress": 0.5}
+    STATE["print_stats"] = ps("paused", "Magnets.gcode")
+    await server.handlers["job_state:state_changed"](
+        JobEvent.PAUSED, {}, STATE["print_stats"])
+    await asyncio.sleep(3.6)
+    check("the file's pause is told apart from a person's",
+          [e["title"] for e in log] == ["👋 U1 paused by the print job"]
+          and log[0]["body"] == 'Magnets\nPause 2 of 3 at layer 40, as '
+          'planned in the print job. "swap to the red spool"\n'
+          'Waiting for you to resume…', log and (log[0]["title"], log[0]["body"]))
+    log.clear()
+    STATE["virtual_sdcard"]["file_position"] = offsets["M600"] - 5000
+    await server.handlers["job_state:state_changed"](
+        JobEvent.PAUSED, {}, STATE["print_stats"])
+    await asyncio.sleep(3.6)
+    check("a pause elsewhere is the normal paused notification",
+          [e["title"] for e in log] == ["⏸️ U1 paused"], [e["title"] for e in log])
+    log.clear()
+    STATE["virtual_sdcard"]["file_position"] = offsets["M600"] + 5
+    await server.handlers["job_state:state_changed"](
+        JobEvent.PAUSED, {}, STATE["print_stats"])
+    await asyncio.sleep(3.6)
+    check("M600: a filament change pause",
+          log and "Pause 3 of 3 at layer 55 for a filament change, as planned "
+          "in the print job." in log[0]["body"], log and log[0]["body"])
+    await server.handlers["job_state:state_changed"](
+        JobEvent.COMPLETE, {}, ps("complete", "Magnets.gcode"))
+    log.clear()
+    await start_job(server)
+    await asyncio.sleep(0.3)
+    check("a file without pauses: nothing added",
+          log and "Print job contains" not in log[0]["body"] and not c._job_pauses)
+    await server.handlers["job_state:state_changed"](
+        JobEvent.COMPLETE, {}, ps("complete"))
+
+
 async def test_time_left():
     print("Time left: slicer estimate early, measured later")
     reset_world()
@@ -975,7 +1231,7 @@ async def test_calibration():
     await msm(2, 197)
     await asyncio.sleep(0.8)
     check("manual clean and a held idle are user intervention; short gaps "
-          "aren't", titles() == ["🖐️ U1 user intervention needed"] * 2
+          "aren't", titles() == ["👋 U1 user intervention needed"] * 2
           and "Brush the nozzle of Toolhead 1" in log[0]["body"]
           and "waiting for you" in log[1]["body"], (titles(), [e["body"] for e in log]))
     log.clear()
@@ -992,7 +1248,7 @@ async def test_calibration():
     check("...not yet once Klipper went idle", log == [], titles())
     await asyncio.sleep(0.5)
     check("...then user intervention after the hold from when it went idle",
-          titles() == ["🖐️ U1 user intervention needed"], titles())
+          titles() == ["👋 U1 user intervention needed"], titles())
     log.clear()
     await msm(2, 200)              # auto clean: a step, no hold
     await msm(5, 384)              # queued: straight into input shaper
@@ -1656,7 +1912,7 @@ async def run_component_tests():
     for t in (test_order_and_priority, test_expiry_and_independence,
               test_fault_dedup, test_same_preparation_everywhere,
               test_email_threads, test_filament_measured, test_filament_alerts,
-              test_faults_over_a_job, test_spool_switch, test_time_left, test_calibration, test_gotify, test_image_names, test_fault_emoji, test_send_gap, test_macro_notify, test_queue_line, test_chamber, test_filament_change, test_backup_order, test_console,
+              test_faults_over_a_job, test_spool_switch, test_ace, test_file_pauses, test_time_left, test_calibration, test_gotify, test_image_names, test_fault_emoji, test_send_gap, test_macro_notify, test_queue_line, test_chamber, test_filament_change, test_backup_order, test_console,
               test_driver_hot,
               test_print_by_object,
               test_no_secrets_in_logs, test_config_lines):

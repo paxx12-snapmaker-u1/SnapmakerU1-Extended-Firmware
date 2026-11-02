@@ -391,6 +391,10 @@
                 ? '<span class="nt-sub">When a print job waits for a target chamber temperature</span>'
                 : meta.id === 'chamber_fault'
                 ? '<span class="nt-sub">Timed out, not heating, chamber heater faults</span>'
+                : meta.id === 'spool_switch'
+                ? '<span class="nt-sub">The printer\'s refill from another toolhead, or multiACE\'s Quad Replenish from another slot</span>'
+                : meta.id === 'slot_empty'
+                ? '<span class="nt-sub">multiACE only: the slot feeding a toolhead ran out; the toolhead prints what is left in the filament path</span>'
                 : meta.id === 'macro'
                     ? '<span class="nt-sub"><code>RESPOND PREFIX=notify MSG="Title || Message || priority"</code> (priority optional)</span>'
                     : '';
