@@ -21,10 +21,9 @@ elif [[ -n "$CI" ]]; then
   echo ">> CI environment detected. Forcing the git repository to be re-fetched."
 else
   echo ">> Using cached git repository in $TARGET_DIR"
-  exit 0
 fi
 
-echo ">> Fetching $GIT_SHA into $TARGET_DIR"
+echo ">> Checking out $GIT_SHA in $TARGET_DIR"
 if ! git -C "$TARGET_DIR" checkout -f "$GIT_SHA"; then
   git -C "$TARGET_DIR" remote set-url origin "$GIT_URL" || git -C "$TARGET_DIR" remote add origin "$GIT_URL"
   git -C "$TARGET_DIR" fetch origin "$GIT_SHA"
