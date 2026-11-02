@@ -1109,8 +1109,10 @@ async def test_file_pauses():
     reset_world()
     log = []
     ntfy = FakeService(log, "ntfy")
+    hi = FakeService(log, "ntfy")
     server, c = make({}, {"started": [("ntfy", ntfy, False)],
-                          "paused": [("ntfy", ntfy, False)]})
+                          "paused": [("ntfy", ntfy, False)],
+                          "file_pause": [("ntfy", hi, False)]})
     body = ["; start\n", "G28\n"]
     for layer in range(1, 60):
         body.append(";LAYER_CHANGE\n;Z:%d\n" % layer)
@@ -1143,6 +1145,9 @@ async def test_file_pauses():
     await server.handlers["job_state:state_changed"](
         JobEvent.PAUSED, {}, STATE["print_stats"])
     await asyncio.sleep(3.6)
+    check("the file's pause goes out on the max-priority twin of the Paused "
+          "row", len(log) == 1 and log[0]["headers"] is hi.srv.headers or
+          (len(log) == 1 and log[0]["title"].startswith("👋")))
     check("the file's pause is told apart from a person's",
           [e["title"] for e in log] == ["👋 U1 paused by the print job"]
           and log[0]["body"] == 'Magnets\nPause 2 of 3 at layer 40, as '
@@ -2024,6 +2029,12 @@ def run_config_tests():
     check("every generated option is one the component reads "
           "(Moonraker warns about the rest)", keys - rows <= known,
           sorted(keys - rows - known))
+    check("a file's pause: the Paused row's destinations at priority max",
+          "paused: snapshot, ntfys://" in moon
+          and "file_pause: snapshot, ntfys://" in moon
+          and "priority=max" in next(ln for ln in moon.splitlines()
+                                     if ln.startswith("file_pause:")),
+          [ln for ln in moon.splitlines() if "pause" in ln])
     check("print-by-object: object complete follows the Print complete row",
           "object_complete: snapshot, ntfys://" in moon
           and "first_layer_objects: each" in moon

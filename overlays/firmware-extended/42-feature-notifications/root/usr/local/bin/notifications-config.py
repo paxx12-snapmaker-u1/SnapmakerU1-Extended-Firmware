@@ -149,6 +149,9 @@ ROW_IDS = [r[0] for r in ROWS]
 # notification (so a webhook sees event=object_complete), with the Print
 # complete row's settings. It isn't a row of its own in the form.
 OBJECT_ROW = "object_complete"
+# A pause the print job's file asks for is sent with the Paused row's
+# destinations at the highest priority: the file wants something from you
+FILE_PAUSE_ROW = "file_pause"
 ROW = {r[0]: r for r in ROWS}
 ERROR_ROWS = ("error", "warning", "shutdown")
 # Rows that read Spoolman (the first two need it; the switch works without)
@@ -1101,9 +1104,11 @@ def render_moonraker(s, sec=None):
             continue
         # The object-complete notification follows the Print complete row
         for name in ([rid, OBJECT_ROW] if rid == "complete"
-                     and s["complete_objects"] == "each" else [rid]):
+                     and s["complete_objects"] == "each" else
+                     [rid, FILE_PAUSE_ROW] if rid == "paused" else [rid]):
             if rid in push:
-                url = row_url(s, rid, s["rows"][rid]["priority"], cam, sec)
+                url = row_url(s, rid, "max" if name == FILE_PAUSE_ROW
+                              else s["rows"][rid]["priority"], cam, sec)
                 pkind = "none" if s["provider"] == "gotify" else kind
                 out.append(f"{name}: {pkind}, {url}")
             if rid in email:

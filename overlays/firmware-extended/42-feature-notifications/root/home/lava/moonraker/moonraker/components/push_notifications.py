@@ -93,7 +93,7 @@ REMOTE_METHOD = "push_notification"
 MILESTONES = (25, 50, 75)
 ROW_IDS = (
     "started", "layer_started", "first_layer", "progress_25", "progress_50", "progress_75",
-    "paused", "resumed", "object_complete", "complete", "cancelled",
+    "paused", "file_pause", "resumed", "object_complete", "complete", "cancelled",
     "calibration",
     "chamber_waiting", "chamber_reached", "chamber_fault",
     "filament_change",
@@ -238,6 +238,7 @@ NOTIFY_TYPES = {"complete": "success", "object_complete": "success",
                 "warning": "failure", "shutdown": "failure",
                 "power_loss": "failure", "filament_short": "failure",
                 "cancelled": "warning", "paused": "warning",
+                "file_pause": "warning",
                 "filament_low": "warning", "spool_switch": "warning",
                 "slot_empty": "warning"}
 FILE_CAP = 30
@@ -245,7 +246,7 @@ FILE_CAP = 30
 # join it while printing and this long after the print ended.
 THREAD_ROWS = ("started", "layer_started", "first_layer",
                "progress_25", "progress_50",
-               "progress_75", "paused", "resumed", "object_complete",
+               "progress_75", "paused", "file_pause", "resumed", "object_complete",
                "complete", "cancelled",
                "chamber_waiting", "chamber_reached", "chamber_fault",
                "filament_change", "filament_short", "filament_low",
@@ -2342,7 +2343,10 @@ class PushNotifications:
         line = f"{what}, as planned in the print job."
         if p["message"]:
             line += f' "{p["message"]}"'
-        await self._send("paused", self._title("file_pause"),
+        # The Paused row's destinations at the highest priority (the
+        # file_pause row the config writes next to paused)
+        await self._send("file_pause" if "file_pause" in self.rows
+                         else "paused", self._title("file_pause"),
                          self._lines(shown(filename), line,
                                      "Waiting for you to resume…"),
                          delay=PAUSE_SNAPSHOT_DELAY)
