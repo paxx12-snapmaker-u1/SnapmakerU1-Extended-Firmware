@@ -14,7 +14,7 @@ set -eo pipefail
 # Moonraker component. Pinned; a new firmware brings a new pushraker.
 # Apprise (12-patch-moonraker), requests and Pillow are already in the
 # image, so --no-deps keeps them as the firmware has them.
-PUSHRAKER_VERSION=0.2.0
+PUSHRAKER_VERSION=0.2.1
 
 echo ">> Installing pushraker $PUSHRAKER_VERSION via pip3"
 cache_pip.sh "$ROOTFS_DIR" --no-deps "pushraker==$PUSHRAKER_VERSION"
