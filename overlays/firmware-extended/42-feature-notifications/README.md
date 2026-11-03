@@ -6,7 +6,7 @@ Discord, email or a webhook. The notifications themselves are
 [pushraker](https://github.com/noon92/pushraker), a Moonraker component for
 any Klipper printer, published on PyPI. This overlay builds one pinned
 release into the firmware image and wires it in; a new firmware brings a
-new pushraker. It is on by default and set up from its own page
+new pushraker. Notifications are off until the user sets them up on its page
 (Firmware Config > Links > Push Notifications).
 User documentation: the [Push Notifications guide](https://github.com/noon92/pushraker/blob/main/docs/guide.md) in pushraker's repository.
 
