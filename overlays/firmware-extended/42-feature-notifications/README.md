@@ -17,6 +17,7 @@ User documentation: [docs/notifications.md](../../../docs/notifications.md).
 | `scripts/01-install-pushraker.sh` | `pip install pushraker==<pinned>` into the image (`--no-deps`: Apprise, requests and Pillow are already there); links the package's settings page and Klipper macros under `/usr/local/share/pushraker/`, and the default includes into the extended config |
 | `root/home/lava/moonraker/moonraker/components/pushraker.py` | One-line shim: `[pushraker]` loads the package's component |
 | `root/usr/local/share/pushraker/moonraker.cfg` | `[pushraker]` with the U1 specifics (`name: U1`, the Snapmaker error-code index URL) and the move from this firmware's earlier Push Notifications form |
+| `root/etc/hooks/klipper.d/20-pushraker.sh` | Before Klipper starts, renames to `.old` the include files an earlier setup wrote (the old form's `notifications.cfg`, the on-demand test builds' `pushraker.cfg`), so nothing is defined twice |
 | `root/etc/nginx/fluidd.d/pushraker.conf` | `/notifications/` serves the package's settings page |
 | `root/usr/local/share/firmware-config/functions/62_settings_notifications.yaml` | The Push Notifications link |
 
@@ -31,9 +32,7 @@ User documentation: [docs/notifications.md](../../../docs/notifications.md).
   `printer_data/pushraker.secrets` (tokens, 0600), written by the page.
 
 At the first start, settings from `extended2.cfg [notifications]` and
-`moonraker.secrets [notifications]` are moved over, and the files the old
-form generated (`extended/{moonraker,klipper}/notifications.cfg`) are
-renamed to `.old`.
+`moonraker.secrets [notifications]` are moved over.
 
 ## Tests
 
