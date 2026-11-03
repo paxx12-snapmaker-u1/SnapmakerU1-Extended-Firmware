@@ -8,7 +8,7 @@ any Klipper printer, published on PyPI. This overlay builds one pinned
 release into the firmware image and wires it in; a new firmware brings a
 new pushraker. It is on by default and set up from its own page
 (Firmware Config > Links > Push Notifications).
-User documentation: [docs/notifications.md](../../../docs/notifications.md).
+User documentation: the [Push Notifications guide](https://github.com/noon92/pushraker/blob/main/docs/guide.md) in pushraker's repository.
 
 ## Layout
 
