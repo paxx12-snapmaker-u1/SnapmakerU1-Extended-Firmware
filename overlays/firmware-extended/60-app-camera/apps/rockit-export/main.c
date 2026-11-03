@@ -16,20 +16,12 @@
 //   ROCKIT_EXPORT_RAW_SOCKET    raw NV12 frames
 //
 // Encoders only run while a socket has clients.
-//
-// Flip/mirror: with unisrv owning the ISP, the sensor's flip controls have
-// no effect on the image. The library reads horizontal_flip/vertical_flip
-// from the sensor subdev (ROCKIT_EXPORT_FLIP_DEVICE, set by control-v4l2 and
-// the camera controls page) once a second and mirrors its own encoders to
-// match, so only the exported streams flip; unisrv and its AI checks keep
-// the normal image. The raw socket is not flipped.
 
 #define _GNU_SOURCE
 #include <dlfcn.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <linux/sockios.h>
-#include <linux/videodev2.h>
 #include <pthread.h>
 #include <stdarg.h>
 #include <stdbool.h>
@@ -107,7 +99,6 @@ static void put_u32(uint8_t *base, size_t off, RK_U32 v) { memcpy(base + off, &v
 static struct {
     char h264_sock[108], jpeg_sock[108], mjpeg_sock[108], raw_sock[108];
     char log_file[256];
-    char flip_device[64];
     int pipe, chn, venc_h264, venc_jpeg;
     int fps, bitrate_kbps, jpeg_qfactor;
     bool debug;
@@ -118,7 +109,6 @@ static struct {
     .raw_sock = "/tmp/capture-mipi-raw.sock",
     .pipe = 0, .chn = 2, .venc_h264 = 6, .venc_jpeg = 7,
     .fps = 30, .bitrate_kbps = 2000, .jpeg_qfactor = 77,
-    .flip_device = "/dev/v4l-subdev2",
 };
 
 static bool g_active;
@@ -182,7 +172,6 @@ static void init_once(void)
     env_str("ROCKIT_EXPORT_MJPEG_SOCKET", cfg.mjpeg_sock, sizeof(cfg.mjpeg_sock));
     env_str("ROCKIT_EXPORT_RAW_SOCKET", cfg.raw_sock, sizeof(cfg.raw_sock));
     env_str("ROCKIT_EXPORT_LOG_FILE", cfg.log_file, sizeof(cfg.log_file));
-    env_str("ROCKIT_EXPORT_FLIP_DEVICE", cfg.flip_device, sizeof(cfg.flip_device));
     env_int("ROCKIT_EXPORT_VI_PIPE", &cfg.pipe);
     env_int("ROCKIT_EXPORT_VI_CHN", &cfg.chn);
     env_int("ROCKIT_EXPORT_VENC_H264", &cfg.venc_h264);
@@ -225,8 +214,6 @@ static struct {
     RK_S32 (*venc_idr)(RK_S32, RK_S32);
     RK_S32 (*venc_get_jpeg)(RK_S32, void *);
     RK_S32 (*venc_set_jpeg)(RK_S32, const void *);
-    RK_S32 (*venc_get_attr)(RK_S32, void *);
-    RK_S32 (*venc_set_attr)(RK_S32, const void *);
     void *(*mb_vir)(MB_BLK);
 } rk;
 
@@ -245,8 +232,6 @@ static bool load_rockit(void)
     LOAD(venc_idr, "RK_MPI_VENC_RequestIDR");
     LOAD(venc_get_jpeg, "RK_MPI_VENC_GetJpegParam");
     LOAD(venc_set_jpeg, "RK_MPI_VENC_SetJpegParam");
-    LOAD(venc_get_attr, "RK_MPI_VENC_GetChnAttr");
-    LOAD(venc_set_attr, "RK_MPI_VENC_SetChnAttr");
     LOAD(mb_vir, "RK_MPI_MB_Handle2VirAddr");
 #undef LOAD
     return true;
@@ -388,9 +373,7 @@ static void sock_write(sock_t *s, const void *const *bufs, const size_t *lens, i
 // Encoders
 // ---------------------------------------------------------------------------
 
-static sock_t s_h264, s_jpeg, s_mjpeg, s_raw;
 static bool g_h264_ready, g_jpeg_ready;
-static RK_U32 g_mirror;  // MIRROR_E: 0 none, 1 horizontal, 2 vertical, 3 both
 
 static bool venc_h264_open(RK_U32 w, RK_U32 h)
 {
@@ -399,7 +382,6 @@ static bool venc_h264_open(RK_U32 w, RK_U32 h)
     put_u32(a, 4, w);                 // u32MaxPicWidth
     put_u32(a, 8, h);                 // u32MaxPicHeight
     put_u32(a, 12, RK_FMT_YUV420SP);  // enPixelFormat
-    put_u32(a, 16, g_mirror);         // enMirror
     put_u32(a, 20, w * h);            // u32BufSize
     put_u32(a, 24, 100);              // u32Profile: high, as capture-v4l2-raw-mpp
     put_u32(a, 28, 1);                // bByFrame
@@ -439,7 +421,6 @@ static bool venc_jpeg_open(RK_U32 w, RK_U32 h)
     uint8_t a[VENC_CHN_ATTR_SIZE] = { 0 };
     put_u32(a, 0, RK_VIDEO_ID_JPEG);
     put_u32(a, 12, RK_FMT_YUV420SP);
-    put_u32(a, 16, g_mirror);   // enMirror
     put_u32(a, 20, w * h * 2);  // same as unisrv's own JPEG channel
     put_u32(a, 32, w);
     put_u32(a, 36, h);
@@ -504,75 +485,10 @@ static bool encode(int chn, const VIDEO_FRAME_INFO_S *frame, sock_t **socks, int
 }
 
 // ---------------------------------------------------------------------------
-// Flip/mirror from the sensor controls
-// ---------------------------------------------------------------------------
-
-static int g_flip_fd = -1;
-
-static int read_ctrl(RK_U32 id)
-{
-    struct v4l2_control c = { .id = id };
-    if (ioctl(g_flip_fd, VIDIOC_G_CTRL, &c) < 0) return -1;
-    return c.value;
-}
-
-// Returns the wanted MIRROR_E value, or -1 if the controls can't be read.
-static int read_mirror(void)
-{
-    if (g_flip_fd < 0) {
-        g_flip_fd = open(cfg.flip_device, O_RDWR | O_CLOEXEC);
-        if (g_flip_fd < 0) g_flip_fd = open(cfg.flip_device, O_RDONLY | O_CLOEXEC);
-        if (g_flip_fd < 0) return -1;
-    }
-    int h = read_ctrl(V4L2_CID_HFLIP), v = read_ctrl(V4L2_CID_VFLIP);
-    if (h < 0 || v < 0) return -1;
-    return (h ? 1 : 0) | (v ? 2 : 0);
-}
-
-static void venc_apply_mirror(int chn, const char *name)
-{
-    uint8_t a[VENC_CHN_ATTR_SIZE];
-    memset(a, 0, sizeof(a));
-    RK_S32 r = rk.venc_get_attr(chn, a);
-    if (r == 0) {
-        put_u32(a, 16, g_mirror);
-        r = rk.venc_set_attr(chn, a);
-    }
-    if (r == 0) {
-        LOGI("%s encoder mirror set to %u", name, g_mirror);
-        return;
-    }
-    // Fall back to recreating the encoder with the new mirror setting.
-    LOGI("%s encoder: SetChnAttr mirror failed (0x%x), recreating it", name, (unsigned)r);
-    rk.venc_stop(chn);
-    rk.venc_destroy(chn);
-    if (chn == cfg.venc_h264) g_h264_ready = false;
-    else g_jpeg_ready = false;
-}
-
-static void check_mirror(void)
-{
-    static uint64_t last_check;
-    static bool warned;
-    uint64_t t = now_ms();
-    if (t - last_check < 1000) return;
-    last_check = t;
-    int m = read_mirror();
-    if (m < 0) {
-        if (!warned) { warned = true; LOGE("cannot read flip controls from %s, streams are not mirrored", cfg.flip_device); }
-        return;
-    }
-    if ((RK_U32)m == g_mirror) return;
-    LOGI("flip controls changed: horizontal_flip=%d vertical_flip=%d", m & 1, (m >> 1) & 1);
-    g_mirror = (RK_U32)m;
-    if (g_h264_ready) venc_apply_mirror(cfg.venc_h264, "H.264");
-    if (g_jpeg_ready) venc_apply_mirror(cfg.venc_jpeg, "JPEG");
-    s_h264.need_keyframe = true;
-}
-
-// ---------------------------------------------------------------------------
 // Export thread
 // ---------------------------------------------------------------------------
+
+static sock_t s_h264, s_jpeg, s_mjpeg, s_raw;
 
 static void wait_for_clients(int timeout_ms)
 {
@@ -612,7 +528,6 @@ static void *export_thread(void *arg)
     RK_S32 last_err = 0;
 
     for (;;) {
-        check_mirror();
         sock_accept(&s_h264);
         sock_accept(&s_jpeg);
         sock_accept(&s_mjpeg);
