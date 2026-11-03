@@ -106,6 +106,22 @@ pip_install() {
     "$VENV/bin/pip" install --disable-pip-version-check --upgrade "Pillow>=10" || return 1
 }
 
+printing() {
+    # Enable and disable restart Klipper, which ends a print job: refuse
+    # while one runs (unreachable Moonraker counts as idle)
+    local state
+    state=$(/usr/local/bin/curl -s -m 5 "http://127.0.0.1:7125/printer/objects/query?print_stats=state" 2>/dev/null \
+        | sed -n 's/.*"state": *"\([a-z]*\)".*/\1/p')
+    [[ "$state" == "printing" || "$state" == "paused" ]]
+}
+
+refuse_if_printing() {
+    if printing; then
+        echo "ERROR: the printer is printing. Enabling or disabling restarts Klipper, which would end the print job: try again when it is done."
+        return 1
+    fi
+}
+
 restart_services() {
     echo ">> Restarting Klipper..."
     /etc/init.d/S60klipper restart || echo "WARNING: Klipper restart failed"
@@ -114,6 +130,7 @@ restart_services() {
 }
 
 cmd_enable() {
+    refuse_if_printing || return 1
     enter_actions_cgroup
     mkdir -p "$APP_DIR"
     if [[ ! -x "$VENV/bin/python" ]]; then
@@ -142,6 +159,7 @@ cmd_enable() {
 }
 
 cmd_disable() {
+    refuse_if_printing || return 1
     echo ">> Removing pushraker from Moonraker and Klipper..."
     legacy_cleanup
     unwire
@@ -165,6 +183,7 @@ cmd_wire() {
 }
 
 cmd_upgrade() {
+    refuse_if_printing || return 1
     enter_actions_cgroup
     if ! installed; then
         echo "pushraker is not installed. Enable it first."
