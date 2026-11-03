@@ -18,6 +18,12 @@ Automatic filament metadata sync and spool tracking via
   known card loads its filament without any manual step.
 - Tracks the active spool in Moonraker so Spoolman can update remaining
   filament weight as you print.
+- Manages the Spoolman **location** of spools: a spool loaded into an
+  extruder is set to `snapmaker U1`, remembering its previous location, and
+  returned there when unloaded. Spools with no previous location are set to
+  `return_location` (empty by default). Set `location` and `return_location`
+  under `[spoolman]` in `extended2.cfg` to change the names; an empty
+  `location` disables the feature.
 
 ## Screenshots
 
