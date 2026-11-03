@@ -52,10 +52,21 @@ enter_actions_cgroup() {
     declare -F limits_enter >/dev/null && limits_enter actions max
 }
 
+legacy_cleanup() {
+    # Firmware before pushraker generated these from extended2.cfg; left in
+    # place they would define [push_notifications] and the _NTFY_* macros
+    # a second time (Moonraker and Klipper refuse duplicate sections)
+    rm -f "$DATA_DIR/config/extended/moonraker/notifications.cfg" \
+          "$DATA_DIR/config/extended/klipper/notifications.cfg" \
+          "$DATA_DIR/config/extended/.notifications-restart-moonraker" \
+          "$DATA_DIR/config/extended/.notifications-restart-klipper"
+}
+
 wire() {
     # Everything pushraker needs in Moonraker's and Klipper's folders; safe
     # to repeat. The include folders are picked up by the extended
     # firmware's moonraker.conf and printer.cfg already.
+    legacy_cleanup
     local sp
     sp=$(site_packages) || return 1
     "$VENV/bin/python" -m pushraker install \
@@ -132,6 +143,7 @@ cmd_enable() {
 
 cmd_disable() {
     echo ">> Removing pushraker from Moonraker and Klipper..."
+    legacy_cleanup
     unwire
     /usr/local/bin/extended-config.py add "$EXTENDED_CFG" pushraker enabled false
     rm -rf "$APP_DIR"
@@ -140,7 +152,9 @@ cmd_disable() {
 }
 
 cmd_wire() {
-    # Service start: nothing to do unless enabled; never fail the start
+    # Service start: the old generated files go whatever the state; the
+    # rest only when enabled. Never fail the start.
+    legacy_cleanup
     enabled || return 0
     if ! installed; then
         echo "pushraker: enabled but not installed (python3 -m venv failed, or the firmware's Python changed); run Enable again" >&2

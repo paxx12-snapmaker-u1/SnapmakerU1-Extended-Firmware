@@ -305,8 +305,11 @@ RESPOND PREFIX=notify MSG="Print ejection failed || Plate still occupied, queue 
   (`base-url` and `attachment-cache-dir` in the server's `server.yml`, see
   [ntfy server](#ntfy-server)). Otherwise notifications arrive without
   images.
-- For camera images, the **paxx12** camera service for the selected camera
-  (the default for the internal camera, see [Camera Support](camera_support.md)).
+- For camera images, a webcam Moonraker knows (**Camera for snapshots**
+  lists them; the internal camera is `case` with the default **paxx12**
+  service, see [Camera Support](camera_support.md)).
+- Internet access on the printer for the install (the package comes from
+  PyPI).
 - For *Layer complete*, the slicer must emit `SET_PRINT_STATS_INFO`
   layer information (the Snapmaker U1 Orca profile includes it).
 - For print-by-object (*Layer complete* and *Print complete* for each
