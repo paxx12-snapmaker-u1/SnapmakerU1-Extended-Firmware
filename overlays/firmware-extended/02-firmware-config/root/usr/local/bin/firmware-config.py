@@ -254,6 +254,19 @@ class FirmwareConfigHandler(SimpleHTTPRequestHandler):
         except Exception:
             return False
 
+    def _command_label(self, cmd, fallback):
+        """An item's label from a command (label_cmd), e.g. to name the
+        version an upgrade installs; the static label if it fails."""
+        try:
+            result = subprocess.run(cmd, shell=True, capture_output=True,
+                                    text=True, timeout=5)
+            line = result.stdout.strip().splitlines()[0] if result.stdout.strip() else ""
+            if result.returncode == 0 and line:
+                return line[:120]
+        except Exception:
+            pass
+        return fallback
+
     def handle_status(self):
         try:
             status_config = self.functions.get('status', {})
@@ -537,9 +550,12 @@ class FirmwareConfigHandler(SimpleHTTPRequestHandler):
                     if if_cmd and not self._check_condition(if_cmd):
                         continue
 
+                    label = cfg.get("label", action_id)
+                    if cfg.get("label_cmd"):
+                        label = self._command_label(cfg["label_cmd"], label)
                     actions_list.append({
                         "id": action_id,
-                        "label": cfg.get("label", action_id),
+                        "label": label,
                         "description": cfg.get("description"),
                         "help_url": cfg.get("help_url"),
                         "confirm": cfg.get("confirm", False),

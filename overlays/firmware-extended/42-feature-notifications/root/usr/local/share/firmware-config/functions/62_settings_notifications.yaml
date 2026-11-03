@@ -11,6 +11,22 @@ links:
       setting: notifications
       value: "true"
 
+quick_actions:
+  upgrades:
+    items:
+      pushraker-upgrade:
+        # "Upgrade pushraker to 0.3.0" when a newer release is out; on the
+        # GitHub channel always there: "Upgrade pushraker from GitHub (main)"
+        label: Upgrade pushraker
+        label_cmd: /usr/local/bin/pushraker-pkg upgrade_label
+        description: Install the newer pushraker (push notifications) and restart Klipper and Moonraker. Not while a print job runs.
+        if_cmd: /usr/local/bin/pushraker-pkg needs_upgrade
+        confirm: "Upgrade pushraker? Klipper and Moonraker restart."
+        cmd:
+          - /usr/local/bin/pushraker-pkg
+          - upgrade
+        message: "Upgrading pushraker..."
+
 settings:
   monitoring_debugging:
     items:
@@ -37,3 +53,29 @@ settings:
               - /usr/local/bin/pushraker-pkg
               - enable
         default: "false"
+      notifications-channel:
+        label: Push Notifications updates
+        description: "Where pushraker upgrades come from: releases, or GitHub (the newest commit on main, for testing; the upgrade button is always shown). Switching reinstalls it."
+        if_cmd: >-
+          [ "$(/usr/local/bin/extended-config.py get /home/lava/printer_data/config/extended/extended2.cfg pushraker enabled false)" = "true" ]
+        get_cmd:
+          - /usr/local/bin/extended-config.py
+          - get
+          - /home/lava/printer_data/config/extended/extended2.cfg
+          - pushraker
+          - channel
+          - release
+        options:
+          release:
+            label: Releases
+            cmd:
+              - /usr/local/bin/pushraker-pkg
+              - channel
+              - release
+          github:
+            label: GitHub (testing)
+            cmd:
+              - /usr/local/bin/pushraker-pkg
+              - channel
+              - github
+        default: release

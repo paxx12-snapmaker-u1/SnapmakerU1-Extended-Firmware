@@ -1,3 +1,7 @@
-# The pushraker release the enable step installs from PyPI (or newer,
-# once upgraded from the page's own release). Bump with the package.
+# The pushraker releases this firmware accepts from PyPI (the release
+# channel): at least PUSHRAKER_MIN_VERSION, at most PUSHRAKER_MAX_VERSION
+# (empty: no upper limit). Bump the minimum when the harness needs
+# something new from the package; set a maximum only if a release turns
+# out not to work with this firmware.
 PUSHRAKER_MIN_VERSION=0.1.0
+PUSHRAKER_MAX_VERSION=

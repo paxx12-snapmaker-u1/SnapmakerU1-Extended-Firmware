@@ -377,6 +377,17 @@ survives firmware upgrades.
 Set it to **Disabled** to remove the package again; the settings file is
 kept for next time.
 
+**Upgrades.** When a newer pushraker release is out, **Upgrade pushraker
+to X.Y.Z** appears under Upgrades at the top of Firmware Config (checked
+every 6 hours). **Settings > Monitoring & Debugging > Push Notifications
+updates** picks where upgrades come from: **Releases** (the default), or
+**GitHub (testing)**, the newest commit on the repository's main branch,
+with **Upgrade pushraker from GitHub (main)** always offered. Switching
+reinstalls it. Upgrades and switches restart Klipper and Moonraker, so they
+are refused while a print job runs. This firmware accepts releases from
+`PUSHRAKER_MIN_VERSION` up to `PUSHRAKER_MAX_VERSION` (no upper limit when
+empty), set in `/usr/local/share/pushraker/version`.
+
 ## Self-hosting a push server
 
 A server of your own keeps notifications (camera pictures and file names
