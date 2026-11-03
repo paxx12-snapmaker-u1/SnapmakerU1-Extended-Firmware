@@ -1,0 +1,3 @@
+# The pushraker release the enable step installs from PyPI (or newer,
+# once upgraded from the page's own release). Bump with the package.
+PUSHRAKER_MIN_VERSION=0.1.0

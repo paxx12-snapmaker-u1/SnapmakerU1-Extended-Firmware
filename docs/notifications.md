@@ -316,10 +316,20 @@ RESPOND PREFIX=notify MSG="Print ejection failed || Plate still occupied, queue 
 
 ## Setup
 
+Push notifications are [pushraker](https://github.com/noon92/pushraker), a
+Moonraker component that works on any Moonraker printer. The firmware does
+not ship it; it is installed from PyPI when you enable it (the printer needs
+internet access for that step), into `/oem/apps/pushraker`, where it
+survives firmware upgrades.
+
 1. Open [Firmware Config](firmware_config.md) and go to
-   **Settings > Monitoring & Debugging > Push Notifications**, then click
-   **Configure**.
-2. Check **Enable notifications**. Push, email and the webhook each have
+   **Settings > Monitoring & Debugging > Push Notifications**, set it to
+   **Enabled** and wait for the install to finish (it restarts Klipper and
+   Moonraker). Settings from an earlier firmware's *Push Notifications*
+   form are moved over.
+2. Open **Push Notifications** from the Links list at the top of Firmware
+   Config (`http://<printer>/notifications/`) and check **Enable
+   notifications**. Push, email and the webhook each have
    their own checkbox; at least one must be on. For push, choose the
    **Push service**:
    - **ntfy**: enter your **Server URL** (e.g. `http://192.168.1.10:8080`), or
@@ -357,13 +367,11 @@ RESPOND PREFIX=notify MSG="Print ejection failed || Plate still occupied, queue 
    service you set up, at **Max** priority. On failure, the log shows the service's response
    (e.g. `forbidden, error=40301` for an ntfy token without write access to
    the topic, or `535` for a wrong email password).
-7. Click **Save & Apply**.
+7. Click **Save & Apply**. Settings take effect at once, during a print
+   job too: nothing restarts.
 
-Saving restarts Moonraker and/or Klipper only when the generated
-configuration changed, and only when the printer is idle. While a print is
-running (or if the printer state can't be checked), settings are saved but
-services are not restarted. They apply after you restart Moonraker and
-Klipper (**Actions**) or reboot.
+Set it to **Disabled** to remove the package again; the settings file is
+kept for next time.
 
 ## Self-hosting a push server
 
@@ -498,13 +506,14 @@ notifications are text only (see [Gotify](#gotify)).
 - Telegram and Discord bot tokens and the Discord webhook URL let anyone
   who has them send messages as the bot. If one leaks, reset it (BotFather
   `/revoke`, Developer Portal **Reset Token**, or delete the webhook).
-- Tokens, passwords and the webhook address are kept in Moonraker's
-  secrets file (`/home/lava/printer_data/moonraker.secrets`, readable by
-  Moonraker only), not in `extended2.cfg` or the generated config, which
-  refer to them as `{secrets.notifications.…}`. Moonraker never serves,
-  logs or backs up that file. Anyone who can reach Firmware Config can
-  still change where notifications go, so enable **Web Authentication**
-  under **Settings > Remote Access** if your network isn't trusted.
+- Tokens, passwords and the webhook address are kept in
+  `/home/lava/printer_data/pushraker.secrets` (mode 0600, readable by
+  Moonraker only), never in `pushraker.conf`, and the settings page never
+  receives them back (only whether one is saved). Moonraker does not serve
+  files outside its config folder. The page talks to Moonraker, so
+  Moonraker's own authorization applies: anyone who can reach Fluidd can
+  change where notifications go; enable **Web Authentication** under
+  **Settings > Remote Access** if your network isn't trusted.
 - A saved token or password is only reused for the service and server it
   was entered for: switching the push service, the ntfy server, or the
   email server, port, security or username asks for it again, so a secret
@@ -512,10 +521,14 @@ notifications are text only (see [Gotify](#gotify)).
 
 ## Configuration File
 
-Settings are stored in `extended2.cfg` under `[notifications]`:
+Settings are stored in `printer_data/config/pushraker.conf` (visible in
+Fluidd's and Mainsail's config editor; the component re-reads it when it
+changes, so it can be edited by hand too). Tokens and passwords are in
+`printer_data/pushraker.secrets` (mode 0600, outside the config folder, so
+Moonraker never serves it; see Security).
 
 ```ini
-[notifications]
+[pushraker]
 enabled: true
 push_enabled: true
 provider: ntfy
@@ -528,9 +541,8 @@ pushover_device:
 telegram_chat:
 discord_user:
 discord_mention:
-secret:                      # kept in moonraker.secrets, see Security
 printer_url: http://100.64.0.10
-camera: internal
+camera: case                 # a Moonraker webcam name; empty for none
 name: U1
 layers_complete: 2
 driver_temp: 105             # °C, X or Y stepper driver
@@ -542,11 +554,9 @@ email_host: smtp.gmail.com
 email_port: 587
 email_security: starttls
 email_username: you@gmail.com
-email_password:              # kept in moonraker.secrets
 email_from: you@gmail.com
 email_to: you@gmail.com
 webhook_enabled: false
-webhook_url:
 # <notification>: on|off (push), <priority>, image|no_image, email|no_email
 started: on, default, image, no_email
 paused: on, default, image, no_email
@@ -554,29 +564,15 @@ error: on, max, image, email
 ...
 ```
 
-From this, the firmware generates (on save, and on every Moonraker and
-Klipper start):
-
-- `extended/moonraker/notifications.cfg`: the `[push_notifications]`
-  Moonraker component, with one [Apprise](https://github.com/caronc/apprise)
-  URL per enabled notification and service (Discord uses the firmware's own
-  `discordhook://` and `discorddm://` senders).
-- `extended/klipper/notifications.cfg`: the `_PRINT_END_NTFY` and
-  `_CANCEL_PRINT_NTFY` [print hooks](klipper_hooks.md).
-
-Don't edit the generated files; they are overwritten.
-
-**Save & Apply** restarts only the service whose generated file changed.
-Moonraker can restart during a print job (the print carries on; Fluidd
-reconnects), so rows, priorities, images and services can be changed any
-time. Klipper only reads its config at start, so a change to what the
-print-end macros do (*Print complete*, *Print cancelled* and *Error*: on
-or off, email, camera image; the camera, or enabling notifications, push,
-email or the webhook) is refused while printing, naming the settings, and
-nothing is saved. A save is also refused while printing when the
-print-end macros on the printer are older than the firmware. Anything that
-is saved takes effect right away. A restart that fails is reported in red
-and done on the next Save & Apply.
+The component (`[push_notifications]` in `extended/moonraker/pushraker.cfg`,
+written by the install) builds one [Apprise](https://github.com/caronc/apprise)
+URL per enabled notification and service from this (Discord uses
+pushraker's own `discordhook://` and `discorddm://` senders). The Klipper
+side is the fixed macro file `extended/klipper/pushraker.cfg`: the
+`_PRINT_END_NTFY` and `_CANCEL_PRINT_NTFY` [print hooks](klipper_hooks.md),
+which the component tells what to do (`SET_GCODE_VARIABLE` on
+`_NTFY_HOOKS`) whenever the settings change, so no setting ever needs a
+Klipper or Moonraker restart.
 
 For other services
 (Slack, Matrix, etc.), add your own Moonraker

@@ -1,42 +1,39 @@
-# 42-feature-notifications: Push Notifications
+# 42-feature-notifications: Push Notifications (pushraker harness)
 
 Print, progress, fault and filament notifications with images, sent through
 [Apprise](https://github.com/caronc/apprise) to ntfy, Gotify, Pushover, Telegram,
-Discord, email or a webhook. Configured from Firmware Config
-(**Settings > Monitoring & Debugging > Push Notifications > Configure**).
+Discord, email or a webhook. The notifications themselves are
+[pushraker](https://github.com/noon92/pushraker), a Moonraker component for
+any Klipper printer, published on PyPI. This overlay is the harness that
+puts it on the Snapmaker U1: it is not in the firmware image, it is
+installed when the user enables it (Firmware Config > Settings >
+Monitoring & Debugging > Push Notifications).
 User documentation: [docs/notifications.md](../../../docs/notifications.md).
 
 ## Layout
 
 | Path | What |
 | --- | --- |
-| `root/home/lava/moonraker/moonraker/components/push_notifications.py` | The Moonraker component: events, send order and retries, Spoolman checks, print-by-object |
-| `…/push_notifications_email.py` | The HTML email card |
-| `…/push_notifications_discord.py` | Discord senders as Apprise plugins (`discordhook://`, `discorddm://`) |
-| `…/push_notifications_images.py` | The drawn spool pictures (Pillow) |
-| `root/usr/local/bin/notifications-config.py` | Settings: `get`, `save`, `test`, `status`, `render-moonraker`, `render-klipper` |
-| `root/usr/local/share/firmware-config/html/forms/notifications.html` | The settings form, shown in Firmware Config's modal |
-| `root/usr/local/share/firmware-config/functions/62_settings_notifications.yaml` | The Firmware Config setting |
-| `root/etc/hooks/{klipper,moonraker}.d/20-notifications.sh` | Regenerate the config files at service start |
-| `scripts/01-install-pillow.sh` | Build step: Pillow |
-| `test/notifications_test.py` | Offline regression tests |
+| `root/usr/local/bin/pushraker-pkg` | `enable` (venv under `/oem/apps/pushraker`, `pip install pushraker`, wire into Moonraker and Klipper, move old settings over, restart), `disable`, `wire` (service start), `upgrade`, `status` |
+| `root/usr/local/share/pushraker/version` | The oldest pushraker release the enable step accepts |
+| `root/etc/hooks/moonraker.d/20-pushraker.sh` | Re-wires at Moonraker start (the shim in Moonraker's components folder is on the root filesystem, which firmware upgrades replace) |
+| `root/etc/nginx/fluidd.d/pushraker.conf` | `/notifications/` serves the package's settings page |
+| `root/usr/local/share/firmware-config/functions/62_settings_notifications.yaml` | The Enabled/Disabled setting and the Push Notifications link |
 
-## Where things live on the printer
+## What pushraker puts on the printer
 
-- Settings: `extended2.cfg` `[notifications]` (no secrets).
-- Secrets: `/home/lava/printer_data/moonraker.secrets` `[notifications]`,
-  mode 0600, referenced from the generated config as
-  `{secrets.notifications.<name>}`.
-- Generated: `extended/moonraker/notifications.cfg` (the component and its
-  Apprise URLs) and `extended/klipper/notifications.cfg` (the print-end
-  hooks), rewritten by `save` and by the service hooks.
+- `/home/lava/moonraker/moonraker/components/push_notifications.py`: a shim
+  that loads the package from the venv.
+- `extended/moonraker/pushraker.cfg`: `[push_notifications]` with the U1
+  specifics (`name: U1`, the Snapmaker error-code index URL).
+- `extended/klipper/pushraker.cfg`: the print hooks (`_PRINT_END_NTFY`,
+  `_CANCEL_PRINT_NTFY`), driven by `SET_GCODE_VARIABLE` from the component.
+- `printer_data/config/pushraker.conf` (settings) and
+  `printer_data/pushraker.secrets` (tokens, 0600).
+
+Settings from an earlier firmware's `extended2.cfg [notifications]` and
+`moonraker.secrets [notifications]` are moved over the first time.
 
 ## Tests
 
-```sh
-python3 overlays/firmware-extended/42-feature-notifications/test/notifications_test.py
-```
-
-Needs Python 3.9+, `apprise` and `Pillow`; no printer or network. The
-component runs against a stand-in Moonraker, Spoolman and fake services; the
-settings script against a temporary `extended2.cfg`.
+pushraker's own: `python tests/test_pushraker.py` in its repository.

@@ -1,0 +1,182 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-PackageHomePage: https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware
+# SPDX-FileCopyrightText: Copyright (c) 2026 @noon92
+#
+# The harness for pushraker (https://github.com/noon92/pushraker), the push
+# notifications package, on the Snapmaker U1 extended firmware:
+#
+#   pushraker-pkg enable    install the package from PyPI into its own venv
+#                           under /oem/apps/pushraker, wire it into Moonraker
+#                           and Klipper, move older settings over, restart
+#   pushraker-pkg disable   unwire it and remove the venv (settings stay)
+#   pushraker-pkg wire      (service start) put the wiring back after a
+#                           firmware upgrade replaced the root filesystem
+#   pushraker-pkg upgrade   install the latest release
+#   pushraker-pkg status    one line
+#
+# The package brings its own dependencies; here only Pillow is installed
+# next to it, because the firmware already ships Apprise and requests for
+# Moonraker (so --no-deps keeps the download small).
+
+set -u
+
+APP_DIR=/oem/apps/pushraker
+VENV="$APP_DIR/venv"
+WEB_LINK="$APP_DIR/web"
+EXTENDED_CFG=/home/lava/printer_data/config/extended/extended2.cfg
+DATA_DIR=/home/lava/printer_data
+MOONRAKER_DIR=/home/lava/moonraker
+SECRETS_FILE=/home/lava/printer_data/moonraker.secrets
+ERROR_INDEX_URL="https://wiki.snapmaker.com/en/snapmaker_u1/troubleshooting/u1_error_codes"
+PUSHRAKER_MIN_VERSION=0.1.0
+# shellcheck disable=SC1091
+[[ -f /usr/local/share/pushraker/version ]] && . /usr/local/share/pushraker/version
+
+enabled() {
+    [[ "$(/usr/local/bin/extended-config.py get "$EXTENDED_CFG" pushraker enabled false 2>/dev/null)" == "true" ]]
+}
+
+installed() {
+    [[ -x "$VENV/bin/python" ]] && "$VENV/bin/python" -c "import pushraker" 2>/dev/null
+}
+
+site_packages() {
+    "$VENV/bin/python" -c "import sysconfig; print(sysconfig.get_paths()['purelib'])"
+}
+
+enter_actions_cgroup() {
+    # pip doesn't fit firmware-config's 48M cgroup (see extended-pkg)
+    # shellcheck disable=SC1091
+    [ -f /usr/local/sbin/limits-helper.sh ] && . /usr/local/sbin/limits-helper.sh
+    declare -F limits_enter >/dev/null && limits_enter actions max
+}
+
+wire() {
+    # Everything pushraker needs in Moonraker's and Klipper's folders; safe
+    # to repeat. The include folders are picked up by the extended
+    # firmware's moonraker.conf and printer.cfg already.
+    local sp
+    sp=$(site_packages) || return 1
+    "$VENV/bin/python" -m pushraker install \
+        --moonraker-dir "$MOONRAKER_DIR" \
+        --data-dir "$DATA_DIR" \
+        --moonraker-include-dir "$DATA_DIR/config/extended/moonraker" \
+        --klipper-include-dir "$DATA_DIR/config/extended/klipper" \
+        --site-packages "$sp" \
+        --name U1 --error-index-url "$ERROR_INDEX_URL" \
+        --import-ini "$EXTENDED_CFG" notifications \
+        --import-secrets "$SECRETS_FILE" notifications \
+        --owner lava:lava || return 1
+    ln -sfn "$sp/pushraker/web" "$WEB_LINK"
+}
+
+unwire() {
+    if installed; then
+        "$VENV/bin/python" -m pushraker uninstall \
+            --moonraker-dir "$MOONRAKER_DIR" \
+            --data-dir "$DATA_DIR" \
+            --moonraker-include-dir "$DATA_DIR/config/extended/moonraker" \
+            --klipper-include-dir "$DATA_DIR/config/extended/klipper" \
+            --owner lava:lava
+    else
+        rm -f "$MOONRAKER_DIR/moonraker/components/push_notifications.py" \
+              "$DATA_DIR/config/extended/moonraker/pushraker.cfg" \
+              "$DATA_DIR/config/extended/klipper/pushraker.cfg"
+    fi
+    rm -f "$WEB_LINK"
+}
+
+pip_install() {
+    local spec=$1
+    echo ">> Installing $spec from PyPI (this can take a minute)..."
+    "$VENV/bin/pip" install --disable-pip-version-check --no-deps --upgrade "$spec" || return 1
+    echo ">> Installing Pillow (spool pictures)..."
+    "$VENV/bin/pip" install --disable-pip-version-check --upgrade "Pillow>=10" || return 1
+}
+
+restart_services() {
+    echo ">> Restarting Klipper..."
+    /etc/init.d/S60klipper restart || echo "WARNING: Klipper restart failed"
+    echo ">> Restarting Moonraker..."
+    /etc/init.d/S61moonraker restart || echo "WARNING: Moonraker restart failed"
+}
+
+cmd_enable() {
+    enter_actions_cgroup
+    mkdir -p "$APP_DIR"
+    if [[ ! -x "$VENV/bin/python" ]]; then
+        echo ">> Setting up a Python virtual environment (up to 60 seconds)..."
+        if ! python3 -m venv "$VENV"; then
+            echo "ERROR: could not create the virtual environment"
+            rm -rf "$VENV"
+            return 1
+        fi
+    fi
+    if ! pip_install "pushraker>=$PUSHRAKER_MIN_VERSION"; then
+        echo "ERROR: the download from PyPI failed. Is the printer online?"
+        return 1
+    fi
+    echo ">> Wiring pushraker into Moonraker and Klipper..."
+    if ! wire; then
+        echo "ERROR: could not set pushraker up"
+        return 1
+    fi
+    /usr/local/bin/extended-config.py add "$EXTENDED_CFG" pushraker enabled true
+    restart_services
+    echo
+    echo "pushraker $("$VENV/bin/python" -c 'import pushraker; print(pushraker.__version__)') is enabled."
+    echo "Set it up on the notifications page: http://$(hostname 2>/dev/null || echo printer)/notifications/"
+    echo "(also linked from the Links list at the top of Firmware Config)."
+}
+
+cmd_disable() {
+    echo ">> Removing pushraker from Moonraker and Klipper..."
+    unwire
+    /usr/local/bin/extended-config.py add "$EXTENDED_CFG" pushraker enabled false
+    rm -rf "$APP_DIR"
+    restart_services
+    echo "pushraker is disabled. Its settings (pushraker.conf) are kept for next time."
+}
+
+cmd_wire() {
+    # Service start: nothing to do unless enabled; never fail the start
+    enabled || return 0
+    if ! installed; then
+        echo "pushraker: enabled but not installed (python3 -m venv failed, or the firmware's Python changed); run Enable again" >&2
+        return 0
+    fi
+    wire >/dev/null 2>&1 || echo "pushraker: wiring failed" >&2
+    return 0
+}
+
+cmd_upgrade() {
+    enter_actions_cgroup
+    if ! installed; then
+        echo "pushraker is not installed. Enable it first."
+        return 1
+    fi
+    pip_install "pushraker>=$PUSHRAKER_MIN_VERSION" || return 1
+    wire || return 1
+    restart_services
+    echo "pushraker $("$VENV/bin/python" -c 'import pushraker; print(pushraker.__version__)') installed."
+}
+
+cmd_status() {
+    if ! enabled; then
+        echo "Disabled"
+    elif installed; then
+        echo "Enabled ($("$VENV/bin/python" -c 'import pushraker; print(pushraker.__version__)'))"
+    else
+        echo "Enabled, not installed"
+    fi
+}
+
+case "${1:-}" in
+    enable) cmd_enable ;;
+    disable) cmd_disable ;;
+    wire) cmd_wire ;;
+    upgrade) cmd_upgrade ;;
+    status) cmd_status ;;
+    *) echo "Usage: pushraker-pkg enable|disable|wire|upgrade|status"; exit 1 ;;
+esac

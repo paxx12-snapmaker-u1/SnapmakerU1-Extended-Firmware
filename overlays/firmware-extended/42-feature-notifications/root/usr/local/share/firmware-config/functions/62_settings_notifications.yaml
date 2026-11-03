@@ -2,29 +2,38 @@
 # SPDX-PackageHomePage: https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware
 # SPDX-FileCopyrightText: Copyright (c) 2026 @noon92
 
+links:
+  push-notifications:
+    url: /notifications/
+    icon: "🔔"
+    label: Push Notifications
+    condition:
+      setting: notifications
+      value: "true"
+
 settings:
   monitoring_debugging:
     items:
       notifications:
         label: Push Notifications
-        description: Print, progress and error notifications with camera snapshots, via ntfy, Gotify, Pushover, Telegram, Discord, email or a webhook.
+        description: "Install pushraker integration: print, progress and error notifications with camera snapshots, via ntfy, Gotify, Pushover, Telegram, Discord, email or a webhook. Once enabled, set it up from the Push Notifications link in the Links list."
         help_url: http://snapmakeru1-extended-firmware.pages.dev/notifications
-        form:
-          html: forms/notifications.html
-          get_cmd:
-            - /usr/local/bin/notifications-config.py
-            - get
-          commands:
-            test:
-              label: Send Test
-              style: secondary
-              cmd:
-                - /usr/local/bin/notifications-config.py
-                - test
-            save:
-              label: Save & Apply
-              style: primary
-              close_on_success: true
-              cmd:
-                - /usr/local/bin/notifications-config.py
-                - save
+        get_cmd:
+          - /usr/local/bin/extended-config.py
+          - get
+          - /home/lava/printer_data/config/extended/extended2.cfg
+          - pushraker
+          - enabled
+          - "false"
+        options:
+          "false":
+            label: Disabled
+            cmd:
+              - /usr/local/bin/pushraker-pkg
+              - disable
+          "true":
+            label: Enabled
+            cmd:
+              - /usr/local/bin/pushraker-pkg
+              - enable
+        default: "false"
