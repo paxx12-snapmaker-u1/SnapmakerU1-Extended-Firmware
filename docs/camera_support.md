@@ -44,16 +44,6 @@ Camera controls are accessible at:
 - Internal camera: `http://<printer-ip>/webcam/control`
 - USB camera: `http://<printer-ip>/webcam2/control`
 
-### Internal Camera Exposure
-
-The internal camera uses Snapmaker's auto exposure by default, and `exposure` and `analogue_gain` are shown as read-only in the camera controls. To set them yourself, change **Internal Camera Exposure** to **Manual** in the [firmware-config](firmware_config.md) web interface, or set it in `/home/lava/printer_data/config/extended/extended2.cfg`:
-```ini
-[camera]
-internal_exposure: manual
-```
-
-`horizontal_flip` and `vertical_flip` apply to the camera streams (WebRTC, MJPEG, snapshots and RTSP); Snapmaker's own camera features keep the normal image.
-
 ### Settings Persistence
 
 Camera settings are automatically saved across reboots:

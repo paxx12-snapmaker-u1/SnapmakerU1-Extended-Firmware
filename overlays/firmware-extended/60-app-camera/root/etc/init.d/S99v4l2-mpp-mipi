@@ -20,11 +20,6 @@ CMD_HTTP="/usr/bin/python3 /usr/local/bin/stream-http.py --jpeg-sock /tmp/captur
 
 CMD_CTRL="/usr/bin/python3"
 CMD_CTRL_ARGS="/usr/local/bin/control-v4l2.py --device /dev/v4l-subdev2 --sock /tmp/v4l2-control-mipi.sock --state-file /oem/printer_data/config/extended/camera/case.json"
-# With auto exposure, rkaiq sets exposure and gain; show them as read-only
-INTERNAL_EXPOSURE=$(/usr/local/bin/extended-config.py get "$EXTENDED_CFG" camera internal_exposure auto)
-if [ "$INTERNAL_EXPOSURE" != manual ]; then
-    CMD_CTRL_ARGS="$CMD_CTRL_ARGS --readonly-controls exposure,analogue_gain"
-fi
 
 CMD_RTSP="/usr/local/bin/stream-rtsp --h264-sock /tmp/capture-mipi-h264.sock --rtsp-port 8554 --max-clients 4"
 

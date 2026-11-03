@@ -5,8 +5,6 @@
 if [ "$1" = start ]; then
     EXTENDED_CFG="/home/lava/printer_data/config/extended/extended2.cfg"
     CAMERA_INTERNAL=$(/usr/local/bin/extended-config.py get "$EXTENDED_CFG" camera internal snapmaker)
-    # Select auto or manual exposure before unisrv starts streaming
-    (unset LD_PRELOAD; /usr/local/sbin/camera-exposure.sh apply "$CAMERA_INTERNAL")
     if [ "$CAMERA_INTERNAL" = paxx12 ]; then
         # Stock 2.1.0 unisrv captures through librockit. It keeps owning the
         # internal camera, and librockit-export.so encodes frames from its

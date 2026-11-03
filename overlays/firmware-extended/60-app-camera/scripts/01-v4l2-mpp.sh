@@ -3,8 +3,6 @@
 # SPDX-PackageHomePage: https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware
 # SPDX-FileCopyrightText: Copyright (c) 2026 @paxx12
 
-CUR_DIR="$(realpath "$(dirname "$0")")"
-
 GIT_URL=https://github.com/paxx12/v4l2-mpp.git
 GIT_SHA=87bda8efbb7b32d8d57fc6a8d76dfae9418a2190
 
@@ -17,16 +15,6 @@ set -eo pipefail
 
 TARGET_DIR="$CACHE_DIR/v4l2-mpp"
 cache_git.sh "$TARGET_DIR" "$GIT_URL" "$GIT_SHA"
-
-# cache_git.sh reuses an existing checkout as-is on a local (non-CI) rebuild,
-# so reset tracked files to the pinned commit before patching - otherwise
-# re-running this script would try to re-apply the patches.
-git -C "$TARGET_DIR" checkout -f "$GIT_SHA"
-
-for patchfile in "$CUR_DIR/../v4l2-mpp-patches/"*.patch; do
-  echo ">> Applying $(basename "$patchfile")..."
-  patch -F 0 --no-backup-if-mismatch -d "$TARGET_DIR" -p1 < "$patchfile"
-done
 
 echo ">> Setting up cross-compilation environment..."
 export CROSS_COMPILE=aarch64-linux-gnu-
@@ -49,5 +37,4 @@ stat "$1/usr/local/bin/stream-rtsp" >/dev/null
 stat "$1/usr/local/bin/stream-webrtc" >/dev/null
 stat "$1/usr/local/bin/stream-http.py" >/dev/null
 stat "$1/usr/local/bin/control-v4l2.py" >/dev/null
-grep -q -- "--readonly-controls" "$1/usr/local/bin/control-v4l2.py"
 echo ">> v4l2-mpp installation completed successfully."
