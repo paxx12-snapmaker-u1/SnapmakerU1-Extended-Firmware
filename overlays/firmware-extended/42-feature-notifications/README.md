@@ -19,7 +19,7 @@ User documentation: the [Push Notifications guide](https://github.com/noon92/pus
 | `root/usr/local/share/pushraker/moonraker.cfg` | `[pushraker]` with the U1 specifics (`name: U1`, the Snapmaker error-code index URL) and the move from this firmware's earlier Push Notifications form |
 | `root/etc/hooks/klipper.d/20-pushraker.sh` | Before Klipper starts, renames to `.old` the include files an earlier setup wrote (the old form's `notifications.cfg`, the on-demand test builds' `pushraker.cfg`), so nothing is defined twice |
 | `root/etc/nginx/fluidd.d/pushraker.conf` | `/notifications/` serves the package's settings page |
-| `root/usr/local/share/firmware-config/functions/62_settings_notifications.yaml` | The Push Notifications link |
+| `root/usr/local/share/firmware-config/functions/62_links_notifications.yaml` | The Push Notifications link |
 
 ## On the printer
 
