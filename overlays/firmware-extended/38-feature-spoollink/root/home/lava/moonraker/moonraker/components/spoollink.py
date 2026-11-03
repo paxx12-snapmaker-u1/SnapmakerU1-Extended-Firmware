@@ -108,7 +108,7 @@ class SpoolLink:
         if spool_id != self._active_spool_id:
             self._active_spool_id = spool_id
             logging.info("[spoollink] active spool received: spool_id=%s", spool_id)
-            self._fire(self._sync_active_spool())
+            self._fire(self._adopt_active_spool(spool_id))
 
     def _handle_status_update(self, status: Dict[str, Any], eventtime: float) -> None:
         th = status.get("toolhead")
@@ -173,6 +173,37 @@ class SpoolLink:
             return int(extruder.replace("extruder", ""))
         except ValueError:
             return 0
+
+    async def _adopt_active_spool(self, spool_id: Optional[int]) -> None:
+        """Put a spool set by a client onto the toolhead currently in use.
+
+        Moonraker holds a single active spool, so a frontend that knows nothing about
+        the U1's four channels - Fluidd's Spoolman panel, a mobile app - can say *which*
+        spool but never *where*. The toolhead in use is the only channel that answer can
+        mean, so the selection is assigned there instead of being corrected back to
+        whatever the channel already held.
+
+        Clearing the active spool is not read as a request to unassign: the spool is
+        still physically in the channel, and `print_task_config` stays the authority on
+        what is loaded where. Release a channel with the Filament Manager or
+        `SET_SPOOL_ID SPOOL_ID=0`.
+
+        No card is bound here. A client's selection says nothing about which card is in
+        the channel, and SpoolLink keeps no per-channel UID to supply; the card is bound
+        on the detection path, where the reader has actually just read one.
+        """
+        channel = self._extruder_to_channel(self._toolhead_extruder)
+        current = (self._ptc_spool_ids[channel]
+                   if channel < len(self._ptc_spool_ids) else 0) or 0
+        wanted = spool_id or 0
+
+        if wanted and wanted != current:
+            logging.info("[spoollink] ch%d: adopting active spool %s (was %s)",
+                         channel, wanted, current or "none")
+            await self._resolve_spool(channel, spool_id=wanted)
+            return
+
+        await self._sync_active_spool()
 
     async def _sync_active_spool(self) -> None:
         channel = self._extruder_to_channel(self._toolhead_extruder)

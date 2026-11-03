@@ -134,6 +134,19 @@ SET_SPOOL_ID LANE=E0 SPOOL_ID=5
 
 The macro is provided by the Spoolman integration itself, so it is
 available whenever Spoolman is enabled, with or without AFC-Lite.
+## Selecting a Spool
+
+There are two ways to link a spool to a toolhead:
+
+- **Filament Manager** (`/filament/`) assigns a spool to a specific extruder. This is the
+  one to use on a multi-toolhead machine.
+- **Fluidd's or Mainsail's Spoolman panel** sets Moonraker's active spool. Moonraker
+  tracks one spool at a time and has no notion of the U1's four channels, so the
+  selection is applied to **the toolhead currently in use**. Clearing it does not release
+  the channel — use the Filament Manager, or `SET_SPOOL_ID SPOOL_ID=0`, for that.
+
+Scanning an RFID card that is linked to a spool assigns it to that card's channel
+automatically, without either UI.
 
 ## Known Conflicts
 
