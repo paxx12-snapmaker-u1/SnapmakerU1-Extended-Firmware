@@ -309,8 +309,6 @@ RESPOND PREFIX=notify MSG="Print ejection failed || Plate still occupied, queue 
 - For camera images, a webcam Moonraker knows (**Camera for snapshots**
   lists them; the internal camera is `case` with the default **paxx12**
   service, see [Camera Support](camera_support.md)).
-- Internet access on the printer for the install (the package comes from
-  PyPI).
 - For *Layer complete*, the slicer must emit `SET_PRINT_STATS_INFO`
   layer information (the Snapmaker U1 Orca profile includes it).
 - For print-by-object (*Layer complete* and *Print complete* for each
@@ -321,18 +319,14 @@ RESPOND PREFIX=notify MSG="Print ejection failed || Plate still occupied, queue 
 ## Setup
 
 Push notifications are [pushraker](https://github.com/noon92/pushraker), a
-Moonraker component that works on any Moonraker printer. The firmware does
-not ship it; it is installed from PyPI when you enable it (the printer needs
-internet access for that step), into `/oem/apps/pushraker`, where it
-survives firmware upgrades.
+Moonraker component that works on any Moonraker printer. The firmware
+includes it, and each firmware release brings the pushraker release it was
+built with. Nothing is sent until you set it up:
 
-1. Open [Firmware Config](firmware_config.md) and go to
-   **Settings > Monitoring & Debugging > Push Notifications**, set it to
-   **Enabled** and wait for the install to finish (it restarts Klipper and
-   Moonraker). Settings from an earlier firmware's *Push Notifications*
-   form are moved over.
-2. Open **Push Notifications** from the Links list at the top of Firmware
-   Config (`http://<printer>/notifications/`) and check **Enable
+1. Open **Push Notifications** from the Links list at the top of
+   [Firmware Config](firmware_config.md) (`http://<printer>/notifications/`).
+   Settings from an earlier firmware's *Push Notifications* form are moved
+   over the first time. Check **Enable
    notifications**. Push, email and the webhook each have
    their own checkbox; at least one must be on. For push, choose the
    **Push service**:
@@ -348,10 +342,10 @@ survives firmware upgrades.
      and optionally a device name.
    - **Telegram**: see [Telegram](#telegram).
    - **Discord**: see [Discord](#discord).
-3. For email, check **Send email notifications**, choose the **Email
+2. For email, check **Send email notifications**, choose the **Email
    provider**, and enter the username, password, From and To (see
    [Email](#email)).
-4. Optionally set a **Printer URL** for the links. On first setup it is filled in
+3. Optionally set a **Printer URL** for the links. On first setup it is filled in
    automatically: the Tailscale name if Tailscale is running, otherwise the
    local IP. Clear it for no links, or change it with:
    - **Use Tailscale** fills in the printer's Tailscale (MagicDNS) name, e.g.
@@ -365,28 +359,17 @@ survives firmware upgrades.
      dot-less name is refused for Telegram.
    - **Use local IP** fills in the printer's LAN address. The links then only
      work while your phone is on the same network as the printer.
-5. Choose which notifications you want (**Push** and/or **Email**), with
+4. Choose which notifications you want (**Push** and/or **Email**), with
    priority and image.
-6. Click **Send Test** to check the connection. It sends a test to each
+5. Click **Send Test** to check the connection. It sends a test to each
    service you set up, at **Max** priority. On failure, the log shows the service's response
    (e.g. `forbidden, error=40301` for an ntfy token without write access to
    the topic, or `535` for a wrong email password).
-7. Click **Save & Apply**. Settings take effect at once, during a print
+6. Click **Save & Apply**. Settings take effect at once, during a print
    job too: nothing restarts.
 
-Set it to **Disabled** to remove the package again; the settings file is
-kept for next time.
-
-**Upgrades.** When a newer pushraker release is out, **Upgrade pushraker
-to X.Y.Z** appears under Upgrades at the top of Firmware Config (checked
-every 6 hours). **Settings > Monitoring & Debugging > Push Notifications
-updates** picks where upgrades come from: **Releases** (the default), or
-**GitHub (testing)**, the newest commit on the repository's main branch,
-with **Upgrade pushraker from GitHub (main)** always offered. Switching
-reinstalls it. Upgrades and switches restart Klipper and Moonraker, so they
-are refused while a print job runs. This firmware accepts releases from
-`PUSHRAKER_MIN_VERSION` up to `PUSHRAKER_MAX_VERSION` (no upper limit when
-empty), set in `/usr/local/share/pushraker/version`.
+To stop all notifications, uncheck **Enable notifications**. Upgrades
+come with the firmware: there is no separate pushraker update.
 
 ## Self-hosting a push server
 
@@ -579,11 +562,11 @@ error: on, max, image, email
 ...
 ```
 
-The component (`[push_notifications]` in `extended/moonraker/pushraker.cfg`,
-written by the install) builds one [Apprise](https://github.com/caronc/apprise)
+The component (`[pushraker]` in `extended/moonraker/05_pushraker.cfg`, a
+link to the firmware's copy) builds one [Apprise](https://github.com/caronc/apprise)
 URL per enabled notification and service from this (Discord uses
 pushraker's own `discordhook://` and `discorddm://` senders). The Klipper
-side is the fixed macro file `extended/klipper/pushraker.cfg`: the
+side is the fixed macro file `extended/klipper/05_pushraker.cfg`: the
 `_PRINT_END_NTFY` and `_CANCEL_PRINT_NTFY` [print hooks](klipper_hooks.md),
 which the component tells what to do (`SET_GCODE_VARIABLE` on
 `_NTFY_HOOKS`) whenever the settings change, so no setting ever needs a
@@ -604,7 +587,7 @@ section in a separate file in `extended/moonraker/` (see
   will retry in 10 seconds`.
 - **Nothing arrives**: use **Send Test** first. Then check
   `/home/lava/printer_data/logs/moonraker.log` for lines starting with
-  `[push_notifications]`.
+  `[pushraker]`.
   Each notification is logged per service, e.g. `error (email): sent`, or as
   `attempt N failed` for each retry and `send failed after 4 attempts` (with
   the service's error just before each). A notification that was
