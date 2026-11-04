@@ -12,12 +12,12 @@ set -eo pipefail
 
 # pushraker (https://github.com/noon92/pushraker): push notifications as a
 # Moonraker component. Pinned; a new firmware brings a new pushraker.
-# Apprise (12-patch-moonraker), requests and Pillow are already in the
-# image, so --no-deps keeps them as the firmware has them.
+# Its dependencies (Apprise, requests, Pillow) are mostly in the image
+# already (12-patch-moonraker, 61-app-remote-screen); pip adds what isn't.
 PUSHRAKER_VERSION=0.2.4
 
 echo ">> Installing pushraker $PUSHRAKER_VERSION via pip3"
-cache_pip.sh "$ROOTFS_DIR" --no-deps "pushraker==$PUSHRAKER_VERSION"
+cache_pip.sh "$ROOTFS_DIR" "pushraker==$PUSHRAKER_VERSION"
 
 # The Klipper macros and the settings page come from the package: link them
 # where the extended config and nginx expect them

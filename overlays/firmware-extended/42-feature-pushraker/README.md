@@ -1,4 +1,4 @@
-# 42-feature-notifications: Push Notifications (pushraker harness)
+# 42-feature-pushraker: Push Notifications (pushraker harness)
 
 Print, progress, fault and filament notifications with images, sent through
 [Apprise](https://github.com/caronc/apprise) to ntfy, Gotify, Pushover, Telegram,
@@ -14,10 +14,9 @@ User documentation: the [Push Notifications guide](https://github.com/noon92/pus
 
 | Path | What |
 | --- | --- |
-| `scripts/01-install-pushraker.sh` | `pip install pushraker==<pinned>` into the image (`--no-deps`: Apprise, requests and Pillow are already there); links the package's settings page and Klipper macros under `/usr/local/share/pushraker/`, and the default includes into the extended config |
+| `scripts/01-install-pushraker.sh` | `pip install pushraker==<pinned>` into the image (Apprise, requests and Pillow are mostly there already); links the package's settings page and Klipper macros under `/usr/local/share/pushraker/`, and the default includes into the extended config |
 | `root/home/lava/moonraker/moonraker/components/pushraker.py` | One-line shim: `[pushraker]` loads the package's component |
-| `root/usr/local/share/pushraker/moonraker.cfg` | `[pushraker]` with the U1 specifics (`name: U1`, the Snapmaker error-code index URL) and the move from this firmware's earlier Push Notifications form |
-| `root/etc/hooks/klipper.d/20-pushraker.sh` | Before Klipper starts, renames to `.old` the include files an earlier setup wrote (the old form's `notifications.cfg`, the on-demand test builds' `pushraker.cfg`), so nothing is defined twice |
+| `root/usr/local/share/pushraker/moonraker.cfg` | `[pushraker]` with the U1 specifics (`name: U1`, the Snapmaker error-code index URL) |
 | `root/etc/nginx/fluidd.d/pushraker.conf` | `/notifications/` serves the package's settings page |
 | `root/usr/local/share/firmware-config/functions/62_links_notifications.yaml` | The Push Notifications link |
 
@@ -30,9 +29,6 @@ User documentation: the [Push Notifications guide](https://github.com/noon92/pus
   from the component.
 - `printer_data/config/pushraker.conf` (settings) and
   `printer_data/pushraker.secrets` (tokens, 0600), written by the page.
-
-At the first start, settings from `extended2.cfg [notifications]` and
-`moonraker.secrets [notifications]` are moved over.
 
 ## Tests
 
