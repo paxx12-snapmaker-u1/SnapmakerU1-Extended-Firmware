@@ -102,7 +102,7 @@ automatically when the filament is loaded:
 | [SpoolKid](https://github.com/marko-p/SpoolKid) | [Marco](https://github.com/marko-p) | iOS ([TestFlight beta](https://testflight.apple.com/join/Y4BmejQk)) | OpenSpool, OpenTag3D, ELEGOO, Anycubic ACE; any other tag by UID (including Mifare Classic) | Links tag UIDs to spools, including UID-only linking for Mifare Classic and other tags it can't otherwise read | – | ✅ (see notes) | Closed source since May 2026; [GitHub](https://github.com/marko-p/SpoolKid) keeps the v0.9 snapshot (MIT) | [![Ko-fi](https://img.shields.io/badge/Ko--fi-FF5E5B?logo=kofi&logoColor=white)](https://ko-fi.com/spoolkid) |
 | [SpoolTagger](https://codeberg.org/NiftyBits/SpoolTagger) | [NiftyBits](https://codeberg.org/NiftyBits) | Windows, Linux (desktop, ACR122U USB NFC reader; [releases](https://codeberg.org/NiftyBits/SpoolTagger/releases/latest)) | OpenSpool (NTAG); Mifare Classic by UID only | Links tags to spools (up to 2 tags per spool) | ✅ (see notes) | – | [Codeberg](https://codeberg.org/NiftyBits/SpoolTagger) (MIT) | [![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-FFDD00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/NiftyBits) |
 | [3DMRP](https://github.com/MKloberg/3dmrp) | [MKloberg](https://github.com/MKloberg) | Self-hosted (Windows; [releases](https://github.com/MKloberg/3dmrp/releases/latest)), phone via Chrome on Android | Any tag by UID (Web NFC scan-to-select; no content parsing) | Print-farm manager — links tags to spools, NFC scan-to-select; also AFC lane control and U1 touchscreen mirror | – (see notes) | – | [GitHub](https://github.com/MKloberg/3dmrp) (source) | [![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-FFDD00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/mkloberg) |
-| [Spool Studio](https://github.com/GeorgHo/SpoolStudio) | [GeorgHo](https://github.com/GeorgHo) | Android ([v3.0.2 release](https://github.com/GeorgHo/SpoolStudio/releases/tag/v3.0.2)) | OpenSpool; Bambu Lab (with user-provided key); legacy Spool Studio tags (for conversion); any tag by UID | Links tags to spools via NFC card UID; writes Paxx12-compatible OpenSpool tags and shows the printer-reported toolhead status | ✅ (see notes) | – | [GitHub](https://github.com/GeorgHo/SpoolStudio) (MIT) | [![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-FFDD00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/georgho) |
+| [Spool Studio](https://github.com/GeorgHo/SpoolStudio) | [GeorgHo](https://github.com/GeorgHo) | Android ([releases](https://github.com/GeorgHo/SpoolStudio/releases/latest)) | OpenSpool; Bambu Lab (with user-provided key); legacy Spool Studio tags (for conversion); any tag by UID | Links tags to spools via NFC card UID; writes Paxx12-compatible OpenSpool tags and shows the printer-reported toolhead status | ✅ (see notes) | ✅ (see notes) | [GitHub](https://github.com/GeorgHo/SpoolStudio) (MIT) | [![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-FFDD00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/georgho) |
 
 **Notes:**
 
@@ -121,10 +121,15 @@ automatically when the filament is loaded:
     available for older firmware that predates SpoolLink.
 - **Spoolman tags** means the app reads and writes Spoolman's native NFC/RFID
   tags (Spoolman v0.27.0 or newer). The other apps store UIDs only in the
-  `card_uids` spool extra field. SpoolKid, from v0.24, stores a link in both
-  and lets a native tag win on read; its Settings can copy links between the
-  two. SpoolKid is no longer open source, so this comes from its
-  [changelog](https://github.com/marko-p/SpoolKid/blob/main/changelog.json).
+  `card_uids` spool extra field.
+  - **SpoolKid** — from v0.24, stores a link in both and lets a native tag
+    win on read; its Settings can copy links between the two. SpoolKid is no
+    longer open source, so this comes from its
+    [changelog](https://github.com/marko-p/SpoolKid/blob/main/changelog.json).
+  - **Spool Studio** — from v3.1.0, stores a link in both and lets a native
+    tag win on read. A per-server **Native tags only** setting stops writing
+    `card_uids`, and Settings can copy links into native tags and clear the
+    migrated `card_uids` entries.
 - 3DMRP's Android support is its Chrome-based mobile NFC client (Web NFC
   API); the print-farm server itself runs on Windows only.
 - Apps that write filament data (material, colour, temperatures) to tags
