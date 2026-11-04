@@ -12,21 +12,23 @@ set -eo pipefail
 
 # pushraker (https://github.com/noon92/pushraker): push notifications as a
 # Moonraker component. Pinned; a new firmware brings a new pushraker.
-# Its dependencies (Apprise, requests, Pillow) are mostly in the image
-# already (12-patch-moonraker, 61-app-remote-screen); pip adds what isn't.
+# pip pulls in its dependencies (Apprise, requests, Pillow) that the image
+# doesn't have yet at this step.
 PUSHRAKER_VERSION=0.2.4
 
 echo ">> Installing pushraker $PUSHRAKER_VERSION via pip3"
 cache_pip.sh "$ROOTFS_DIR" "pushraker==$PUSHRAKER_VERSION"
 
 # The Klipper macros and the settings page come from the package: link them
-# where the extended config and nginx expect them
+# where the extended config and nginx expect them. find_spec locates the
+# package without running its code.
 PKG_DIR=$(chroot_firmware.sh "$ROOTFS_DIR" python3 -c \
-  'import os, pushraker; print(os.path.dirname(pushraker.__file__))')
-ln -sfn "$PKG_DIR/klipper/pushraker.cfg" "$ROOTFS_DIR/usr/local/share/pushraker/klipper.cfg"
-ln -sfn "$PKG_DIR/web" "$ROOTFS_DIR/usr/local/share/pushraker/web"
+  'import importlib.util; print(importlib.util.find_spec("pushraker").submodule_search_locations[0])')
+test -n "$PKG_DIR"
 test -e "$ROOTFS_DIR$PKG_DIR/klipper/pushraker.cfg"
 test -e "$ROOTFS_DIR$PKG_DIR/web/index.html"
+ln -sfn "$PKG_DIR/klipper/pushraker.cfg" "$ROOTFS_DIR/usr/local/share/pushraker/klipper.cfg"
+ln -sfn "$PKG_DIR/web" "$ROOTFS_DIR/usr/local/share/pushraker/web"
 
 # Into the extended config (copied there at boot, see S49extended-config)
 # as links, so they follow the firmware's pushraker

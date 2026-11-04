@@ -3,5 +3,5 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 @noon92
 
 # [pushraker]: the push notifications component, from the pushraker package
-# (installed in the firmware image; see 42-feature-notifications).
+# (installed in the firmware image; see 42-feature-pushraker).
 from pushraker.component import load_component  # noqa: F401

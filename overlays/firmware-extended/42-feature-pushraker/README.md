@@ -14,7 +14,7 @@ User documentation: the [Push Notifications guide](https://github.com/noon92/pus
 
 | Path | What |
 | --- | --- |
-| `scripts/01-install-pushraker.sh` | `pip install pushraker==<pinned>` into the image (Apprise, requests and Pillow are mostly there already); links the package's settings page and Klipper macros under `/usr/local/share/pushraker/`, and the default includes into the extended config |
+| `scripts/01-install-pushraker.sh` | `pip install pushraker==<pinned>` into the image (pip adds Apprise, requests and Pillow where missing); links the package's settings page and Klipper macros under `/usr/local/share/pushraker/`, and the default includes into the extended config |
 | `root/home/lava/moonraker/moonraker/components/pushraker.py` | One-line shim: `[pushraker]` loads the package's component |
 | `root/usr/local/share/pushraker/moonraker.cfg` | `[pushraker]` with the U1 specifics (`name: U1`, the Snapmaker error-code index URL) |
 | `root/etc/nginx/fluidd.d/pushraker.conf` | `/notifications/` serves the package's settings page |
