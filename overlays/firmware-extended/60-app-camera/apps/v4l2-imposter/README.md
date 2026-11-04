@@ -4,7 +4,9 @@ A V4L2 wrapper library that intercepts V4L2 calls and fetches frames from a Unix
 
 ## Description
 
-This library provides drop-in replacements for libv4l2 functions (`v4l2_open`, `v4l2_close`, `v4l2_ioctl`, `v4l2_mmap`, `v4l2_munmap`). When loaded via `LD_PRELOAD`, it intercepts V4L2 operations and redirects frame capture to a socket-based frame provider.
+This library provides replacements for the libv4l2 functions `v4l2_open`, `v4l2_close` and `v4l2_ioctl`. When loaded via `LD_PRELOAD` into `unisrv`, it impersonates one device and serves its frames from a socket-based frame provider. Every other device is passed through to the real libv4l2.
+
+`unisrv` captures through `librockit`, which loads libv4l2 with `dlopen("libv4l2.so")` and resolves the `v4l2_*` functions with `dlsym()` on that handle, bypassing `LD_PRELOAD`. The library therefore hooks `dlsym()` to hand out its own functions. `librockit` allocates the capture buffers itself and queues them as dma-buf fds (`V4L2_MEMORY_DMABUF`), and frames are read directly into them.
 
 ## Environment Variables
 
