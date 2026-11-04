@@ -1,0 +1,64 @@
+From 08f4b647d8489962b4f8e517efb694ccbe619e74 Mon Sep 17 00:00:00 2001
+From: Alan de Bortolo <info@designmastersolutions.com>
+Date: Wed, 4 Nov 2026 23:33:33 +0000
+Subject: [PATCH] exclude_object: drop the skipped-object offset when the head
+ was moved outside the transform
+
+Fixes Snapmaker/u1-klipper#22 (skip an object, Pause, Resume fails with
+"Move out of range").
+
+While an object is skipped, exclude_object keeps a per-extruder offset:
+last skipped G-code position minus last printed position. The U1 pause park
+(MOVE_TO_DISCARD_FILAMENT_POSITION) moves the head with toolhead.manual_move(),
+so gcode_move resets its position through exclude_object.get_position(), which
+returns the parked position plus that stale offset. The next G1 that does not
+set both X and Y (Resume's _CLIENT_EXTRUDE, an E-only move) carries the wrong
+XY and is rejected, or, inside the bed, travels there while extruding.
+
+get_position() now compares the position below the transform with the last
+one _normal_move() sent. If they differ, the head was moved outside the
+transform, so the XYZ offset is zeroed and the last printed position becomes
+the real one. The E offset is left as it was.
+
+Diagnosis and the suggested fix are from the issue's reporter; this patch
+implements that suggestion. Regression test: tests/test_issue22.py (red on 93cb12f, green with this patch) in
+github.com/DesignMaster-Solutions/u1-fixpack.
+---
+ klippy/extras/exclude_object.py | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/klippy/extras/exclude_object.py b/klippy/extras/exclude_object.py
+index f4dea918..c696abaa 100644
+--- a/klippy/extras/exclude_object.py
++++ b/klippy/extras/exclude_object.py
+@@ -55,6 +55,7 @@ class ExcludeObject:
+             self.last_position_e = {}
+             self.last_position_e_extruded = {}
+             self.last_position_e_excluded = {}
++            self.last_tx_position = None
+ 
+             self.get_position()
+             self.last_position_extruded[:] = self.last_position
+@@ -151,6 +152,14 @@ class ExcludeObject:
+     def get_position(self):
+         offset = self._get_extrusion_offsets()
+         pos = self.next_transform.get_position()
++        if self.last_tx_position is None or any(
++                abs(pos[i] - self.last_tx_position[i]) > 1e-6 for i in range(3)):
++            # The head is not where this transform last sent it (a manual_move
++            # park, homing, a tool change): the skipped-object XYZ offset no
++            # longer describes where it is, so restart from the real position.
++            offset[0] = offset[1] = offset[2] = 0.
++            self.last_position_extruded[:3] = pos[:3]
++            self.last_tx_position = pos[:3]
+         self._get_last_position_e()
+         for i in range(4):
+             self.last_position[i] = pos[i] + offset[i]
+@@ -205,6 +214,7 @@ class ExcludeObject:
+         for i in range(4):
+             tx_pos[i] = newpos[i] - offset[i]
+         self.next_transform.move(tx_pos, speed)
++        self.last_tx_position = tx_pos[:3]
+ 
+     def _ignore_move(self, newpos, speed):
+         offset = self._get_extrusion_offsets()
