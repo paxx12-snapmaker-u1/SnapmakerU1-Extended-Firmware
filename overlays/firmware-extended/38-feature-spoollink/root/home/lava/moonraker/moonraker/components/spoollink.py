@@ -42,6 +42,23 @@ def _parse_card_uids(spool: dict) -> List[str]:
     return [u.strip().upper() for u in raw.split(",") if u.strip()]
 
 
+# The base materials in Snapmaker's filament_parameters.json. "PLA+",
+# "PLA Plus", "PETG-Pro" and similar are marketing names for one of these,
+# and the printer cannot map a head of an unknown type to a print.
+_BASE_MATERIALS = {
+    "PLA", "PLA-CF", "TPU", "PETG", "PETG-CF", "PETG-HF", "ABS", "ASA",
+    "PA", "PA-CF", "PA6-CF", "PA-GF", "PA6-GF", "PC", "PC-ABS", "PVA",
+}
+_PLUS_SUFFIX = re.compile(r"^(.+?)[\s_-]*(\+|PLUS|PRO)$", re.IGNORECASE)
+
+
+def _normalize_material(material: str) -> str:
+    match = _PLUS_SUFFIX.match(material.strip())
+    if match and match.group(1).upper() in _BASE_MATERIALS:
+        return match.group(1).upper()
+    return material
+
+
 def _parse_variant(vendor: str, filament: dict) -> str:
     variant = _unquote((filament.get("extra") or {}).get("variant") or "")
     if variant:
@@ -482,7 +499,7 @@ class SpoolLink:
                            cached: bool = False) -> None:
         spool_id = spool.get("id", 0)
         filament = spool.get("filament", {})
-        material = filament.get("material", "PLA")
+        material = _normalize_material(filament.get("material") or "PLA")
         vendor = (filament.get("vendor") or {}).get("name", "Generic")
         variant = _parse_variant(vendor, filament)
 
