@@ -93,3 +93,68 @@ settings:
                 /etc/init.d/S60klipper restart
                 /etc/init.d/S61moonraker restart
         default: disabled
+      spoolman_tag_store:
+        label: Spoolman Tag Storage
+        description: Where SpoolLink links RFID cards to spools. Switching moves every existing link to the new store.
+        help_url: http://snapmakeru1-extended-firmware.pages.dev/spoolman#card-uid-storage
+        # Hidden until the apps that read only card_uids support native tags.
+        hidden: true
+        if_cmd: test -n "$(/usr/local/bin/extended-config.py get /oem/printer_data/config/extended/extended2.cfg spoolman host '' 2>/dev/null)"
+        get_cmd:
+          - bash
+          - -c
+          - /usr/local/bin/extended-config.py get /oem/printer_data/config/extended/extended2.cfg spoolman tag_store card_uids 2>/dev/null
+        options:
+          card_uids:
+            label: Card UIDs
+            confirm: "Store card links in the card_uids spool field?\n\nWorks with every Spoolman version and every SpoolLink app. Links stored as Spoolman native tags are moved into card_uids and unlinked from Spoolman's Tags. Moonraker restarts."
+            cmd:
+              - bash
+              - -c
+              - |
+                STORE=card_uids
+                CFG=/oem/printer_data/config/extended/extended2.cfg
+                HOST=$(/usr/local/bin/extended-config.py get "$CFG" spoolman host "" 2>/dev/null)
+                if [ -z "$HOST" ]; then
+                  echo "ERROR: Enable Spoolman Integration first."
+                  exit 1
+                fi
+                # Stop Moonraker so SpoolLink writes no links while they move.
+                /etc/init.d/S61moonraker stop
+                if /usr/local/bin/spoollink_migrate.py --host "$HOST" "$STORE"; then
+                  /usr/local/bin/extended-config.py add "$CFG" spoolman tag_store "$STORE"
+                  RC=$?
+                else
+                  RC=1
+                  echo "ERROR: Migration failed; the tag storage setting is unchanged."
+                fi
+                echo "Starting Moonraker..."
+                /etc/init.d/S61moonraker start
+                exit $RC
+          native:
+            label: Spoolman native tags
+            confirm: "Store card links as Spoolman native NFC/RFID tags?\n\nNeeds Spoolman v0.27.0 or newer. Every card_uids link is moved to a native tag and cleared from card_uids, so apps that only read card_uids stop finding those spools: check the apps table in the Spoolman docs first. Moonraker restarts."
+            cmd:
+              - bash
+              - -c
+              - |
+                STORE=native
+                CFG=/oem/printer_data/config/extended/extended2.cfg
+                HOST=$(/usr/local/bin/extended-config.py get "$CFG" spoolman host "" 2>/dev/null)
+                if [ -z "$HOST" ]; then
+                  echo "ERROR: Enable Spoolman Integration first."
+                  exit 1
+                fi
+                # Stop Moonraker so SpoolLink writes no links while they move.
+                /etc/init.d/S61moonraker stop
+                if /usr/local/bin/spoollink_migrate.py --host "$HOST" "$STORE"; then
+                  /usr/local/bin/extended-config.py add "$CFG" spoolman tag_store "$STORE"
+                  RC=$?
+                else
+                  RC=1
+                  echo "ERROR: Migration failed; the tag storage setting is unchanged."
+                fi
+                echo "Starting Moonraker..."
+                /etc/init.d/S61moonraker start
+                exit $RC
+        default: card_uids
