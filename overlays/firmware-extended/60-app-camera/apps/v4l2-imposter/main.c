@@ -18,7 +18,9 @@
 #include <sys/mman.h>
 #include <sys/ioctl.h>
 #include <poll.h>
+#include <dlfcn.h>
 #include <linux/videodev2.h>
+#include <linux/dma-buf.h>
 
 #define MAX_BUFFERS 4
 #define MAX_BUFFER_SIZE (4 * 1024 * 1024)
@@ -39,7 +41,6 @@ static char cfg_device[256] = "/dev/video0";
 static int cfg_width = 1920;
 static int cfg_height = 1080;
 static uint32_t cfg_format = V4L2_PIX_FMT_MJPEG;
-static char cfg_format_str[32] = "MJPEG";
 static int cfg_debug = 0;
 static int cfg_socket_timeout = 1000;
 
@@ -52,7 +53,7 @@ typedef struct {
     void *ptr;
     size_t size;
     size_t used;
-    size_t offset;
+    int dmabuf_fd;
     bool queued;
 } buffer_t;
 
@@ -97,6 +98,7 @@ static void free_buffers(void)
         }
         g_buffers[i].size = 0;
         g_buffers[i].used = 0;
+        g_buffers[i].dmabuf_fd = -1;
     }
     g_buffer_count = 0;
 }
@@ -149,8 +151,6 @@ static bool load_config(void)
 
     env = getenv("V4L2_IMPOSTER_FORMAT");
     if (env) {
-        strncpy(cfg_format_str, env, sizeof(cfg_format_str) - 1);
-        cfg_format_str[sizeof(cfg_format_str) - 1] = '\0';
         if (strcasecmp(env, "MJPEG") == 0)
             cfg_format = V4L2_PIX_FMT_MJPEG;
         else if (strcasecmp(env, "JPEG") == 0)
@@ -174,23 +174,63 @@ static bool load_config(void)
     return true;
 }
 
+// unisrv captures through librockit, which dlopen()s libv4l2 and resolves
+// v4l2_* with dlsym() on that handle, bypassing LD_PRELOAD. Hook dlsym() to
+// hand out the functions below, and keep the real ones for every fd that is
+// not the impersonated device. librockit never calls v4l2_dup, v4l2_read or
+// v4l2_mmap, and uses DMABUF buffers, so v4l2_munmap is not needed either.
+static int (*real_v4l2_open)(const char *, int, ...);
+static int (*real_v4l2_close)(int);
+static int (*real_v4l2_ioctl)(int, unsigned long, ...);
+
+static void *(*g_real_dlsym)(void *, const char *);
+
+static void load_real_dlsym(void)
+{
+    if (!g_real_dlsym)
+        g_real_dlsym = dlvsym(RTLD_NEXT, "dlsym", "GLIBC_2.34");
+    if (!g_real_dlsym)
+        g_real_dlsym = dlvsym(RTLD_NEXT, "dlsym", "GLIBC_2.17");
+}
+
+int v4l2_open(const char *file, int oflag, ...);
+int v4l2_close(int fd);
+int v4l2_ioctl(int fd, unsigned long request, ...);
+
+#define HOOK(name) \
+    if (strcmp(sym_name, #name) == 0) { \
+        LOG_DEBUG("dlsym(%s): redirected to v4l2-imposter", sym_name); \
+        real_##name = (void *)sym; \
+        return (void *)name; \
+    }
+
+void *dlsym(void *handle, const char *sym_name)
+{
+    // dlsym(RTLD_NEXT) resolves relative to its caller (e.g. the firmware
+    // imposter preloaded next to this library), so it must reach the real
+    // dlsym as a tail call, with the caller's return address.
+    load_real_dlsym();
+    if (!g_real_dlsym)
+        return NULL;
+    if (handle == RTLD_NEXT || strncmp(sym_name, "v4l2_", 5) != 0)
+        return g_real_dlsym(handle, sym_name);
+
+    void *sym = g_real_dlsym(handle, sym_name);
+
+    if (!sym || !load_config())
+        return sym;
+
+    HOOK(v4l2_open);
+    HOOK(v4l2_close);
+    HOOK(v4l2_ioctl);
+    return sym;
+}
 
 static int handle_open(const char *file, int oflag)
 {
     int pipefd[2];
 
     (void)oflag;
-
-    if (!load_config()) {
-        errno = EINVAL;
-        return -1;
-    }
-
-    if (cfg_device[0] != '\0' && strcmp(file, cfg_device) != 0) {
-        LOG_DEBUG("v4l2_open(%s): not target device %s", file, cfg_device);
-        errno = ENOENT;
-        return -1;
-    }
 
     if (g_pipe_rd >= 0) {
         LOG_ERROR("v4l2_open(%s): already open (fd %d)", file, g_pipe_rd);
@@ -215,6 +255,14 @@ static int handle_open(const char *file, int oflag)
 
 int v4l2_open(const char *file, int oflag, ...)
 {
+    if (!load_config() || (cfg_device[0] != '\0' && strcmp(file, cfg_device) != 0)) {
+        va_list ap;
+        va_start(ap, oflag);
+        int mode = va_arg(ap, int);
+        va_end(ap);
+        return real_v4l2_open(file, oflag, mode);
+    }
+
     pthread_mutex_lock(&g_mutex);
     int fd = handle_open(file, oflag);
     pthread_mutex_unlock(&g_mutex);
@@ -223,10 +271,8 @@ int v4l2_open(const char *file, int oflag, ...)
 
 int v4l2_close(int fd)
 {
-    if (!g_initialized) {
-        errno = EINVAL;
-        return -1;
-    }
+    if (fd < 0 || fd != g_pipe_rd)
+        return real_v4l2_close(fd);
 
     pthread_mutex_lock(&g_mutex);
 
@@ -335,7 +381,11 @@ static int fetch_frame_once(buffer_t *buf)
 
     // The raw frame socket streams frames back to back without closing,
     // so read exactly one frame (buffer is sized to it) and disconnect.
+    struct dma_buf_sync sync = { .flags = DMA_BUF_SYNC_START | DMA_BUF_SYNC_WRITE };
+    ioctl(buf->dmabuf_fd, DMA_BUF_IOCTL_SYNC, &sync);
     n = read_fully(fd, buf->ptr, buf->size, cfg_socket_timeout);
+    sync.flags = DMA_BUF_SYNC_END | DMA_BUF_SYNC_WRITE;
+    ioctl(buf->dmabuf_fd, DMA_BUF_IOCTL_SYNC, &sync);
     close(fd);
 
     if (n < 0) {
@@ -384,50 +434,6 @@ static int handle_querycap(struct v4l2_capability *cap)
     return 0;
 }
 
-static int handle_enum_fmt(struct v4l2_fmtdesc *fmt)
-{
-    if (fmt->index > 0) {
-        LOG_DEBUG("ENUM_FMT: invalid index %u", fmt->index);
-        return -EINVAL;
-    }
-    if (fmt->type != V4L2_BUF_TYPE_VIDEO_CAPTURE) {
-        LOG_DEBUG("ENUM_FMT: invalid type %u", fmt->type);
-        return -EINVAL;
-    }
-
-    memset(fmt, 0, sizeof(*fmt));
-    fmt->index = 0;
-    fmt->type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-    fmt->pixelformat = cfg_format;
-    if (is_compressed())
-        fmt->flags = V4L2_FMT_FLAG_COMPRESSED;
-    strncpy((char *)fmt->description, cfg_format_str, sizeof(fmt->description) - 1);
-    LOG_DEBUG("ENUM_FMT index=%u format=%s", fmt->index, cfg_format_str);
-    return 0;
-}
-
-static int handle_g_fmt(struct v4l2_format *fmt)
-{
-    if (fmt->type != V4L2_BUF_TYPE_VIDEO_CAPTURE) {
-        LOG_DEBUG("G_FMT: invalid type %u", fmt->type);
-        return -EINVAL;
-    }
-
-    fmt->fmt.pix.width = cfg_width;
-    fmt->fmt.pix.height = cfg_height;
-    fmt->fmt.pix.pixelformat = cfg_format;
-    fmt->fmt.pix.field = V4L2_FIELD_NONE;
-    fmt->fmt.pix.bytesperline = bytes_per_line();
-    fmt->fmt.pix.sizeimage = image_size();
-    if (fmt->fmt.pix.sizeimage > MAX_BUFFER_SIZE) {
-        LOG_ERROR("G_FMT: sizeimage overflow");
-        return -EINVAL;
-    }
-    fmt->fmt.pix.colorspace = V4L2_COLORSPACE_JPEG;
-    LOG_DEBUG("G_FMT: %dx%d fmt=" FOURCC_FMT, cfg_width, cfg_height, FOURCC_ARGS(cfg_format));
-    return 0;
-}
-
 static int handle_s_fmt(struct v4l2_format *fmt)
 {
     if (fmt->type != V4L2_BUF_TYPE_VIDEO_CAPTURE) {
@@ -469,7 +475,8 @@ static int handle_reqbufs(struct v4l2_requestbuffers *req)
         LOG_DEBUG("REQBUFS: invalid type %u", req->type);
         return -EINVAL;
     }
-    if (req->memory != V4L2_MEMORY_MMAP) {
+    // librockit allocates the buffers and queues them as dma-buf fds
+    if (req->memory != V4L2_MEMORY_DMABUF) {
         LOG_DEBUG("REQBUFS: invalid memory %u", req->memory);
         return -EINVAL;
     }
@@ -488,41 +495,17 @@ static int handle_reqbufs(struct v4l2_requestbuffers *req)
         return -EINVAL;
     }
 
-    size_t offset = 0;
-
     for (i = 0; i < (int)req->count; i++) {
         g_buffers[i].ptr = MAP_FAILED;
         g_buffers[i].size = size;
         g_buffers[i].used = 0;
-        g_buffers[i].offset = offset;
+        g_buffers[i].dmabuf_fd = -1;
         g_buffers[i].queued = false;
-        LOG_DEBUG("The buffer %d: size=%zu offset=0x%zx", i, size, offset);
-        offset += size;
     }
 
     g_buffer_count = i;
     req->count = g_buffer_count;
     LOG_DEBUG("REQBUFS: allocated %d buffers (%zu bytes each)", g_buffer_count, size);
-    return 0;
-}
-
-static int handle_querybuf(struct v4l2_buffer *buf)
-{
-    if (buf->type != V4L2_BUF_TYPE_VIDEO_CAPTURE) {
-        LOG_DEBUG("QUERYBUF: invalid type %u", buf->type);
-        return -EINVAL;
-    }
-    if (buf->index >= (unsigned)g_buffer_count) {
-        LOG_DEBUG("QUERYBUF: invalid index %u (count=%d)", buf->index, g_buffer_count);
-        return -EINVAL;
-    }
-
-    buf->memory = V4L2_MEMORY_MMAP;
-    buf->length = g_buffers[buf->index].size;
-    buf->m.offset = g_buffers[buf->index].offset;
-    buf->flags = 0;
-    LOG_DEBUG("QUERYBUF: index=%d offset=0x%x length=%u",
-              buf->index, buf->m.offset, buf->length);
     return 0;
 }
 
@@ -535,6 +518,19 @@ static int handle_qbuf(struct v4l2_buffer *buf)
     if (buf->index >= (unsigned)g_buffer_count) {
         LOG_DEBUG("QBUF: invalid index %u (count=%d)", buf->index, g_buffer_count);
         return -EINVAL;
+    }
+    if (g_buffers[buf->index].dmabuf_fd != buf->m.fd) {
+        buffer_t *b = &g_buffers[buf->index];
+        if (buf->length && buf->length < b->size) {
+            LOG_ERROR("QBUF: dma-buf %d is %u bytes, need %zu", buf->m.fd, buf->length, b->size);
+            return -EINVAL;
+        }
+        if (b->ptr != MAP_FAILED)
+            munmap(b->ptr, b->size);
+        b->ptr = mmap(NULL, b->size, PROT_READ | PROT_WRITE, MAP_SHARED, buf->m.fd, 0);
+        b->dmabuf_fd = b->ptr != MAP_FAILED ? buf->m.fd : -1;
+        if (b->ptr == MAP_FAILED)
+            LOG_ERROR("QBUF: mmap of dma-buf %d failed: %s", buf->m.fd, strerror(errno));
     }
     if (g_buffers[buf->index].ptr == MAP_FAILED) {
         LOG_DEBUG("QBUF: buffer %u not allocated", buf->index);
@@ -605,10 +601,10 @@ static int handle_dqbuf(struct v4l2_buffer *buf)
 
     buf->index = idx;
     buf->type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-    buf->memory = V4L2_MEMORY_MMAP;
+    buf->memory = V4L2_MEMORY_DMABUF;
     buf->bytesused = g_buffers[idx].used;
     buf->length = g_buffers[idx].size;
-    buf->m.offset = g_buffers[idx].offset;
+    buf->m.fd = g_buffers[idx].dmabuf_fd;
     buf->flags = V4L2_BUF_FLAG_DONE;
 
     struct timespec ts;
@@ -675,83 +671,18 @@ static int handle_streamoff(enum v4l2_buf_type *type)
     return 0;
 }
 
-static int handle_g_parm(struct v4l2_streamparm *parm)
-{
-    if (parm->type != V4L2_BUF_TYPE_VIDEO_CAPTURE) {
-        LOG_DEBUG("G_PARM: invalid type %u", parm->type);
-        return -EINVAL;
-    }
-
-    memset(&parm->parm, 0, sizeof(parm->parm));
-    parm->parm.capture.capability = V4L2_CAP_TIMEPERFRAME;
-    parm->parm.capture.timeperframe.numerator = 1;
-    parm->parm.capture.timeperframe.denominator = 30;
-    LOG_DEBUG("G_PARM");
-    return 0;
-}
-
-static int handle_s_parm(struct v4l2_streamparm *parm)
-{
-    if (parm->type != V4L2_BUF_TYPE_VIDEO_CAPTURE) {
-        LOG_DEBUG("S_PARM: invalid type %u", parm->type);
-        return -EINVAL;
-    }
-
-    parm->parm.capture.capability = V4L2_CAP_TIMEPERFRAME;
-    if (parm->parm.capture.timeperframe.denominator == 0)
-        parm->parm.capture.timeperframe.denominator = 30;
-    if (parm->parm.capture.timeperframe.numerator == 0)
-        parm->parm.capture.timeperframe.numerator = 1;
-    LOG_DEBUG("S_PARM");
-    return 0;
-}
-
-static int handle_enum_framesizes(struct v4l2_frmsizeenum *fsize)
-{
-    if (fsize->index > 0) {
-        LOG_DEBUG("ENUM_FRAMESIZES: invalid index %u", fsize->index);
-        return -EINVAL;
-    }
-    if (fsize->pixel_format != cfg_format) {
-        LOG_DEBUG("ENUM_FRAMESIZES: invalid format " FOURCC_FMT, FOURCC_ARGS(fsize->pixel_format));
-        return -EINVAL;
-    }
-
-    fsize->type = V4L2_FRMSIZE_TYPE_DISCRETE;
-    fsize->discrete.width = cfg_width;
-    fsize->discrete.height = cfg_height;
-    LOG_DEBUG("ENUM_FRAMESIZES");
-    return 0;
-}
-
-static int handle_enum_frameintervals(struct v4l2_frmivalenum *fival)
-{
-    if (fival->index > 0) {
-        LOG_DEBUG("ENUM_FRAMEINTERVALS: invalid index %u", fival->index);
-        return -EINVAL;
-    }
-
-    fival->type = V4L2_FRMIVAL_TYPE_DISCRETE;
-    fival->discrete.numerator = 1;
-    fival->discrete.denominator = 30;
-    LOG_DEBUG("ENUM_FRAMEINTERVALS");
-    return 0;
-}
-
 int v4l2_ioctl(int fd, unsigned long request, ...)
 {
     va_list ap;
     void *arg;
     int ret = -ENOTTY;
 
-    if (!g_initialized) {
-        errno = EINVAL;
-        return -1;
-    }
-
     va_start(ap, request);
     arg = va_arg(ap, void *);
     va_end(ap);
+
+    if (fd < 0 || fd != g_pipe_rd)
+        return real_v4l2_ioctl(fd, request, arg);
 
     request &= 0xffffffff;
 
@@ -766,21 +697,11 @@ int v4l2_ioctl(int fd, unsigned long request, ...)
     case VIDIOC_QUERYCAP:
         ret = handle_querycap(arg);
         break;
-    case VIDIOC_ENUM_FMT:
-        ret = handle_enum_fmt(arg);
-        break;
-    case VIDIOC_G_FMT:
-        ret = handle_g_fmt(arg);
-        break;
     case VIDIOC_S_FMT:
-    case VIDIOC_TRY_FMT:
         ret = handle_s_fmt(arg);
         break;
     case VIDIOC_REQBUFS:
         ret = handle_reqbufs(arg);
-        break;
-    case VIDIOC_QUERYBUF:
-        ret = handle_querybuf(arg);
         break;
     case VIDIOC_QBUF:
         ret = handle_qbuf(arg);
@@ -794,39 +715,6 @@ int v4l2_ioctl(int fd, unsigned long request, ...)
     case VIDIOC_STREAMOFF:
         ret = handle_streamoff(arg);
         break;
-    case VIDIOC_G_PARM:
-        ret = handle_g_parm(arg);
-        break;
-    case VIDIOC_S_PARM:
-        ret = handle_s_parm(arg);
-        break;
-    case VIDIOC_ENUM_FRAMESIZES:
-        ret = handle_enum_framesizes(arg);
-        break;
-    case VIDIOC_ENUM_FRAMEINTERVALS:
-        ret = handle_enum_frameintervals(arg);
-        break;
-    case VIDIOC_G_INPUT:
-        *(int *)arg = 0;
-        ret = 0;
-        break;
-    case VIDIOC_S_INPUT:
-        ret = 0;
-        break;
-    case VIDIOC_ENUMINPUT:
-        {
-            struct v4l2_input *inp = arg;
-            if (inp->index > 0) {
-                ret = -EINVAL;
-            } else {
-                memset(inp, 0, sizeof(*inp));
-                inp->index = 0;
-                strncpy((char *)inp->name, "Camera", sizeof(inp->name) - 1);
-                inp->type = V4L2_INPUT_TYPE_CAMERA;
-                ret = 0;
-            }
-        }
-        break;
     default:
         LOG_DEBUG("Unhandled ioctl 0x%lx", request);
         ret = -ENOTTY;
@@ -839,108 +727,5 @@ int v4l2_ioctl(int fd, unsigned long request, ...)
         errno = -ret;
         return -1;
     }
-    return ret;
-}
-
-static void *handle_mmap(void *start, size_t length, int prot, int flags, int fd, int64_t offset)
-{
-    (void)start;
-    (void)length;
-    (void)prot;
-    (void)flags;
-
-    LOG_DEBUG("v4l2_mmap(fd=%d, start=%p, length=%zu, offset=0x%lx)", fd, start, length, (unsigned long)offset);
-
-    if (!g_initialized) {
-        errno = EINVAL;
-        return NULL;
-    }
-
-    if (start != NULL) {
-        errno = EINVAL;
-        return MAP_FAILED;
-    }
-
-    if (fd != g_pipe_rd) {
-        errno = EBADF;
-        return MAP_FAILED;
-    }
-
-    for (int i = 0; i < g_buffer_count; i++) {
-        if (g_buffers[i].offset != (size_t)offset)
-            continue;
-        if (g_buffers[i].size != length) {
-            LOG_ERROR("v4l2_mmap: buffer %d size mismatch (expected %zu, got %zu)",
-                      i, g_buffers[i].size, length);
-            errno = EINVAL;
-            return MAP_FAILED;
-        }
-        if (g_buffers[i].ptr == MAP_FAILED) {
-            LOG_DEBUG("v4l2_mmap: allocating buffer %d of size %zu", i, g_buffers[i].size);
-            g_buffers[i].ptr = mmap(NULL, g_buffers[i].size, PROT_READ | PROT_WRITE,
-                                    MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-        }
-        if (g_buffers[i].ptr == MAP_FAILED) {
-            LOG_ERROR("v4l2_mmap: failed to allocate buffer %d", i);
-            break;
-        }
-        LOG_DEBUG("v4l2_mmap: returning buffer %d at %p", i, g_buffers[i].ptr);
-        return g_buffers[i].ptr;
-    }
-
-    errno = EINVAL;
-    return MAP_FAILED;
-}
-
-void *v4l2_mmap(void *start, size_t length, int prot, int flags, int fd, int64_t offset)
-{
-    (void)start;
-    (void)length;
-    (void)prot;
-    (void)flags;
-
-    pthread_mutex_lock(&g_mutex);
-    void *ptr = handle_mmap(start, length, prot, flags, fd, offset);
-    pthread_mutex_unlock(&g_mutex);
-    return ptr;
-}
-
-static int handle_munmap(void *start, size_t length)
-{
-    int i;
-
-    (void)length;
-
-    if (!g_initialized) {
-        errno = EINVAL;
-        return -1;
-    }
-
-    for (i = 0; i < g_buffer_count; i++) {
-        if (g_buffers[i].ptr == start && g_buffers[i].ptr != MAP_FAILED) {
-            if (g_buffers[i].queued) {
-                LOG_DEBUG("v4l2_munmap: buffer %d is queued, cannot unmap", i);
-                errno = EINVAL;
-                return -1;
-            }
-
-            munmap(g_buffers[i].ptr, g_buffers[i].size);
-            LOG_DEBUG("v4l2_munmap: unmapped buffer %d at %p", i, g_buffers[i].ptr);
-            g_buffers[i].ptr = MAP_FAILED;
-            return 0;
-        }
-    }
-
-    errno = EINVAL;
-    return -1;
-}
-
-int v4l2_munmap(void *start, size_t length)
-{
-    (void)length;
-
-    pthread_mutex_lock(&g_mutex);
-    int ret = handle_munmap(start, length);
-    pthread_mutex_unlock(&g_mutex);
     return ret;
 }

@@ -9,7 +9,7 @@ STRIP = $(CROSS_COMPILE)strip
 TARGET = libv4l2-imposter.so
 
 CFLAGS = -Wall -Wextra -O2 -fPIC
-LDFLAGS = -shared -lpthread
+LDFLAGS = -shared -lpthread -ldl
 
 SRCS = main.c
 OBJS = $(SRCS:.c=.o)
