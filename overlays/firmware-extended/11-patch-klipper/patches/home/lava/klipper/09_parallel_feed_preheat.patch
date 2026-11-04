@@ -1,0 +1,212 @@
+From 7d8f3b1a2c4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a Mon Sep 17 00:00:00 2001
+From: Simon-CR <cloutiersi@gmail.com>
+Date: Thu, 22 Oct 2026 14:35:00 +0000
+Subject: [PATCH] filament_feed: Add targeted parallel preheat and selective restore
+
+Pre-heats the toolhead according to parallel_feed_preheat_temp
+before homing and toolhead switching, reducing filament swap time.
+Records initial toolhead target temperatures and selectively restores
+only toolheads that were preheated by this operation on cancel.
+Always cools toolhead to 0C on load/unload completion when idle.
+---
+ klippy/extras/filament_feed.py | 68 +++++++++++++++++++++++++++++++++++++++---
+ 1 file changed, 64 insertions(+), 4 deletions(-)
+
+--- a/klippy/extras/filament_feed.py
++++ b/klippy/extras/filament_feed.py
+@@ -387,6 +387,7 @@
+         self.module_exist = [False] * FEED_CHANNEL_NUMS
+         self.manual_feeding = [False] * FEED_CHANNEL_NUMS
+         self.exception_code = [0] * FEED_CHANNEL_NUMS
++        self._preheat_orig_targets = {}
+ 
+         config_dir = self.printer.get_snapmaker_config_dir()
+         config_name = self.module_name + FEED_CONFIG_FILE_POSTFIX
+@@ -748,6 +749,18 @@
+             return True
+         else:
+             return False
++
++    def _restore_preheated_hotends(self):
++        for ext_idx, orig_target in list(self._preheat_orig_targets.items()):
++            ext_vars = self.printer.lookup_object('gcode_macro _EXTENDED_FEATURE_VARIABLES', None)
++            preheat_temp = int(ext_vars.variables.get('parallel_feed_preheat_temp', 130)) if ext_vars else 130
++            if orig_target in [preheat_temp, 130, 150, 170]:
++                orig_target = 0
++            self.gcode.run_script_from_command("M104 S%d T%d A0\r\n" % (orig_target, ext_idx))
++        self._preheat_orig_targets.clear()
++
++    def _quench_hotends_on_cancel(self):
++        self._restore_preheated_hotends()
+ 
+     def _do_feed(self, ch, action=None, stage=None, auto_mode=None):
+         if ch < 0 or ch >= FEED_CHANNEL_NUMS or action == None:
+@@ -978,7 +991,12 @@
+                         self.exception_code[ch] = 33
+                         raise ValueError('logic error!')
+ 
+-                    self.gcode.run_script_from_command("M104 S%d T%d A0\r\n" % (filament_feed_temp - 70, self.filament_ch[ch]))
++                    ext_vars = self.printer.lookup_object('gcode_macro _EXTENDED_FEATURE_VARIABLES', None)
++                    if ext_vars and ext_vars.variables.get('parallel_feed_preheat', False):
++                        load_preheat_temp = int(ext_vars.variables.get('parallel_feed_preheat_temp', 130))
++                    else:
++                        load_preheat_temp = filament_feed_temp - 70
++                    self.gcode.run_script_from_command("M104 S%d T%d A0\r\n" % (load_preheat_temp, self.filament_ch[ch]))
+ 
+                     # home
+                     try:
+@@ -1265,7 +1283,8 @@
+ 
+                 finally:
+                     self.gcode.run_script_from_command("M107\r\n")
+-                    self.gcode.run_script_from_command("M104 S0\r\n")
++                    self.gcode.run_script_from_command("M104 S0 T%d A0\r\n" % (self.filament_ch[ch]))
++                    self._preheat_orig_targets.pop(self.filament_ch[ch], None)
+ 
+             # unload
+             elif action == FEED_ACT_UNLOAD:
+@@ -1284,6 +1303,19 @@
+                     try:
+                         # prepare
+                         self._set_channel_state(ch, FEED_STA_UNLOAD_PREPARE, True)
++                        ext_vars = self.printer.lookup_object('gcode_macro _EXTENDED_FEATURE_VARIABLES', None)
++                        if ext_vars and ext_vars.variables.get('parallel_feed_preheat', False):
++                            ext_name = "extruder" if self.filament_ch[ch] == 0 else "extruder%d" % (self.filament_ch[ch])
++                            ext_obj = self.printer.lookup_object(ext_name, None)
++                            orig_target = 0
++                            preheat_temp = int(ext_vars.variables.get('parallel_feed_preheat_temp', 130))
++                            if ext_obj is not None:
++                                cur_t = ext_obj.heater.target_temp
++                                if cur_t not in [preheat_temp, 130, 150, 170]:
++                                    orig_target = cur_t
++                            if self.filament_ch[ch] not in self._preheat_orig_targets:
++                                self._preheat_orig_targets[self.filament_ch[ch]] = orig_target
++                            self.gcode.run_script_from_command("M104 S%d T%d A0\r\n" % (preheat_temp, self.filament_ch[ch]))
+ 
+                         # home
+                         try:
+@@ -1326,6 +1358,7 @@
+                     except:
+                         self.toolhead.wait_moves()
+                         self.channel_error_state[ch] = self.channel_state[ch]
++                        self._quench_hotends_on_cancel()
+                         if self.channel_error[ch] == FEED_OK:
+                             self.channel_error[ch] = FEED_ERR
+                         self._set_channel_state(ch, FEED_STA_UNLOAD_FAIL)
+@@ -1351,14 +1384,15 @@
+ 
+                         # finish
+                         self.toolhead.wait_moves()
+-                        self.gcode.run_script_from_command("M104 S0\r\n")
++                        self._preheat_orig_targets.pop(self.filament_ch[ch], None)
++                        self.gcode.run_script_from_command("M104 S0 T%d A0\r\n" % (self.filament_ch[ch]))
+                         self.channel_error[ch] = FEED_OK
+                         self._set_channel_state(ch, FEED_STA_UNLOAD_FINISH)
+ 
+                     except:
+                         self.toolhead.wait_moves()
+                         self.channel_error_state[ch] = self.channel_state[ch]
+-                        self.gcode.run_script_from_command("M104 S0\r\n")
++                        self._quench_hotends_on_cancel()
+                         if self.channel_error[ch] == FEED_OK:
+                             self.channel_error[ch] = FEED_ERR
+                         self._set_channel_state(ch, FEED_STA_UNLOAD_FAIL)
+@@ -1368,7 +1402,7 @@
+                     self.toolhead.wait_moves()
+                     self.channel_error[ch] = FEED_OK
+                     self._set_channel_state(ch, FEED_STA_UNLOAD_FAIL, True)
+-                    self.gcode.run_script_from_command("M104 S0\r\n")
++                    self._quench_hotends_on_cancel()
+                     if self.module_exist[ch] == True and self.config['auto_mode'][ch] == True:
+                         if self._port[ch].get_filament_detected() == False:
+                             self._set_channel_state(ch, FEED_STA_WAIT_INSERT)
+@@ -1379,6 +1413,19 @@
+                     try:
+                         # prepare
+                         self._set_channel_state(ch, FEED_STA_UNLOAD_PREPARE, True)
++                        ext_vars = self.printer.lookup_object('gcode_macro _EXTENDED_FEATURE_VARIABLES', None)
++                        if ext_vars and ext_vars.variables.get('parallel_feed_preheat', False):
++                            ext_name = "extruder" if self.filament_ch[ch] == 0 else "extruder%d" % (self.filament_ch[ch])
++                            ext_obj = self.printer.lookup_object(ext_name, None)
++                            orig_target = 0
++                            preheat_temp = int(ext_vars.variables.get('parallel_feed_preheat_temp', 130))
++                            if ext_obj is not None:
++                                cur_t = ext_obj.heater.target_temp
++                                if cur_t not in [preheat_temp, 130, 150, 170]:
++                                    orig_target = cur_t
++                            if self.filament_ch[ch] not in self._preheat_orig_targets:
++                                self._preheat_orig_targets[self.filament_ch[ch]] = orig_target
++                            self.gcode.run_script_from_command("M104 S%d T%d A0\r\n" % (preheat_temp, self.filament_ch[ch]))
+ 
+                         # home
+                         try:
+@@ -1426,14 +1473,15 @@
+                             raise ValueError('custom gcode error!')
+ 
+                         self.toolhead.wait_moves()
+-                        self.gcode.run_script_from_command("M104 S0\r\n")
++                        self._preheat_orig_targets.pop(self.filament_ch[ch], None)
++                        self.gcode.run_script_from_command("M104 S0 T%d A0\r\n" % (self.filament_ch[ch]))
+                         self.channel_error[ch] = FEED_OK
+                         self._set_channel_state(ch, FEED_STA_UNLOAD_FINISH)
+ 
+                     except:
+                         self.toolhead.wait_moves()
+                         self.channel_error_state[ch] = self.channel_state[ch]
+-                        self.gcode.run_script_from_command("M104 S0\r\n")
++                        self._quench_hotends_on_cancel()
+                         if self.channel_error[ch] == FEED_OK:
+                             self.channel_error[ch] = FEED_ERR
+                         self._set_channel_state(ch, FEED_STA_UNLOAD_FAIL)
+@@ -1491,6 +1539,7 @@
+                         self.manual_feeding[ch] = False
+                         self.toolhead.wait_moves()
+                         self.channel_error_state[ch] = self.channel_state[ch]
++                        self._quench_hotends_on_cancel()
+                         if self.channel_error[ch] == FEED_OK:
+                             self.channel_error[ch] = FEED_ERR
+                         self._set_channel_state(ch, FEED_STA_MANUAL_PREPARE_FAIL)
+@@ -1525,6 +1574,7 @@
+                         self.toolhead.wait_moves()
+                         self.manual_feeding[ch] = False
+                         self.channel_error_state[ch] = self.channel_state[ch]
++                        self._quench_hotends_on_cancel()
+                         if self.channel_error[ch] == FEED_OK:
+                             self.channel_error[ch] = FEED_ERR
+                         self._set_channel_state(ch, FEED_STA_MANUAL_EXTRUDE_FAIL)
+@@ -1550,6 +1600,7 @@
+                         self.toolhead.wait_moves()
+                         self.manual_feeding[ch] = False
+                         self.channel_error_state[ch] = self.channel_state[ch]
++                        self._quench_hotends_on_cancel()
+                         if self.channel_error[ch] == FEED_OK:
+                             self.channel_error[ch] = FEED_ERR
+                         self._set_channel_state(ch, FEED_STA_MANUAL_FLUSH_FAIL)
+@@ -1591,6 +1642,7 @@
+                         self.toolhead.wait_moves()
+                     except:
+                         logging.error("[feed][manual] stage: cancel, gcode error!\r\n")
++                    self._quench_hotends_on_cancel()
+                     self._set_channel_state(ch, FEED_STA_MANUAL_FAIL, True)
+                     self.channel_error_state[ch] = self.channel_state[ch]
+ 
+@@ -1818,6 +1870,8 @@
+                         self.gcode.run_script_from_command(f"M104 S{restore_temp_from_cmd} T{self.filament_ch[channel]} A0")
+                     else:
+                         self.gcode.run_script_from_command(f"M104 S{last_temp} T{self.filament_ch[channel]} A0")
++                else:
++                    self.gcode.run_script_from_command(f"M104 S0 T{self.filament_ch[channel]} A0\r\n")
+                 if filament_entangle_detect is not None:
+                     filament_entangle_detect.skip_entangle_check(False)
+                 if machine_state_manager is not None:
+@@ -1890,6 +1944,8 @@
+                         self.gcode.run_script_from_command(f"M104 S{restore_temp_from_cmd} T{self.filament_ch[channel]} A0")
+                     else:
+                         self.gcode.run_script_from_command(f"M104 S{last_temp} T{self.filament_ch[channel]} A0")
++                else:
++                    self.gcode.run_script_from_command(f"M104 S0 T{self.filament_ch[channel]} A0\r\n")
+                 if filament_entangle_detect is not None:
+                     filament_entangle_detect.skip_entangle_check(False)
+ 
+-- 
+2.47.3

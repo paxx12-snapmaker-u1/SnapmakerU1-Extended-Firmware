@@ -1,0 +1,128 @@
+--- a/fluidd.cfg
++++ b/fluidd.cfg
+@@ -1668,45 +1668,108 @@
+ variable_extruder1_temp: 0
+ variable_extruder2_temp: 0
+ variable_extruder3_temp: 0
++variable_orig_targets: [0, 0, 0, 0]
++variable_preheated_extruders: [False, False, False, False]
+ variable_doing: False
+ gcode:
+     {% set action = params.ACTION | default('') %}
+     {% set default_extruder = printer[printer.toolhead.extruder].extruder_index %}
+     {% set current_extruder = params.EXTRUDER | default(default_extruder) | int %}
++    {% set ext_vars = printer['gcode_macro _EXTENDED_FEATURE_VARIABLES'] | default({}) %}
++    {% set parallel_preheat = ext_vars.parallel_feed_preheat | default(False) %}
++    {% set preheat_temp = ext_vars.parallel_feed_preheat_temp | default(130) | int %}
+ 
+     {% if action == 'START' %}
+-        SET_GCODE_VARIABLE MACRO=AUTO_FEEDING_BATCH VARIABLE=extruder0_temp VALUE={printer['extruder'].target}
+-        SET_GCODE_VARIABLE MACRO=AUTO_FEEDING_BATCH VARIABLE=extruder1_temp VALUE={printer['extruder1'].target}
+-        SET_GCODE_VARIABLE MACRO=AUTO_FEEDING_BATCH VARIABLE=extruder2_temp VALUE={printer['extruder2'].target}
+-        SET_GCODE_VARIABLE MACRO=AUTO_FEEDING_BATCH VARIABLE=extruder3_temp VALUE={printer['extruder3'].target}
++        {% set raw_targets = [printer['extruder'].target | int, printer['extruder1'].target | int, printer['extruder2'].target | int, printer['extruder3'].target | int] %}
++        {% set cur_targets = [
++            0 if (raw_targets[0] == preheat_temp or raw_targets[0] in [130, 150, 170]) else raw_targets[0],
++            0 if (raw_targets[1] == preheat_temp or raw_targets[1] in [130, 150, 170]) else raw_targets[1],
++            0 if (raw_targets[2] == preheat_temp or raw_targets[2] in [130, 150, 170]) else raw_targets[2],
++            0 if (raw_targets[3] == preheat_temp or raw_targets[3] in [130, 150, 170]) else raw_targets[3]
++        ] %}
++        SET_GCODE_VARIABLE MACRO=AUTO_FEEDING_BATCH VARIABLE=orig_targets VALUE="{cur_targets}"
++        SET_GCODE_VARIABLE MACRO=AUTO_FEEDING_BATCH VARIABLE=extruder0_temp VALUE={cur_targets[0]}
++        SET_GCODE_VARIABLE MACRO=AUTO_FEEDING_BATCH VARIABLE=extruder1_temp VALUE={cur_targets[1]}
++        SET_GCODE_VARIABLE MACRO=AUTO_FEEDING_BATCH VARIABLE=extruder2_temp VALUE={cur_targets[2]}
++        SET_GCODE_VARIABLE MACRO=AUTO_FEEDING_BATCH VARIABLE=extruder3_temp VALUE={cur_targets[3]}
++        {% set p = [False, False, False, False] %}
++        {% if parallel_preheat %}
++            {% if params.EXTRUDERS is defined %}
++                {% set target_list = params.EXTRUDERS.replace(' ', ',').split(',') %}
++                {% for ext in target_list if ext | trim != '' %}
++                    {% set e = ext | trim | int %}
++                    {% if e >= 0 and e < 4 %}
++                        M104 S{preheat_temp} T{e} A0
++                    {% endif %}
++                {% endfor %}
++                {% set p = [
++                    ('0' in target_list or 0 in target_list),
++                    ('1' in target_list or 1 in target_list),
++                    ('2' in target_list or 2 in target_list),
++                    ('3' in target_list or 3 in target_list)
++                ] %}
++            {% elif params.EXTRUDER is defined %}
++                {% set e = params.EXTRUDER | int %}
++                {% if e >= 0 and e < 4 %}
++                    M104 S{preheat_temp} T{e} A0
++                    {% set p = [(e == 0), (e == 1), (e == 2), (e == 3)] %}
++                {% endif %}
++            {% endif %}
++        {% endif %}
++        SET_GCODE_VARIABLE MACRO=AUTO_FEEDING_BATCH VARIABLE=preheated_extruders VALUE="{p}"
+         SET_GCODE_VARIABLE MACRO=AUTO_FEEDING_BATCH VARIABLE=doing VALUE=True
+     {% elif action == 'DOING' %}
+         {% if doing == False %}
+             {action_raise_error('{"coded": "0002-0531-0000-0024", "msg": "auto feeding batch has not yet begun or has already ended", "action": "none"}')}
+         {% else %}
++            {% set p0 = True if current_extruder == 0 else preheated_extruders[0] %}
++            {% set p1 = True if current_extruder == 1 else preheated_extruders[1] %}
++            {% set p2 = True if current_extruder == 2 else preheated_extruders[2] %}
++            {% set p3 = True if current_extruder == 3 else preheated_extruders[3] %}
++            {% if parallel_preheat %}
++                M104 S{preheat_temp} T{current_extruder} A0
++                {% if params.NEXT_EXTRUDER is defined %}
++                    {% set next_extruder = params.NEXT_EXTRUDER | default(default_extruder) | int %}
++                    M104 S{preheat_temp} T{next_extruder} A0
++                    {% if next_extruder == 0 %}{% set p0 = True %}{% endif %}
++                    {% if next_extruder == 1 %}{% set p1 = True %}{% endif %}
++                    {% if next_extruder == 2 %}{% set p2 = True %}{% endif %}
++                    {% if next_extruder == 3 %}{% set p3 = True %}{% endif %}
++                {% endif %}
++            {% else %}
+             AUTO_FEEDING_PREHEAT EXTRUDER={current_extruder}
+             {% if params.NEXT_EXTRUDER is defined %}
+                 {% set next_extruder = params.NEXT_EXTRUDER | default(default_extruder) | int %}
+                 AUTO_FEEDING_PREHEAT EXTRUDER={next_extruder}
++                    {% if next_extruder == 0 %}{% set p0 = True %}{% endif %}
++                    {% if next_extruder == 1 %}{% set p1 = True %}{% endif %}
++                    {% if next_extruder == 2 %}{% set p2 = True %}{% endif %}
++                    {% if next_extruder == 3 %}{% set p3 = True %}{% endif %}
+             {% endif %}
+-            {% set extruder_temps = [extruder0_temp, extruder1_temp, extruder2_temp, extruder3_temp] %}
+-            {% set restore_temp = extruder_temps[current_extruder] %}
++            {% endif %}
++            {% set is_unload = params.UNLOAD | default(0) | int == 1 %}
++            {% set raw_restore = orig_targets[current_extruder] | default(0) | int %}
++            {% set restore_temp = 0 if is_unload else (0 if (raw_restore == preheat_temp or raw_restore in [130, 150, 170]) else raw_restore) %}
++            {% if current_extruder == 0 %}{% set p0 = False %}{% endif %}
++            {% if current_extruder == 1 %}{% set p1 = False %}{% endif %}
++            {% if current_extruder == 2 %}{% set p2 = False %}{% endif %}
++            {% if current_extruder == 3 %}{% set p3 = False %}{% endif %}
++            SET_GCODE_VARIABLE MACRO=AUTO_FEEDING_BATCH VARIABLE=preheated_extruders VALUE="[{p0}, {p1}, {p2}, {p3}]"
+             AUTO_FEEDING {rawparams} RESTORE_TEMP={restore_temp}
++            M104 S0 T{current_extruder} A0
+         {% endif %}
+     {% else %}
+         {% if doing == True %}
+-            {% if printer['print_stats'].state == 'paused' or printer['print_stats'].state == 'printing' %}
+-                M104 S{extruder0_temp} T0 A0
+-                M104 S{extruder1_temp} T1 A0
+-                M104 S{extruder2_temp} T2 A0
+-                M104 S{extruder3_temp} T3 A0
+-            {% else %}
+-                M104 S0 T0 A0
+-                M104 S0 T1 A0
+-                M104 S0 T2 A0
+-                M104 S0 T3 A0
+-            {% endif %}
++            {% for i in range(4) %}
++                {% if preheated_extruders[i] %}
++                    {% set raw_target = orig_targets[i] | int %}
++                    {% set target_to_restore = 0 if (raw_target == preheat_temp or raw_target in [130, 150, 170]) else raw_target %}
++                    M104 S{target_to_restore} T{i} A0
++                {% endif %}
++            {% endfor %}
+             SET_GCODE_VARIABLE MACRO=AUTO_FEEDING_BATCH VARIABLE=doing VALUE=False
++            SET_GCODE_VARIABLE MACRO=AUTO_FEEDING_BATCH VARIABLE=preheated_extruders VALUE="[False, False, False, False]"
++            SET_GCODE_VARIABLE MACRO=AUTO_FEEDING_BATCH VARIABLE=orig_targets VALUE="[0, 0, 0, 0]"
+             SET_GCODE_VARIABLE MACRO=AUTO_FEEDING_BATCH VARIABLE=extruder0_temp VALUE=0
+             SET_GCODE_VARIABLE MACRO=AUTO_FEEDING_BATCH VARIABLE=extruder1_temp VALUE=0
+             SET_GCODE_VARIABLE MACRO=AUTO_FEEDING_BATCH VARIABLE=extruder2_temp VALUE=0
