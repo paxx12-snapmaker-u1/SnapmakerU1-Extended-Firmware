@@ -74,8 +74,9 @@ it.
 - **Card UIDs** (default) - the `card_uids` spool extra field. Works with every
   Spoolman version and every app in the [table below](#apps).
 - **Spoolman native tags** - Spoolman's NFC/RFID tags, shown in the spool's
-  **Tags** section. Needs Spoolman v0.27.0 or newer, and apps that support
-  native tags; apps that only read `card_uids` stop finding spools.
+  **Tags** section. Needs Spoolman v0.27.0 or newer, and apps with a ✅ under
+  **Spoolman tags** in the [table below](#apps); apps that only read
+  `card_uids` stop finding spools.
 
 Switching moves every existing link to the new store and clears it from the
 old one, with Moonraker stopped meanwhile. A card listed on more than one
@@ -120,8 +121,10 @@ automatically when the filament is loaded:
     (pre-SpoolLink) spool-id format after confirmation; v2 stable remains
     available for older firmware that predates SpoolLink.
 - **Spoolman tags** means the app reads and writes Spoolman's native NFC/RFID
-  tags (Spoolman v0.27.0 or newer). The other apps store UIDs only in the
-  `card_uids` spool extra field.
+  tags (Spoolman v0.27.0 or newer), so it keeps working when
+  [Card UID Storage](#card-uid-storage) is set to **Spoolman native tags**. The
+  other apps store UIDs only in the `card_uids` spool extra field, and work
+  only with **Card UIDs**.
   - **SpoolKid** — from v0.24, stores a link in both and lets a native tag
     win on read; its Settings can copy links between the two. SpoolKid is no
     longer open source, so this comes from its
