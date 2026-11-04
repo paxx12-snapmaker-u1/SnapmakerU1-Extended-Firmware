@@ -67,7 +67,9 @@ Hovering the card's Spoolman badge lists the spool's stored UIDs.
 ## Card UID Storage
 
 SpoolLink records which RFID card belongs to which spool in one of two
-stores, picked under **Spoolman Tag Storage** in firmware-config:
+stores, picked under **Spoolman Tag Storage** in firmware-config. The setting
+is hidden: open firmware-config with `?hidden` at the end of its URL to show
+it.
 
 - **Card UIDs** (default) - the `card_uids` spool extra field. Works with every
   Spoolman version and every app in the [table below](#apps).
@@ -79,7 +81,7 @@ Switching moves every existing link to the new store and clears it from the
 old one, with Moonraker stopped meanwhile. A card listed on more than one
 spool, or one that could not be moved, is left where it was and reported;
 fix it in Spoolman, then run **Retry Spoolman Tag Migration** under
-Troubleshooting in firmware-config. Moving to native tags drops a
+Troubleshooting in firmware-config (also hidden). Moving to native tags drops a
 `card_uids` entry for a card already tagged on another spool, as that tag is
 the newer link. Filament Manager uses the same store.
 

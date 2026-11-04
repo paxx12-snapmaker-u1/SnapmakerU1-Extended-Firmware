@@ -166,7 +166,7 @@ section:
 
 ## Switching and migration
 
-The **Spoolman Tag Storage** setting in firmware-config switches the store. It stops
+The hidden **Spoolman Tag Storage** setting in firmware-config switches the store. It stops
 Moonraker, runs `spoollink_migrate.py --host {url} {store}`, sets `tag_store` only if the
 migration succeeded, and starts Moonraker again. The script lists every spool
 (`limit=1000&allow_archived=true`) and moves each link into the selected store.
@@ -183,7 +183,7 @@ To `card_uids`, for each spool tag: appends it to `card_uids` (creating the fiel
 missing), removes the UID from any other spool's `card_uids`, then unlinks the tag. On
 a Spoolman older than `0.27.0` there are no tags, and nothing is moved.
 
-**Retry Spoolman Tag Migration** (firmware-config Troubleshooting) runs the script
+The hidden **Retry Spoolman Tag Migration** action (firmware-config Troubleshooting) runs the script
 again for the current store, retrying whatever was left in place.
 
 # `spoollink` Component Flow

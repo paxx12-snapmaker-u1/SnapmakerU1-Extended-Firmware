@@ -8,6 +8,7 @@ actions:
       spoollink-retry-migration:
         label: Retry Spoolman Tag Migration
         description: Move card links still left in the other store into the selected Spoolman Tag Storage, after fixing what the last switch reported.
+        hidden: true
         if_cmd: test -n "$(/usr/local/bin/extended-config.py get /oem/printer_data/config/extended/extended2.cfg spoolman host '' 2>/dev/null)"
         confirm: "Move every card link left in the other store into the selected Spoolman Tag Storage? Moonraker restarts."
         cmd:
