@@ -51,6 +51,10 @@ Lowers the stepper motor run current from 1.2A to 1.0A for X and Y axes.
 - Watch for layer shifts or positioning issues
 - Disable if you experience motion problems
 
+**Combining with Max Speed:** TMC Reduced Current can be enabled together with
+Max Speed (Balanced). Max Speed (Aggressive) is refused while it is installed.
+See [Max Speed](#max-speed).
+
 **Configuration:**
 This feature can **only** be configured via Firmware Configuration web interface. Manual configuration is not supported.
 
@@ -99,11 +103,14 @@ is short, so a slightly slower dock approach is expected, not a regression.
 - Start with `Balanced` and a small test print, and watch the first tool changes
 - Disable if you see dock alignment problems or layer shifts
 
-**Note:** This tweak cannot be combined with
-[TMC Reduced Current](#tmc-reduced-current) — running the X/Y motors at 1.0A with
-these raised speed limits is untested. Firmware Config refuses that combination
-and tells you which tweak to disable first. [TMC AutoTune](#tmc-autotune) can be
-used alongside Max Speed; the two no longer change any setting in common.
+**Note:** The two tiers differ in how far they combine with
+[TMC Reduced Current](#tmc-reduced-current), which lowers the X/Y motors to
+1.0A. `Balanced` can run alongside it — its tool-change speeds sit at roughly
+half the point where tool confirmation retries were observed. `Aggressive` is
+refused while TMC Reduced Current is installed, because its tool-change speeds
+are tuned for 1.2A and are not validated at 1.0A. Firmware Config enforces this
+and names the setting to change. [TMC AutoTune](#tmc-autotune) can be used
+alongside Max Speed; the two no longer change any setting in common.
 
 **Configuration:**
 This feature can **only** be configured via Firmware Configuration web interface. Manual configuration is not supported.

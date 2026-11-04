@@ -1,10 +1,15 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # SPDX-PackageHomePage: https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware
-# SPDX-FileCopyrightText: Copyright (c) 2026 @paxx12, @ni4223
+# SPDX-FileCopyrightText: Copyright (c) 2026 @paxx12, @ni4223, @BICHENG
 
 # Both tiers install to the same extended/klipper/10_max_speed.cfg, so switching
 # between them is a single overwrite and the two tiers can never both be active.
 # The tier is read back from the `# tier:` marker in the installed file's header.
+#
+# TMC Reduced Current lowers the X/Y motor current to 1.0A. The Balanced tier can
+# run on 1.0A, so both settings can be enabled together. The Aggressive tier is
+# tuned for 1.2A and is refused while TMC Reduced Current is enabled, because its
+# tool-change speeds are not validated at 1.0A.
 
 settings:
   tweaks:
@@ -32,14 +37,14 @@ settings:
               WARNING: EXPERIMENTAL. Raises XY velocity to 600 mm/s (stock 500), tool changes to 550 mm/s and dock grab to 30 mm/s.
               This runs the printer past its rated limits. It increases wear on your printer and can cause print problems such as Z skipping, layer shifts, and ringing.
               Only enable on a fully calibrated printer with tool changes already reliable at stock speeds. Set this back to Disabled if prints degrade.
+              If TMC Reduced Current is enabled, both settings apply together: X/Y motor current stays at 1.0A while motion limits are raised. Reduced current can skip steps under heavy load or fast movements, so confirm that you accept this combination.
             cmd:
               - bash
               - -xc
               - |
                 if test -f /oem/printer_data/config/extended/klipper/tmc_current.cfg; then
-                  echo "ERROR: TMC Reduced Current is enabled and lowers the X/Y motor current."
-                  echo "Disable TMC Reduced Current first, then enable Max Speed."
-                  exit 1
+                  echo "TMC Reduced Current is enabled: X/Y motor current stays at 1.0A."
+                  echo "Max Speed (Balanced) runs at reduced current. Watch for skipped steps during tool changes."
                 fi
                 cp -v /usr/local/share/firmware-config/tweaks/klipper/max_speed_balanced.cfg /oem/printer_data/config/extended/klipper/10_max_speed.cfg &&
                 echo "Max Speed (Balanced) enabled. Restarting Klipper..." &&
@@ -50,13 +55,15 @@ settings:
               WARNING: EXPERIMENTAL — highest tier. Raises XY velocity to 750 mm/s (stock 500), tool changes to 700 mm/s and dock grab to 50 mm/s.
               This runs the printer well past its rated limits. It increases wear on your printer and can cause print problems such as Z skipping, layer shifts, and ringing.
               Only enable on a fully calibrated printer with tool changes already reliable at stock speeds. Drop back if prints degrade.
+              This tier cannot be combined with TMC Reduced Current: its tool-change speeds are tuned for 1.2A and are not validated at 1.0A. Disable TMC Reduced Current, or use the Balanced tier for the reduced-current combination.
             cmd:
               - bash
               - -xc
               - |
                 if test -f /oem/printer_data/config/extended/klipper/tmc_current.cfg; then
-                  echo "ERROR: TMC Reduced Current is enabled and lowers the X/Y motor current."
-                  echo "Disable TMC Reduced Current first, then enable Max Speed."
+                  echo "ERROR: TMC Reduced Current is enabled and lowers the X/Y motor current to 1.0A."
+                  echo "Max Speed (Aggressive) is tuned for 1.2A and is not validated at 1.0A."
+                  echo "Disable TMC Reduced Current, or use Max Speed (Balanced) instead."
                   exit 1
                 fi
                 cp -v /usr/local/share/firmware-config/tweaks/klipper/max_speed_aggressive.cfg /oem/printer_data/config/extended/klipper/10_max_speed.cfg &&
