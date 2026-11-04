@@ -921,8 +921,8 @@ function buildFilamentPayload(values, vendorId) {
 }
 
 // Spoolman cannot set native tags on create, so they are attached right after.
-// Without them the UID is seeded into `card_uids`, so either way a retry after
-// a failed link finds the spool instead of creating another.
+// The UID is also seeded into `card_uids` when that store is enabled, so a
+// retry after a failed tag link finds the spool instead of creating another.
 function buildSpoolPayload(filamentId, values, seedCardUids) {
     const id = Number(filamentId);
     const uid = normalizeUid(values?.uid);
@@ -1418,7 +1418,7 @@ async function handleCreateSpool(event) {
                 uid: context.uid,
                 net_weight: values.net_weight,
                 tare_weight: values.tare_weight,
-            }, !tagApi && useSpoollinkUid),
+            }, useSpoollinkUid),
         });
         if (!spool?.id) throw new Error('Spoolman did not return the created spool ID');
         created.push(`spool #${spool.id}`);

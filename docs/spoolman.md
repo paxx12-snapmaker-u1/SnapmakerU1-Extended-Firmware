@@ -49,9 +49,10 @@ diameter, density, and temperatures under **Advanced**.
 ![Create tab, seeded from the detected tag](screenshots/filament-manager-spoolman-create-spool.png)
 
 UID ownership is rechecked on submit: if the tag turns out to belong to a spool
-already, that spool is assigned instead of a duplicate being created. On
-Spoolman v0.27.0 or newer the tag is attached to the new spool as a native tag
-right after it is created; older servers get it in `card_uids` instead.
+already, that spool is assigned instead of a duplicate being created. The tag
+is stored on the new spool in every enabled [store](#card-uid-storage): in
+`card_uids` when the spool is created, and on Spoolman v0.27.0 or newer as a
+native tag right after.
 
 ## Assigning a Spool
 
@@ -84,6 +85,11 @@ use_spoollink_uid: true
 With both enabled, a native tag wins over a conflicting `card_uids` entry, and
 SpoolLink keeps the two in sync. Cards bound before upgrading Spoolman are
 copied to native tags the next time they are scanned.
+
+Once a card is a native tag, move it to another spool in Spoolman, Filament
+Manager or an app that supports native tags. An app that only writes
+`card_uids` leaves the native tag on the old spool, so the next scan resolves
+to that spool and removes the new `card_uids` entry as stale.
 
 Filament Manager follows the same settings: it lists UIDs from every enabled
 store, treats a native tag as the owner of a UID the same way, and leaves the
