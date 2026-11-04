@@ -86,6 +86,14 @@ With both enabled, a native tag wins over a conflicting `card_uids` entry, and
 SpoolLink keeps the two in sync. Cards bound before upgrading Spoolman are
 copied to native tags the next time they are scanned.
 
+Setting `use_spoollink_uid: false` on Spoolman v0.27.0 or newer moves every
+`card_uids` entry to a native tag once, when SpoolLink starts, and clears it
+from the field. A UID listed on several spools, or one that fails to link, is
+kept in `card_uids` and logged, and tried again on the next start. A UID
+already tagged on another spool is dropped, as the tag wins. Apps that only
+read `card_uids` stop finding those spools, so disable it only once your apps
+support native tags.
+
 Once a card is a native tag, move it to another spool in Spoolman, Filament
 Manager or an app that supports native tags. An app that only writes
 `card_uids` leaves the native tag on the old spool, so the next scan resolves

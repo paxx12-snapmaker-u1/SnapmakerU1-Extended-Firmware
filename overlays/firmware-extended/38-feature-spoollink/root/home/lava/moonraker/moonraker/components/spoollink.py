@@ -19,7 +19,8 @@
 #   use_spoollink_uid - the legacy `card_uids` spool extra field, which works
 #                       with every Spoolman version.
 # When both are in use a native tag match is authoritative, and the other
-# store is kept in sync with it.
+# store is kept in sync with it. With only native tags in use, `card_uids`
+# entries are migrated to tags once and cleared from the field.
 #
 # This file may be distributed under the terms of the GNU GPLv3 license.
 
@@ -79,6 +80,8 @@ class SpoolLink:
         self._use_spoolman_uid = config.getboolean("use_spoolman_uid", True)
         self._use_spoollink_uid = config.getboolean("use_spoollink_uid", True)
         self._tag_api: bool = False
+        self._card_uids_migrated = False
+        self._migrate_lock = asyncio.Lock()
         self.http_client: HttpClient = self.server.lookup_component("http_client")
         self.klippy_apis: APIComp = self.server.lookup_component("klippy_apis")
 
@@ -331,6 +334,76 @@ class SpoolLink:
             logging.info("[spoollink] Spoolman %s: tag API %s", version or "?",
                          "enabled" if supported else "not supported")
         self._tag_api = supported
+        if supported and not self._use_spoollink_uid:
+            await self._ensure_card_uids_migrated()
+
+    async def _ensure_card_uids_migrated(self) -> None:
+        # Resolves wait here, so none runs against a half-migrated library.
+        async with self._migrate_lock:
+            if not self._card_uids_migrated:
+                self._card_uids_migrated = await self._migrate_card_uids()
+
+    # Moves every `card_uids` entry onto a native tag, then drops it from the
+    # field. A UID listed on several spools is left in place for the user to
+    # resolve; one already tagged elsewhere is dropped, as the tag wins.
+    # Returns False only when the spools could not be listed, so a later
+    # refresh tries again.
+    async def _migrate_card_uids(self) -> bool:
+        try:
+            spools = await self._retry(self._spoolman_list_spools)
+        except Exception as e:
+            logging.error("[spoollink] card_uids migration: list failed: %s", e)
+            return False
+        owners: Dict[str, List[int]] = {}
+        for spool in spools:
+            for uid in _parse_card_uids(spool):
+                owners.setdefault(uid, []).append(spool["id"])
+        if not owners:
+            return True
+        for uid, ids in owners.items():
+            if len(ids) > 1:
+                logging.warning(
+                    "[spoollink] card_uids migration: card %s is on multiple "
+                    "spools (%s), not migrated", uid,
+                    ", ".join(f"#{i}" for i in ids))
+        migrated = 0
+        for spool in spools:
+            uids = _parse_card_uids(spool)
+            if not uids:
+                continue
+            keep: List[str] = []
+            for uid in uids:
+                if len(owners[uid]) > 1:
+                    keep.append(uid)
+                    continue
+                if uid in _parse_tag_uids(spool):
+                    continue
+                try:
+                    holder = await self._retry(
+                        self._spoolman_link_tag, spool, uid, move=False)
+                except Exception as e:
+                    logging.error(
+                        "[spoollink] card_uids migration: tag %s on spool %s "
+                        "failed: %s", uid, spool["id"], e)
+                    keep.append(uid)
+                    continue
+                if holder is not None:
+                    logging.warning(
+                        "[spoollink] card_uids migration: card %s on spool %s "
+                        "is already tagged on spool %s, dropping it",
+                        uid, spool["id"], holder)
+                else:
+                    migrated += 1
+            if keep != uids:
+                try:
+                    await self._retry(self._spoolman_patch_card_uids, spool, keep)
+                except Exception as e:
+                    logging.error(
+                        "[spoollink] card_uids migration: clearing spool %s "
+                        "failed: %s", spool["id"], e)
+        logging.info("[spoollink] card_uids migration: %d card(s) moved to "
+                     "native tags", migrated)
+        return True
 
     async def _ensure_fields(self) -> None:
         if self._use_spoollink_uid:
@@ -377,6 +450,14 @@ class SpoolLink:
             return None
         raise RuntimeError(f"HTTP {resp.status_code}: {resp.text()}")
 
+    async def _spoolman_list_spools(self) -> List[dict]:
+        resp = await self.http_client.get(
+            f"{self._spoolman_url}/api/v1/spool?limit=1000&allow_archived=true",
+            enable_cache=False)
+        if resp.status_code != 200:
+            raise RuntimeError(f"HTTP {resp.status_code}: {resp.text()}")
+        return resp.json()
+
     async def _spoolman_find_by_tag(self, card_uid: str) -> List[dict]:
         resp = await self.http_client.get(
             f"{self._spoolman_url}/api/v1/spool?tag={card_uid.upper()}",
@@ -410,19 +491,25 @@ class SpoolLink:
         tagged_ids = {s["id"] for s in tagged}
         return tagged, [s for s in legacy if s["id"] not in tagged_ids]
 
-    async def _spoolman_link_tag(self, spool: dict, card_uid: str) -> None:
+    # Links a native tag to the spool. Returns the ID of another spool already
+    # holding it, which with `move` gives the tag up to this spool first.
+    async def _spoolman_link_tag(self, spool: dict, card_uid: str,
+                                 move: bool = True) -> Optional[int]:
         url = f"{self._spoolman_url}/api/v1/spool/{spool['id']}/tag"
         resp = await self.http_client.post(url, body={"uid": card_uid})
         if resp.status_code == 409:
             holder = (resp.json() or {}).get("spool_id")
             if holder is None or holder == spool["id"]:
                 raise RuntimeError(f"HTTP 409: {resp.text()}")
+            if not move:
+                return holder
             logging.info("[spoollink] moving tag %s from spool %s to %s",
                          card_uid, holder, spool["id"])
             await self._spoolman_unlink_tag({"id": holder}, card_uid)
             resp = await self.http_client.post(url, body={"uid": card_uid})
         if resp.status_code not in (200, 201):
             raise RuntimeError(f"HTTP {resp.status_code}: {resp.text()}")
+        return None
 
     async def _spoolman_unlink_tag(self, spool: dict, card_uid: str) -> None:
         resp = await self.http_client.delete(

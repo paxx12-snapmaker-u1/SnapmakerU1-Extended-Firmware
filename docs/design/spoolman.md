@@ -171,6 +171,22 @@ card resolved only through `card_uids` is linked as a native tag on its next sca
 When linking returns `409` for another spool, the tag is unlinked there and linked
 again.
 
+## Migrating `card_uids`
+
+With `use_spoollink_uid` disabled and native tags available, the first version check
+after startup lists every spool (`GET api/v1/spool?limit=1000&allow_archived=true`)
+and moves its `card_uids` entries to native tags:
+
+- A UID on a single spool is linked with `POST api/v1/spool/{id}/tag` and removed
+  from `card_uids`.
+- A UID on several spools stays in `card_uids` and is logged for the user to resolve.
+- A UID whose link fails stays in `card_uids` and is tried again on the next start.
+- A UID already tagged on another spool (`409`) is removed from `card_uids`, since the
+  native tag wins.
+
+Card resolves wait for the migration to finish. If the spools cannot be listed, the
+migration is retried on the next version check.
+
 # `spoollink` Component Flow
 
 `spoollink` is a Moonraker component (`moonraker/components/spoollink.py`), loaded when a
