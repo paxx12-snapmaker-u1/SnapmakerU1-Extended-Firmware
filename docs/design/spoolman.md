@@ -223,3 +223,13 @@ it does not maintain its own WebSocket connection.
 8. Klipper stores the metadata in `print_task_config` and notifies subscribers.
    `AFC_lane.get_status()` surfaces `spool_id` to Fluidd/Mainsail.
 
+
+# Testing
+
+`overlays/firmware-extended/38-feature-spoollink/test/run-spoolman.sh` runs
+`spoolman_test.py` against a fresh `ghcr.io/donkie/spoolman` container per version
+(`0.27.0` and `0.26.1` by default, or the versions given). The test loads the real
+`spoollink` component with stubbed Moonraker parts, and runs `spoollink_migrate.py` and
+the firmware-config commands against a temporary `extended2.cfg`. It covers both card
+UID stores, migration in both directions, and native tags being refused on an older
+Spoolman. It needs Docker and Python 3, and PyYAML for the firmware-config checks.
