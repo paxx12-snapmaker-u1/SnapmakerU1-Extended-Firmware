@@ -14,7 +14,7 @@ set -eo pipefail
 # Moonraker component. Pinned; a new firmware brings a new pushraker.
 # pip pulls in its dependencies (Apprise, requests, Pillow) that the image
 # doesn't have yet at this step.
-PUSHRAKER_VERSION=0.2.4
+PUSHRAKER_VERSION=0.2.5
 
 echo ">> Installing pushraker $PUSHRAKER_VERSION via pip3"
 cache_pip.sh "$ROOTFS_DIR" "pushraker==$PUSHRAKER_VERSION"
