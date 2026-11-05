@@ -13,7 +13,9 @@ keep their own path.
 
 SAVE_GCODE_STATE (pause) and the power loss fan record read the
 requested speed, including changes still waiting in the queue, so
-pausing right after M106 does not save a stale fan speed.
+pausing right after M106 does not save a stale fan speed. Tool change
+reads it too, as the status can lag behind a fan change. The value is
+stored unscaled, so restoring it does not apply max_power twice.
 
 The fan status (screen / Fluidd speed) reports a new speed only once
 its print time is reached, so it no longer runs ahead of the fan.
@@ -22,17 +24,26 @@ See https://github.com/Snapmaker/u1-klipper/issues/18
 ---
 --- a/klippy/extras/fan.py
 +++ b/klippy/extras/fan.py
-@@ -15,6 +15,9 @@
+@@ -15,6 +15,10 @@
          self.last_fan_value = 0.
          self.last_fan_time = 0.
          self.last_enable_value = 0.
++        self.requested_fan_value = 0.
 +        self.pending_values = []
 +        self.status_value = 0.
 +        self.scheduled_values = []
          # Read config
          self.max_power = config.getfloat('max_power', 1., above=0., maxval=1.)
          self.kick_start_time = config.getfloat('kick_start_time', 0.1,
-@@ -66,6 +69,7 @@
+@@ -49,6 +53,7 @@
+     def get_mcu(self):
+         return self.mcu_fan.get_mcu()
+     def set_speed(self, print_time, value, control_enable=True):
++        self.requested_fan_value = value
+         if value < self.off_below:
+             value = 0.
+         value = max(0., min(self.max_power, value * self.max_power))
+@@ -66,6 +71,7 @@
              return
  
          print_time = max(self.last_fan_time + FAN_MIN_TIME, print_time)
@@ -40,7 +51,7 @@ See https://github.com/Snapmaker/u1-klipper/issues/18
          if self.enable_pin and control_enable:
              if value > 0 and self.last_fan_value == 0 or value == 0 and self.last_fan_value > 0 and enable_value is not None:
                  self.enable_pin.set_digital(print_time, enable_value)
-@@ -84,13 +88,36 @@
+@@ -84,13 +90,33 @@
          system_time += FAN_MIN_TIME
          print_time = self.get_mcu().estimated_print_time(system_time)
          self.set_speed(print_time, value, control_enable)
@@ -55,12 +66,9 @@ See https://github.com/Snapmaker/u1-klipper/issues/18
 +        toolhead.register_lookahead_callback(apply_speed)
 +    def get_requested_speed(self):
 +        # Speed including gcode changes still waiting in the motion queue
-+        if not self.pending_values:
-+            return self.last_fan_value
-+        value = self.pending_values[-1]
-+        if value < self.off_below:
-+            value = 0.
-+        return max(0., min(self.max_power, value * self.max_power))
++        if self.pending_values:
++            return self.pending_values[-1]
++        return self.requested_fan_value
      def _handle_request_restart(self, print_time):
          self.set_speed(print_time, 0.)
  
@@ -78,7 +86,7 @@ See https://github.com/Snapmaker/u1-klipper/issues/18
              'rpm': tachometer_status['rpm'],
          }
  
-@@ -158,12 +185,12 @@
+@@ -158,12 +184,12 @@
  
      def get_all_fan_speed(self):
          fan_speed_dict = {}
@@ -93,7 +101,7 @@ See https://github.com/Snapmaker/u1-klipper/issues/18
              else:
                  logging.error("No fan found with ID {}".format(fan_id))
          return copy.deepcopy(fan_speed_dict)
-@@ -189,13 +216,13 @@
+@@ -189,13 +215,13 @@
              if fan_id in self.extendable_fan:
                  fan_obj = self.printer.lookup_object("fan_generic {}".format(self.extendable_fan[fan_id]), None)
                  if fan_obj is not None:
@@ -109,7 +117,7 @@ See https://github.com/Snapmaker/u1-klipper/issues/18
      def cmd_M107(self, gcmd):
          # Turn fan off
          fan_id = gcmd.get_int('P', None)
-@@ -203,13 +230,20 @@
+@@ -203,13 +229,20 @@
              if fan_id in self.extendable_fan:
                  fan_obj = self.printer.lookup_object("fan_generic {}".format(self.extendable_fan[fan_id]), None)
                  if fan_obj is not None:
@@ -145,7 +153,7 @@ See https://github.com/Snapmaker/u1-klipper/issues/18
      return PrinterFanGeneric(config)
 --- a/klippy/extras/virtual_sdcard.py
 +++ b/klippy/extras/virtual_sdcard.py
-@@ -993,9 +993,14 @@
+@@ -1001,9 +1001,14 @@
                  fan_obj = self.printer.lookup_object(fan_info[key][0], None)
                  # self.gcode.respond_info("fan key: {}".format(key))
                  if fan_obj is not None:
@@ -163,3 +171,16 @@ See https://github.com/Snapmaker/u1-klipper/issues/18
                      fan_state[key] = fan_info[key][1] + ' S{}'.format(fan_value)
          fan_state.update(data_dict)
          self.save_environment_data(self.pl_print_fan_info_env_path, fan_state, sync, flush, safe_write)
+--- a/klippy/kinematics/extruder.py
++++ b/klippy/kinematics/extruder.py
+@@ -1500,9 +1500,8 @@
+ 
+             print_fan = self.printer.lookup_object('fan', None)
+             print_fan_speed = None
+-            current_time = self.printer.get_reactor().monotonic()
+             if print_fan is not None:
+-                print_fan_speed = print_fan.get_status(current_time)['speed']
++                print_fan_speed = print_fan.fan.get_requested_speed()
+                 print_fan.fan.set_speed_from_command(0)
+ 
+             # enable pwm pin in order to detect the extruder gripping state
