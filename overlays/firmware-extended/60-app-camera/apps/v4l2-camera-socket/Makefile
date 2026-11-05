@@ -6,16 +6,17 @@ CROSS_COMPILE ?=
 CC = $(CROSS_COMPILE)gcc
 STRIP = $(CROSS_COMPILE)strip
 
-TARGET = libv4l2-imposter.so
+TARGET = libv4l-camera-socket.so
 
 CFLAGS = -Wall -Wextra -O2 -fPIC
-LDFLAGS = -shared -lpthread -ldl
+LDFLAGS = -shared -lpthread
 
 SRCS = main.c
 OBJS = $(SRCS:.c=.o)
 
-PREFIX ?= /usr/local
-LIBDIR ?= $(PREFIX)/lib
+# libv4l2 loads its plugins from here, in name order: this one must sort
+# before Rockchip's libv4l-mplane.so.
+PLUGINDIR ?= /usr/lib/libv4l/plugins
 
 all: $(TARGET)
 
@@ -32,7 +33,7 @@ clean:
 	rm -f $(OBJS) $(TARGET)
 
 install: $(TARGET)
-	install -d $(DESTDIR)$(LIBDIR)
-	install -m 755 $(TARGET) $(DESTDIR)$(LIBDIR)/
+	install -d $(DESTDIR)$(PLUGINDIR)
+	install -m 755 $(TARGET) $(DESTDIR)$(PLUGINDIR)/
 
 .PHONY: all clean strip install

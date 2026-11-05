@@ -1,2 +1,2 @@
-libv4l2-imposter.so
+libv4l-camera-socket.so
 *.o

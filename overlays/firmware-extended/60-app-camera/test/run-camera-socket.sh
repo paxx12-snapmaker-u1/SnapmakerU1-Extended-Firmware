@@ -15,16 +15,15 @@ shift
 
 set -xeo pipefail
 
-make -C "$ROOT_DIR/apps/v4l2-imposter" CROSS_COMPILE=aarch64-linux-gnu-
-scp "$ROOT_DIR/apps/v4l2-imposter/libv4l2-imposter.so" "$SSH_HOST":/usr/local/lib/
+make -C "$ROOT_DIR/apps/v4l2-camera-socket" CROSS_COMPILE=aarch64-linux-gnu-
+scp "$ROOT_DIR/apps/v4l2-camera-socket/libv4l-camera-socket.so" "$SSH_HOST":/usr/lib/libv4l/plugins/
 
 ssh -t "$SSH_HOST" "
-  export LD_PRELOAD=/usr/local/lib/libv4l2-imposter.so
-  export V4L2_IMPOSTER_SOCKET_PATH=/tmp/capture-mipi-raw.sock
-  export V4L2_IMPOSTER_DEVICE=/dev/video11
-  export V4L2_IMPOSTER_WIDTH=1920
-  export V4L2_IMPOSTER_HEIGHT=1080
-  export V4L2_IMPOSTER_FORMAT=nv12
-  export V4L2_IMPOSTER_DEBUG=1
+  export V4L2_CAMERA_SOCKET_PATH=/tmp/capture-mipi-raw.sock
+  export V4L2_CAMERA_SOCKET_DEVICE=/dev/video11
+  export V4L2_CAMERA_SOCKET_WIDTH=1920
+  export V4L2_CAMERA_SOCKET_HEIGHT=1080
+  export V4L2_CAMERA_SOCKET_FORMAT=nv12
+  export V4L2_CAMERA_SOCKET_DEBUG=1
   /usr/bin/unisrv -t MIPI -d
 "
