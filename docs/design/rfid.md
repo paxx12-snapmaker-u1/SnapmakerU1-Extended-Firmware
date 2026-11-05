@@ -57,6 +57,7 @@ with JSON (MIME type `application/json`) also works.
 | [TigerTag Connect](https://tigertag.io/) | TigerSystem | Android ([Google Play](https://play.google.com/store/apps/details?id=com.tigertag.connect)), iOS ([App Store](https://apps.apple.com/us/app/tigertag-rfid-connect/id6745437963)) | TigerTag | TigerTag | – | Closed source | — |
 | [SpoolSense iOS App](https://spoolsense.org/) | SpoolSense | iOS ([App Store](https://apps.apple.com/us/app/spoolsense-nfc-filament-tags/id6789256550)) | OpenPrintTag, OpenTag3D, OpenSpool, TigerTag | OpenPrintTag, OpenTag3D, OpenSpool, TigerTag | - | Closed source | - |
 | [SpoolFlux](https://spoolflux.dingdongclick.de/) | SpoolFlux | iOS ([App Store](https://spoolflux.dingdongclick.de/)) | OpenPrintTag, OpenTag3D, OpenSpool, TigerTag, Anycubic ACE | OpenPrintTag, OpenTag3D, OpenSpool, TigerTag, Anycubic ACE | - | Closed source | - |
+| [FilaSpool](https://apps.apple.com/us/app/filaspool/id6762657898) | [jacfx7](https://github.com/jacfx7) | iOS ([App Store](https://apps.apple.com/us/app/filaspool/id6762657898)), Android ([Google Play](https://play.google.com/store/apps/details?id=com.jjclar4.filaspool)) | OpenSpool, OpenPrintTag, OpenTag3D | OpenSpool (including `spool_id` and `subtype`) | – | Closed source | — |
 
 **Notes:**
 
