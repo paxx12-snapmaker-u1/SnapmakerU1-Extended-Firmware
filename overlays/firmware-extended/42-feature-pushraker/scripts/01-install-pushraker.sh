@@ -14,10 +14,12 @@ set -eo pipefail
 # Moonraker component. Pinned; a new firmware brings a new pushraker.
 # pip pulls in its dependencies (Apprise, requests, Pillow) that the image
 # doesn't have yet at this step.
+# The sha256 is PyPI's for the wheel: pip refuses any other file.
 PUSHRAKER_VERSION=0.2.7
+PUSHRAKER_SHA256=792983c7bb27a60baa0451c60316e7a388bebf3f49e119aef4d35095cdd37ab1
 
 echo ">> Installing pushraker $PUSHRAKER_VERSION via pip3"
-cache_pip.sh "$ROOTFS_DIR" "pushraker==$PUSHRAKER_VERSION"
+cache_pip.sh "$ROOTFS_DIR" "pushraker==$PUSHRAKER_VERSION" --hash=sha256:$PUSHRAKER_SHA256
 
 # The Klipper macros and the settings page come from the package: link them
 # where the extended config and nginx expect them. find_spec locates the
