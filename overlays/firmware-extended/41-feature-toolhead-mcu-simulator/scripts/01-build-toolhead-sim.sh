@@ -4,7 +4,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 @paxx12
 
 GIT_URL=https://github.com/snapmaker/u1-klipper.git
-GIT_SHA=93cb12faebf6e74c51bbc5f0be66e95124af14c8
+GIT_SHA=7ac453b50fe6779b2ec0b759038a17da5e6d671d
 
 if [[ -z "$CREATE_FIRMWARE" ]]; then
   echo "Error: This script should be run within the create_firmware.sh environment."
