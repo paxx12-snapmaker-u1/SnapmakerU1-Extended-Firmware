@@ -284,8 +284,10 @@ static void init_once(void)
     assert(cfg.venc_h264 != cfg.venc_jpeg);
 
     g_active = true;
-    LOGI("active in unisrv: VI %d:%d, VENC h264=%d jpeg=%d, %d fps, %d kbps, jpeg q%d",
-         cfg.pipe, cfg.chn, cfg.venc_h264, cfg.venc_jpeg, cfg.fps, cfg.bitrate_kbps, cfg.jpeg_qfactor);
+    LOGI("active in unisrv: VI %d:%d, VENC h264=%d jpeg=%d, "
+         "%d fps, %d kbps, jpeg q%d",
+         cfg.pipe, cfg.chn, cfg.venc_h264, cfg.venc_jpeg, cfg.fps,
+         cfg.bitrate_kbps, cfg.jpeg_qfactor);
 }
 
 static uint64_t now_ms(void)
@@ -318,9 +320,18 @@ static struct {
     void *(*mb_vir)(MB_BLK);
 } rk;
 
-static bool load_rockit(void)
+static bool g_rockit_loaded;
+static pthread_once_t g_rockit_once = PTHREAD_ONCE_INIT;
+
+static void load_rockit_once(void)
 {
-#define LOAD(field, name) if (!(rk.field = dlsym(RTLD_NEXT, name))) { LOGE("missing %s", name); return false; }
+#define LOAD(field, name) do { \
+    if (!(rk.field = dlsym(RTLD_NEXT, name))) { \
+        LOGE("missing %s", name); \
+        return; \
+    } \
+} while (0)
+    LOAD(vi_enable_chn, "RK_MPI_VI_EnableChn");
     LOAD(vi_get_attr, "RK_MPI_VI_GetChnAttr");
     LOAD(vi_set_attr, "RK_MPI_VI_SetChnAttr");
     LOAD(vi_get_frame, "RK_MPI_VI_GetChnFrame");
@@ -337,7 +348,13 @@ static bool load_rockit(void)
     LOAD(venc_set_jpeg, "RK_MPI_VENC_SetJpegParam");
     LOAD(mb_vir, "RK_MPI_MB_Handle2VirAddr");
 #undef LOAD
-    return true;
+    g_rockit_loaded = true;
+}
+
+static bool load_rockit(void)
+{
+    pthread_once(&g_rockit_once, load_rockit_once);
+    return g_rockit_loaded;
 }
 
 // ---------------------------------------------------------------------------
@@ -353,6 +370,7 @@ static bool load_rockit(void)
 // ---------------------------------------------------------------------------
 
 static bool g_h264_ready, g_jpeg_ready;
+static bool g_warned_multiple_packs, g_warned_missing_idr;
 
 static bool venc_h264_open(RK_U32 w, RK_U32 h)
 {
@@ -391,7 +409,8 @@ static bool venc_h264_open(RK_U32 w, RK_U32 h)
         rk.venc_destroy(cfg.venc_h264);
         return false;
     }
-    LOGI("H.264 encoder ready on VENC %d: %ux%u, %d fps, %d kbps", cfg.venc_h264, w, h, cfg.fps, cfg.bitrate_kbps);
+    LOGI("H.264 encoder ready on VENC %d: %ux%u, %d fps, %d kbps",
+         cfg.venc_h264, w, h, cfg.fps, cfg.bitrate_kbps);
     return true;
 }
 
@@ -451,9 +470,10 @@ static bool encode(int chn, const VIDEO_FRAME_INFO_S *frame, callback_chain_t *c
         LOGE("VENC_GetStream chn=%d failed: 0x%x", chn, (unsigned)r);
         return false;
     }
-    if (st.u32PackCount > 1) {
-        static bool warned;
-        if (!warned) { warned = true; LOGE("VENC chn=%d returned %u packs, only the first is used", chn, st.u32PackCount); }
+    if (st.u32PackCount > 1 && !g_warned_multiple_packs) {
+        g_warned_multiple_packs = true;
+        LOGE("VENC chn=%d returned %u packs, only the first is used",
+             chn, st.u32PackCount);
     }
     uint8_t *data = rk.mb_vir(pack.pMbBlk);
     if (data && pack.u32Len > 0) {
@@ -461,9 +481,10 @@ static bool encode(int chn, const VIDEO_FRAME_INFO_S *frame, callback_chain_t *c
         if (h264 && s_h264.need_keyframe) {
             if (h264_starts_with_idr(pos, pack.u32Len)) {
                 s_h264.need_keyframe = false;
-            } else {
-                static bool warned_idr;
-                if (!warned_idr) { warned_idr = true; LOGE("IDR requested, but the encoder returned another frame type; retrying"); }
+            } else if (!g_warned_missing_idr) {
+                g_warned_missing_idr = true;
+                LOGE("IDR requested, but the encoder returned another "
+                     "frame type; retrying");
             }
         }
         callback_chain_write_cb(pos, pack.u32Len, chain);
@@ -516,7 +537,10 @@ static void *export_thread(void *arg)
         RK_S32 r = rk.vi_get_frame(cfg.pipe, cfg.chn, &frame, 1000);
         if (r != 0) {
             errors++;
-            if (r != last_err) LOGE("VI_GetChnFrame %d:%d failed: 0x%x", cfg.pipe, cfg.chn, (unsigned)r);
+            if (r != last_err) {
+                LOGE("VI_GetChnFrame %d:%d failed: 0x%x",
+                     cfg.pipe, cfg.chn, (unsigned)r);
+            }
             last_err = r;
             usleep(100 * 1000);
             continue;
@@ -534,7 +558,10 @@ static void *export_thread(void *arg)
                     RK_S32 idr = rk.venc_idr(cfg.venc_h264, 1);
                     if (idr != 0) LOGE("VENC_RequestIDR failed: 0x%x", (unsigned)idr);
                 }
-                callback_chain_t chain[] = { { sock_write_cb, &s_h264, true }, { NULL, NULL, false } };
+                callback_chain_t chain[] = {
+                    { sock_write_cb, &s_h264, true },
+                    { NULL, NULL, false },
+                };
                 encode(cfg.venc_h264, &frame, chain, true);
             }
         }
@@ -572,27 +599,22 @@ static void *export_thread(void *arg)
 // export would silently share an encoder.
 RK_S32 RK_MPI_VENC_CreateChn(RK_S32 chn, const void *attr)
 {
-    static RK_S32 (*real)(RK_S32, const void *);
-    if (!real) real = dlsym(RTLD_NEXT, "RK_MPI_VENC_CreateChn");
-
     pthread_once(&g_once, init_once);
+    if (!load_rockit()) return -1;
+
     if (g_active) {
         assert(chn != cfg.venc_h264);
         assert(chn != cfg.venc_jpeg);
     }
-    return real ? real(chn, attr) : -1;
+    return rk.venc_create(chn, attr);
 }
 
 RK_S32 RK_MPI_VI_EnableChn(RK_S32 pipe, RK_S32 chn)
 {
-    if (!rk.vi_enable_chn) rk.vi_enable_chn = dlsym(RTLD_NEXT, "RK_MPI_VI_EnableChn");
-
     pthread_once(&g_once, init_once);
-    if (g_active && pipe == cfg.pipe && chn == cfg.chn) {
-        if (!rk.vi_get_attr) rk.vi_get_attr = dlsym(RTLD_NEXT, "RK_MPI_VI_GetChnAttr");
-        if (!rk.vi_set_attr) rk.vi_set_attr = dlsym(RTLD_NEXT, "RK_MPI_VI_SetChnAttr");
-        if (!rk.vi_get_attr || !rk.vi_set_attr) return -1;
+    if (!load_rockit()) return -1;
 
+    if (g_active && pipe == cfg.pipe && chn == cfg.chn) {
         VI_CHN_ATTR_S attr;
         RK_S32 r = rk.vi_get_attr(pipe, chn, &attr);
         if (r != 0) {
