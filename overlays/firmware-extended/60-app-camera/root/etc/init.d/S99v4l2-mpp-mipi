@@ -23,7 +23,13 @@ case "$INTERNAL_RESOLUTION" in
     *)       INTERNAL_WIDTH=1920; INTERNAL_HEIGHT=1080; INTERNAL_FPS=25 ;;
 esac
 
-CMD_CAPTURE="/usr/local/bin/capture-v4l2-raw-mpp --device /dev/video11 --format nv12 --jpeg-quality 7 --jpeg-sock /tmp/capture-mipi-jpeg.sock --mjpeg-sock /tmp/capture-mipi-mjpeg.sock --h264-sock /tmp/capture-mipi-h264.sock --raw-frame-sock /tmp/capture-mipi-raw.sock --width $INTERNAL_WIDTH --height $INTERNAL_HEIGHT --fps $INTERNAL_FPS --buffers 3"
+# unisrv owns the camera and publishes its frames (see the lmd hook). Modes that
+# do not run lmd, such as paxx12-ai from the mod, capture directly.
+if [ "$CAMERA_INTERNAL" = "paxx12" ]; then
+    CMD_CAPTURE="/usr/local/bin/capture-raw-mpp --input-sock /tmp/capture-mipi-input.sock --jpeg-quality 7 --jpeg-sock /tmp/capture-mipi-jpeg.sock --mjpeg-sock /tmp/capture-mipi-mjpeg.sock --h264-sock /tmp/capture-mipi-h264.sock --fps $INTERNAL_FPS"
+else
+    CMD_CAPTURE="/usr/local/bin/capture-v4l2-raw-mpp --device /dev/video11 --format nv12 --jpeg-quality 7 --jpeg-sock /tmp/capture-mipi-jpeg.sock --mjpeg-sock /tmp/capture-mipi-mjpeg.sock --h264-sock /tmp/capture-mipi-h264.sock --width $INTERNAL_WIDTH --height $INTERNAL_HEIGHT --fps $INTERNAL_FPS --buffers 3"
+fi
 
 CMD_WEBRTC="/usr/local/bin/stream-webrtc --h264-sock /tmp/capture-mipi-h264.sock --webrtc-sock /tmp/capture-mipi-webrtc.sock"
 
