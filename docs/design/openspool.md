@@ -34,6 +34,7 @@ Using the non-standard OpenSpool `subtype` field it is possible to specify a mat
   "subtype": "Rapid",
   "color_hex": "AFAFAF",
   "additional_color_hexes": ["EEFFEE","FF00FF"],
+  "color_type": 0,
   "alpha": "FF",
   "brand": "Elegoo",
   "min_temp": "230",
@@ -58,6 +59,7 @@ Using the non-standard OpenSpool `subtype` field it is possible to specify a mat
 - `subtype` - Material variant (Basic, Rapid, HF, Silk, etc.)
 - `alpha` - Color transparency (00-FF hex, default: FF)
 - `additional_color_hexes` - Additional colors for multicolor spools (up to 4)
+- `color_type` - How a multicolor spool's colors run, using OrcaSlicer's `filament_colour_type` values: `0` = gradient, `1` = default (single color or segments). Defaults to `1` when omitted
 - `weight` - Spool weight in grams
 - `diameter` - Filament diameter in mm (e.g., 1.75)
 

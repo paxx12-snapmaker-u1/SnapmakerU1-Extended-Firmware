@@ -27,6 +27,7 @@ Writable fields:
 | `RGB_3` | `int` | Integer RGB value | Requires `COLOR_NUMS` >= 3 on read |
 | `RGB_4` | `int` | Integer RGB value | Requires `COLOR_NUMS` >= 4 on read |
 | `RGB_5` | `int` | Integer RGB value | Requires `COLOR_NUMS` >= 5 on read |
+| `MULTI_MODE` | `int` | `0` = segment, `1` = gradient | Multicolor display mode (Snapmaker values); reported as `filament_color_multi[channel].mode` |
 | `ALPHA` | `int` | Integer 0..255 | |
 | `HOTEND_MIN_TEMP` | `int` | Integer | |
 | `HOTEND_MAX_TEMP` | `int` | Integer | |
@@ -164,6 +165,7 @@ OpenSpool U1 Extended mapping profile:
 | `protocol` | `N/A` | `N/A` | parser validation only |
 | `version` | `N/A` | `N/A` | no endpoint field |
 | `additional_color_hexes` | `RGB_2`..`RGB_N` | `N/A` | mapped to `RGB_2`..`RGB_5`; `COLOR_NUMS` derived from total color count |
+| `color_type` | `MULTI_MODE` | `filament_color_multi[channel].mode` | OrcaSlicer values to Snapmaker values: `0` (gradient) becomes `1`; `1` or missing (default) becomes `0` |
 | `diameter` | `N/A` | `N/A` | no endpoint field |
 | `weight` | `N/A` | `N/A` | no endpoint field |
 
