@@ -13,8 +13,20 @@ fi
 
 set -eo pipefail
 
+CUR_DIR="$(realpath "$(dirname "$0")")"
+
 TARGET_DIR="$CACHE_DIR/v4l2-mpp"
 cache_git.sh "$TARGET_DIR" "$GIT_URL" "$GIT_SHA"
+
+# cache_git.sh reuses an existing checkout as-is on a local (non-CI) rebuild,
+# so reset it to the pinned commit before patching. The compiled deps are kept.
+git -C "$TARGET_DIR" checkout -f "$GIT_SHA"
+git -C "$TARGET_DIR" clean -fdq apps/capture-raw-mpp
+
+echo ">> Applying v4l2-mpp patches..."
+for patchfile in "$CUR_DIR/../v4l2-mpp-patches/"*.patch; do
+  patch -F 0 --no-backup-if-mismatch -d "$TARGET_DIR" -p1 < "$patchfile"
+done
 
 echo ">> Setting up cross-compilation environment..."
 export CROSS_COMPILE=aarch64-linux-gnu-
@@ -33,6 +45,7 @@ make -C "$TARGET_DIR" install DESTDIR="$1"
 echo ">> Validate binaries..."
 stat "$1/usr/local/bin/capture-v4l2-jpeg-mpp" >/dev/null
 stat "$1/usr/local/bin/capture-v4l2-raw-mpp" >/dev/null
+stat "$1/usr/local/bin/capture-raw-mpp" >/dev/null
 stat "$1/usr/local/bin/stream-rtsp" >/dev/null
 stat "$1/usr/local/bin/stream-webrtc" >/dev/null
 stat "$1/usr/local/bin/stream-http.py" >/dev/null

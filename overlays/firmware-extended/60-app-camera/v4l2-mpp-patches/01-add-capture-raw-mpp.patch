@@ -1,0 +1,918 @@
+capture-raw-mpp: encode raw frames published over a Unix socket
+
+Add a service with the outputs of capture-v4l2-raw-mpp that takes its frames
+from another process, as a dma-buf fd or as bytes on the socket. Frames are
+discarded when no output has a client.
+
+Carried as a patch until this is merged into v4l2-mpp.
+
+diff --git a/Makefile b/Makefile
+index 7bd014a..413b05f 100644
+--- a/Makefile
++++ b/Makefile
+@@ -6,7 +6,7 @@ APPS = stream-http detect-http detect-rknn-yolo11 control-v4l2
+ APPS_DIR = apps
+ 
+ ifneq (x,x$(wildcard deps/mpp/usr-local/lib/librockchip_mpp.a))
+-APPS += capture-v4l2-jpeg-mpp capture-v4l2-raw-mpp
++APPS += capture-v4l2-jpeg-mpp capture-v4l2-raw-mpp capture-raw-mpp
+ else
+ $(warning "MPP not compiled. Run ./deps/compile_mpp.sh to compile it.")
+ endif
+diff --git a/README.md b/README.md
+index c9ad1db..314c677 100644
+--- a/README.md
++++ b/README.md
+@@ -7,6 +7,7 @@ V4L2 camera capture and streaming tools with Rockchip MPP hardware encoding for
+ | App | Description |
+ |-----|-------------|
+ | capture-v4l2-raw-mpp | V4L2 capture for raw pixel formats (YUV/RGB) with MPP hardware encoding (JPEG/H264) |
++| capture-raw-mpp | MPP hardware encoding (JPEG/H264) of raw frames published over a Unix socket as dma-buf or data |
+ | capture-v4l2-jpeg-mpp | V4L2 capture for JPEG/MJPEG input with MPP transcoding to H264 |
+ | detect-rknn-yolo11 | YOLO11 object detection using Rockchip NPU (RKNPU2) for real-time inference |
+ | detect-http | HTTP server for AI object detection visualization with real-time bounding boxes |
+diff --git a/apps/capture-raw-mpp/.gitignore b/apps/capture-raw-mpp/.gitignore
+new file mode 100644
+index 0000000..0ea92b8
+--- /dev/null
++++ b/apps/capture-raw-mpp/.gitignore
+@@ -0,0 +1 @@
++capture-raw-mpp
+diff --git a/apps/capture-raw-mpp/Makefile b/apps/capture-raw-mpp/Makefile
+new file mode 100644
+index 0000000..5ab16ef
+--- /dev/null
++++ b/apps/capture-raw-mpp/Makefile
+@@ -0,0 +1,44 @@
++# SPDX-License-Identifier: GPL-3.0-or-later
++# SPDX-PackageHomePage: https://github.com/paxx12/v4l2-mpp
++# SPDX-FileCopyrightText: Copyright (c) 2026 @paxx12
++
++TARGET = capture-raw-mpp
++SRCS = main.c
++OBJS = $(SRCS:.c=.o)
++DEPS = $(SRCS:.c=.d)
++
++CC ?= gcc
++CFLAGS ?= -Wall -Wextra -O2 -MMD -I../../common -I../../common/capture-common
++LDFLAGS ?=
++
++ifneq (x,x$(wildcard $(CURDIR)/../../deps/mpp/usr-local/lib/pkgconfig))
++PKG_CONFIG_PATH := $(CURDIR)/../../deps/mpp/usr-local/lib/pkgconfig:$(PKG_CONFIG_PATH)
++endif
++
++CFLAGS += $(shell PKG_CONFIG_PATH="$(PKG_CONFIG_PATH)" pkg-config --cflags rockchip_mpp)
++LDFLAGS += $(shell PKG_CONFIG_PATH="$(PKG_CONFIG_PATH)" pkg-config --libs rockchip_mpp)
++
++PREFIX ?= /usr/local
++BINDIR ?= $(PREFIX)/bin
++
++all: $(TARGET)
++
++-include $(DEPS)
++
++$(TARGET): $(OBJS)
++	$(CC) $^ -o $@ $(LDFLAGS)
++
++%.o: %.c
++	$(CC) $(CFLAGS) -c $< -o $@
++
++clean:
++	rm -f $(OBJS) $(DEPS) $(TARGET)
++
++install: $(TARGET)
++	install -d $(DESTDIR)$(BINDIR)
++	install -m 755 $(TARGET) $(DESTDIR)$(BINDIR)/
++
++uninstall:
++	rm -f $(DESTDIR)$(BINDIR)/$(TARGET)
++
++.PHONY: all clean install uninstall
+diff --git a/apps/capture-raw-mpp/README.md b/apps/capture-raw-mpp/README.md
+new file mode 100644
+index 0000000..0b2d3e3
+--- /dev/null
++++ b/apps/capture-raw-mpp/README.md
+@@ -0,0 +1,45 @@
++# capture-raw-mpp
++
++Encodes raw frames that another process publishes over a Unix socket, using Rockchip MPP. It offers the same outputs as `capture-v4l2-raw-mpp`, for when another process owns the camera.
++
++## Features
++
++- Accepts frames as a dma-buf fd (zero copy into the encoder) or as bytes on the socket
++- Hardware JPEG and H264 encoding (MPP), started on first use
++- Unix socket output for JPEG snapshots, MJPEG streams, H264 streams, and raw frames
++- Discards frames when no output has a client, and tells the publisher to stop sending them
++- Takes resolution from each frame; supports NV12 and NV21 without row padding
++
++## Protocol
++
++The publisher connects to `--input-sock` (`SOCK_STREAM`). A new publisher replaces the current one. Everything is in native byte order.
++
++Each frame starts with this header, sent as one message:
++
++```c
++struct frame_hdr {
++    uint32_t magic;   // 0x31465256
++    uint32_t type;    // 0: skip, 1: dma-buf, 2: data
++    uint32_t seq;     // echoed in the ack
++    uint32_t width;
++    uint32_t height;
++    uint32_t stride;  // bytes per line of the luma plane
++    uint32_t fourcc;  // V4L2 pixel format
++    uint32_t size;    // bytes used in the frame
++};
++```
++
++- `skip`: no frame, only lets the service reply while it does not want frames.
++- `dma-buf`: one fd is attached to the header with `SCM_RIGHTS`.
++- `data`: `size` bytes follow the header.
++
++The service answers every header once it has finished with the frame:
++
++```c
++struct frame_ack {
++    uint32_t seq;
++    uint32_t flags;   // bit 0: frames are wanted
++};
++```
++
++The publisher must not send another frame before the ack, and must not modify a dma-buf until then. Send `skip` while frames are not wanted. The service keeps references to dma-bufs it has seen, and drops them when the publisher disconnects.
+diff --git a/apps/capture-raw-mpp/main.c b/apps/capture-raw-mpp/main.c
+new file mode 100644
+index 0000000..29ca9b2
+--- /dev/null
++++ b/apps/capture-raw-mpp/main.c
+@@ -0,0 +1,771 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++// SPDX-PackageHomePage: https://github.com/paxx12/v4l2-mpp
++// SPDX-FileCopyrightText: Copyright (c) 2026 @paxx12
++
++#include <stdio.h>
++#include <stdlib.h>
++#include <stdbool.h>
++#include <stdint.h>
++#include <string.h>
++#include <strings.h>
++#include <fcntl.h>
++#include <unistd.h>
++#include <errno.h>
++#include <time.h>
++#include <signal.h>
++#include <getopt.h>
++#include <poll.h>
++#include <sys/ioctl.h>
++#include <sys/mman.h>
++#include <sys/select.h>
++#include <sys/stat.h>
++#include <sys/socket.h>
++#include <sys/un.h>
++#include <linux/dma-buf.h>
++#include <linux/videodev2.h>
++#include <rockchip/rk_mpi.h>
++#include <rockchip/mpp_buffer.h>
++#include <rockchip/mpp_frame.h>
++#include <rockchip/mpp_packet.h>
++
++#include "sock_ctx.h"
++#include "callback_chain.h"
++#include "mpp_enc_ctx.h"
++#include "log.h"
++
++#define FRAME_MAGIC 0x31465256
++enum { FRAME_SKIP = 0, FRAME_DMABUF = 1, FRAME_DATA = 2 };
++#define FRAME_ACK_WANT 1u
++
++#define MAX_DIMENSION 8192
++#define MAX_DMABUFS 16
++#define PUBLISHER_READ_TIMEOUT_MS 1000
++
++typedef struct {
++    uint32_t magic;
++    uint32_t type;
++    uint32_t seq;
++    uint32_t width;
++    uint32_t height;
++    uint32_t stride;
++    uint32_t fourcc;
++    uint32_t size;
++} frame_hdr_t;
++
++typedef struct {
++    uint32_t seq;
++    uint32_t flags;
++} frame_ack_t;
++
++// Publishers cycle through a few buffers, so importing each into MPP and
++// mapping it is only done once. Keyed by inode, which is unique per dma-buf.
++typedef struct {
++    int fd;
++    ino_t ino;
++    size_t size;
++    uint64_t last_used;
++    MppBuffer mpp;
++    bool import_failed;
++    void *ptr;
++} dmabuf_t;
++
++typedef struct {
++    int publisher_fd;
++    dmabuf_t dmabufs[MAX_DMABUFS];
++    uint64_t use_counter;
++
++    void *data;
++    size_t data_size;
++
++    unsigned int width;
++    unsigned int height;
++    unsigned int fourcc;
++    MppFrameFormat mpp_fmt;
++    size_t frame_size;
++
++    int quality;
++    int bitrate;
++    int fps;
++    mpp_enc_ctx_t mpp_jpeg;
++    mpp_enc_ctx_t mpp_h264;
++    bool jpeg_ready;
++    bool h264_ready;
++
++    sock_ctx_t input_sock;
++    sock_ctx_t jpeg_sock;
++    sock_ctx_t mjpeg_sock;
++    sock_ctx_t h264_sock;
++    sock_ctx_t raw_frame_sock;
++
++    int64_t next_frame_us;
++    bool warned_rejected;
++    int stat_received;
++    int stat_jpeg;
++    int stat_h264;
++    int stat_discarded;
++} app_t;
++
++const char NAL_AUD_FRAME[] = {0x00, 0x00, 0x00, 0x01, 0x09, 0xf0};
++
++int debug = 0;
++static volatile sig_atomic_t running = 1;
++
++static void signal_handler(int sig)
++{
++    (void)sig;
++    running = 0;
++}
++
++static int64_t now_us(void)
++{
++    struct timespec ts;
++    clock_gettime(CLOCK_MONOTONIC, &ts);
++    return (int64_t)ts.tv_sec * 1000000 + ts.tv_nsec / 1000;
++}
++
++static bool has_clients(const app_t *app)
++{
++    return app->jpeg_sock.num_clients > 0 || app->mjpeg_sock.num_clients > 0 ||
++           app->h264_sock.num_clients > 0 || app->raw_frame_sock.num_clients > 0;
++}
++
++static void accept_clients(app_t *app)
++{
++    sock_accept_clients(&app->jpeg_sock);
++    sock_accept_clients(&app->mjpeg_sock);
++    sock_accept_clients(&app->h264_sock);
++    sock_accept_clients(&app->raw_frame_sock);
++}
++
++// ---------------------------------------------------------------------------
++// dma-buf cache
++// ---------------------------------------------------------------------------
++
++static void dmabuf_release(dmabuf_t *buf)
++{
++    if (buf->mpp)
++        mpp_buffer_put(buf->mpp);
++    if (buf->ptr)
++        munmap(buf->ptr, buf->size);
++    if (buf->fd >= 0)
++        close(buf->fd);
++    memset(buf, 0, sizeof(*buf));
++    buf->fd = -1;
++}
++
++// Takes ownership of fd.
++static dmabuf_t *dmabuf_lookup(app_t *app, int fd)
++{
++    struct stat st;
++    dmabuf_t *slot = &app->dmabufs[0];
++
++    if (fstat(fd, &st) < 0) {
++        log_perror("fstat");
++        close(fd);
++        return NULL;
++    }
++
++    for (int i = 0; i < MAX_DMABUFS; i++) {
++        dmabuf_t *buf = &app->dmabufs[i];
++        if (buf->fd >= 0 && buf->ino == st.st_ino) {
++            close(fd);
++            buf->last_used = ++app->use_counter;
++            return buf;
++        }
++        if (slot->fd >= 0 && (buf->fd < 0 || buf->last_used < slot->last_used))
++            slot = buf;
++    }
++
++    off_t size = lseek(fd, 0, SEEK_END);
++    if (size < 0) {
++        log_perror("lseek");
++        close(fd);
++        return NULL;
++    }
++
++    dmabuf_release(slot);
++    slot->fd = fd;
++    slot->ino = st.st_ino;
++    slot->size = size;
++    slot->last_used = ++app->use_counter;
++    log_printf("New dma-buf: inode %llu, %zu bytes\n", (unsigned long long)st.st_ino, slot->size);
++    return slot;
++}
++
++static void *dmabuf_map(dmabuf_t *buf)
++{
++    if (!buf->ptr) {
++        void *ptr = mmap(NULL, buf->size, PROT_READ, MAP_SHARED, buf->fd, 0);
++        if (ptr == MAP_FAILED) {
++            log_perror("mmap dma-buf");
++            return NULL;
++        }
++        buf->ptr = ptr;
++    }
++    return buf->ptr;
++}
++
++static void dmabuf_cpu_access(dmabuf_t *buf, unsigned long long flag)
++{
++    struct dma_buf_sync sync = { .flags = flag | DMA_BUF_SYNC_READ };
++    ioctl(buf->fd, DMA_BUF_IOCTL_SYNC, &sync);
++}
++
++static MppBuffer dmabuf_import(dmabuf_t *buf)
++{
++    if (!buf->mpp && !buf->import_failed) {
++        MppBufferInfo info;
++        memset(&info, 0, sizeof(info));
++        info.type = MPP_BUFFER_TYPE_EXT_DMA;
++        info.fd = buf->fd;
++        info.size = buf->size;
++        if (mpp_buffer_import(&buf->mpp, &info) != MPP_OK) {
++            log_errorf("mpp_buffer_import failed, copying frames of this dma-buf\n");
++            buf->mpp = NULL;
++            buf->import_failed = true;
++        }
++    }
++    return buf->mpp;
++}
++
++// ---------------------------------------------------------------------------
++// Encoding
++// ---------------------------------------------------------------------------
++
++static void close_encoders(app_t *app)
++{
++    if (app->jpeg_ready)
++        mpp_encoder_close(&app->mpp_jpeg);
++    if (app->h264_ready)
++        mpp_encoder_close(&app->mpp_h264);
++    memset(&app->mpp_jpeg, 0, sizeof(app->mpp_jpeg));
++    memset(&app->mpp_h264, 0, sizeof(app->mpp_h264));
++    app->jpeg_ready = false;
++    app->h264_ready = false;
++}
++
++// Adopts the format of the frame, and returns false if it cannot be encoded.
++static bool set_format(app_t *app, const frame_hdr_t *hdr)
++{
++    MppFrameFormat fmt;
++
++    switch (hdr->fourcc) {
++    case V4L2_PIX_FMT_NV12:
++        fmt = MPP_FMT_YUV420SP;
++        break;
++    case V4L2_PIX_FMT_NV21:
++        fmt = MPP_FMT_YUV420SP_VU;
++        break;
++    default:
++        return false;
++    }
++
++    // The encoders are configured with stride == width.
++    if (hdr->width == 0 || hdr->height == 0 || hdr->width > MAX_DIMENSION ||
++        hdr->height > MAX_DIMENSION || hdr->stride != hdr->width)
++        return false;
++
++    if (app->width != hdr->width || app->height != hdr->height || app->fourcc != hdr->fourcc) {
++        close_encoders(app);
++        app->width = hdr->width;
++        app->height = hdr->height;
++        app->fourcc = hdr->fourcc;
++        app->mpp_fmt = fmt;
++        app->frame_size = mpp_fmt_frame_size(hdr->width, hdr->height, fmt);
++        log_printf("Format: %ux%u %.4s\n", app->width, app->height, (const char *)&app->fourcc);
++    }
++
++    return hdr->size >= app->frame_size;
++}
++
++static MppPacket encode_mppbuffer(mpp_enc_ctx_t *ctx, MppBuffer buffer, int force_idr)
++{
++    MppFrame frame = NULL;
++
++    if (mpp_frame_init(&frame) != MPP_OK) {
++        log_errorf("mpp_frame_init failed\n");
++        return NULL;
++    }
++
++    mpp_frame_set_width(frame, ctx->width);
++    mpp_frame_set_height(frame, ctx->height);
++    mpp_frame_set_hor_stride(frame, ctx->width);
++    mpp_frame_set_ver_stride(frame, ctx->height);
++    mpp_frame_set_fmt(frame, ctx->fmt);
++    mpp_frame_set_buffer(frame, buffer);
++    mpp_frame_set_eos(frame, 0);
++
++    MppPacket packet = mpp_encode_mppframe(ctx, frame, force_idr);
++    mpp_frame_deinit(&frame);
++    return packet;
++}
++
++// Exactly one of buf and data is set.
++static MppPacket encode(app_t *app, mpp_enc_ctx_t *ctx, dmabuf_t *buf, void *data, int force_idr)
++{
++    if (buf) {
++        MppBuffer buffer = dmabuf_import(buf);
++        if (buffer)
++            return encode_mppbuffer(ctx, buffer, force_idr);
++
++        data = dmabuf_map(buf);
++        if (!data)
++            return NULL;
++        dmabuf_cpu_access(buf, DMA_BUF_SYNC_START);
++    }
++
++    MppPacket packet = mpp_encode_frame(ctx, data, app->frame_size, force_idr);
++    if (buf)
++        dmabuf_cpu_access(buf, DMA_BUF_SYNC_END);
++    return packet;
++}
++
++// Encoder failures are fatal, as in capture-v4l2-raw-mpp: the service manager
++// restarts the service.
++static void process_frame(app_t *app, dmabuf_t *buf, void *data)
++{
++    callback_chain_t jpeg_chain[] = {
++        { sock_write_cb, &app->jpeg_sock, app->jpeg_sock.num_clients > 0 },
++        { sock_write_cb, &app->mjpeg_sock, app->mjpeg_sock.num_clients > 0 },
++        { NULL, NULL, 0 }
++    };
++
++    if (callback_chain_active(jpeg_chain)) {
++        if (!app->jpeg_ready) {
++            if (mpp_jpeg_encoder_init(&app->mpp_jpeg, app->width, app->height, app->mpp_fmt, app->quality) < 0) {
++                log_errorf("Failed to initialize JPEG encoder\n");
++                exit(1);
++            }
++            app->jpeg_ready = true;
++        }
++        MppPacket packet = encode(app, &app->mpp_jpeg, buf, data, 0);
++        if (packet) {
++            callback_chain_write_cb(mpp_packet_get_pos(packet), mpp_packet_get_length(packet), jpeg_chain);
++            mpp_packet_deinit(&packet);
++        }
++        app->stat_jpeg++;
++    }
++
++    if (app->h264_sock.num_clients > 0) {
++        if (!app->h264_ready) {
++            if (mpp_h264_encoder_init(&app->mpp_h264, app->width, app->height, app->mpp_fmt, app->bitrate, app->fps) < 0) {
++                log_errorf("Failed to initialize H264 encoder\n");
++                exit(1);
++            }
++            app->h264_ready = true;
++        }
++        MppPacket packet = encode(app, &app->mpp_h264, buf, data, app->h264_sock.need_keyframe);
++        if (packet) {
++            sock_write_cb(mpp_packet_get_pos(packet), mpp_packet_get_length(packet), &app->h264_sock);
++            sock_write_cb(NAL_AUD_FRAME, sizeof(NAL_AUD_FRAME), &app->h264_sock);
++            mpp_packet_deinit(&packet);
++        }
++        app->h264_sock.need_keyframe = false;
++        app->stat_h264++;
++    }
++
++    if (app->raw_frame_sock.num_clients > 0) {
++        void *ptr = buf ? dmabuf_map(buf) : data;
++        if (ptr) {
++            if (buf)
++                dmabuf_cpu_access(buf, DMA_BUF_SYNC_START);
++            sock_write_cb(ptr, app->frame_size, &app->raw_frame_sock);
++            if (buf)
++                dmabuf_cpu_access(buf, DMA_BUF_SYNC_END);
++        }
++    }
++}
++
++// Frames arriving faster than --fps are discarded.
++static bool frame_due(app_t *app)
++{
++    int64_t now = now_us();
++    int64_t interval = 1000000 / app->fps;
++
++    if (now < app->next_frame_us)
++        return false;
++    app->next_frame_us += interval;
++    if (app->next_frame_us <= now)
++        app->next_frame_us = now + interval;
++    return true;
++}
++
++// ---------------------------------------------------------------------------
++// Publisher
++// ---------------------------------------------------------------------------
++
++static void publisher_disconnect(app_t *app, const char *reason)
++{
++    if (app->publisher_fd < 0)
++        return;
++
++    log_printf("Publisher %s, closing\n", reason);
++    close(app->publisher_fd);
++    app->publisher_fd = -1;
++    for (int i = 0; i < MAX_DMABUFS; i++)
++        dmabuf_release(&app->dmabufs[i]);
++}
++
++static void publisher_accept(app_t *app)
++{
++    int fd = accept(app->input_sock.listen_fd, NULL, NULL);
++    if (fd < 0) {
++        if (errno != EAGAIN && errno != EWOULDBLOCK)
++            log_perror("accept");
++        return;
++    }
++
++    publisher_disconnect(app, "replaced");
++    fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK);
++    fcntl(fd, F_SETFD, FD_CLOEXEC);
++    app->publisher_fd = fd;
++    log_printf("Publisher connected\n");
++}
++
++// Reads the bytes of a data frame into dst, or discards them if dst is NULL.
++static bool publisher_read_data(app_t *app, void *dst, size_t size)
++{
++    char scratch[65536];
++
++    while (size > 0) {
++        size_t chunk = dst ? size : (size < sizeof(scratch) ? size : sizeof(scratch));
++        ssize_t n = recv(app->publisher_fd, dst ? dst : scratch, chunk, 0);
++        if (n > 0) {
++            if (dst)
++                dst = (char *)dst + n;
++            size -= n;
++            continue;
++        }
++        if (n == 0)
++            return false;
++        if (errno == EINTR)
++            continue;
++        if (errno != EAGAIN && errno != EWOULDBLOCK)
++            return false;
++
++        struct pollfd pfd = { .fd = app->publisher_fd, .events = POLLIN };
++        if (poll(&pfd, 1, PUBLISHER_READ_TIMEOUT_MS) == 0)
++            return false;
++    }
++    return true;
++}
++
++static void reject_frame(app_t *app, const frame_hdr_t *hdr)
++{
++    if (!app->warned_rejected)
++        log_errorf("Rejecting frames: %ux%u stride %u fourcc 0x%08x, %u bytes\n",
++                   hdr->width, hdr->height, hdr->stride, hdr->fourcc, hdr->size);
++    app->warned_rejected = true;
++    app->stat_discarded++;
++}
++
++// Takes ownership of fd.
++static void handle_dmabuf_frame(app_t *app, const frame_hdr_t *hdr, int fd)
++{
++    if (!has_clients(app) || !frame_due(app)) {
++        close(fd);
++        app->stat_discarded++;
++        return;
++    }
++    if (!set_format(app, hdr)) {
++        close(fd);
++        reject_frame(app, hdr);
++        return;
++    }
++
++    dmabuf_t *buf = dmabuf_lookup(app, fd);
++    if (!buf)
++        return;
++    if (buf->size < app->frame_size) {
++        reject_frame(app, hdr);
++        return;
++    }
++    process_frame(app, buf, NULL);
++}
++
++// Returns false if the stream is unusable.
++static bool handle_data_frame(app_t *app, const frame_hdr_t *hdr)
++{
++    void *dst = NULL;
++
++    if (has_clients(app) && frame_due(app)) {
++        // Tolerate padding, but do not allocate whatever the header claims.
++        if (set_format(app, hdr) && hdr->size <= app->frame_size * 2) {
++            if (app->data_size < hdr->size) {
++                free(app->data);
++                app->data = malloc(hdr->size);
++                app->data_size = app->data ? hdr->size : 0;
++            }
++            dst = app->data;
++        }
++        if (!dst)
++            reject_frame(app, hdr);
++    } else {
++        app->stat_discarded++;
++    }
++
++    if (!publisher_read_data(app, dst, hdr->size))
++        return false;
++    if (dst)
++        process_frame(app, NULL, dst);
++    return true;
++}
++
++static void publisher_read(app_t *app)
++{
++    frame_hdr_t hdr;
++    char control[CMSG_SPACE(sizeof(int))];
++    struct iovec iov = { .iov_base = &hdr, .iov_len = sizeof(hdr) };
++    struct msghdr msg = {
++        .msg_iov = &iov,
++        .msg_iovlen = 1,
++        .msg_control = control,
++        .msg_controllen = sizeof(control),
++    };
++
++    ssize_t n = recvmsg(app->publisher_fd, &msg, MSG_CMSG_CLOEXEC);
++    if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR))
++        return;
++
++    int fd = -1;
++    if (n > 0) {
++        for (struct cmsghdr *cmsg = CMSG_FIRSTHDR(&msg); cmsg; cmsg = CMSG_NXTHDR(&msg, cmsg)) {
++            if (cmsg->cmsg_level == SOL_SOCKET && cmsg->cmsg_type == SCM_RIGHTS &&
++                cmsg->cmsg_len == CMSG_LEN(sizeof(int))) {
++                memcpy(&fd, CMSG_DATA(cmsg), sizeof(int));
++            }
++        }
++    }
++
++    if (n <= 0) {
++        publisher_disconnect(app, n == 0 ? "disconnected" : "read failed");
++        return;
++    }
++
++    if (n != sizeof(hdr) || hdr.magic != FRAME_MAGIC || (msg.msg_flags & MSG_CTRUNC) ||
++        (hdr.type == FRAME_DMABUF) != (fd >= 0) || hdr.type > FRAME_DATA) {
++        if (fd >= 0)
++            close(fd);
++        publisher_disconnect(app, "sent an invalid header");
++        return;
++    }
++
++    if (hdr.type != FRAME_SKIP)
++        app->stat_received++;
++
++    if (hdr.type == FRAME_DMABUF) {
++        handle_dmabuf_frame(app, &hdr, fd);
++    } else if (hdr.type == FRAME_DATA && !handle_data_frame(app, &hdr)) {
++        publisher_disconnect(app, "stopped sending frame data");
++        return;
++    }
++
++    // Asked after processing: clients may have gone while writing to them.
++    frame_ack_t ack = { .seq = hdr.seq, .flags = has_clients(app) ? FRAME_ACK_WANT : 0 };
++    if (send(app->publisher_fd, &ack, sizeof(ack), MSG_DONTWAIT | MSG_NOSIGNAL) != sizeof(ack))
++        publisher_disconnect(app, "stopped reading acks");
++}
++
++// ---------------------------------------------------------------------------
++// Main
++// ---------------------------------------------------------------------------
++
++static void log_stats(app_t *app, int64_t *last_us)
++{
++    int64_t now = now_us();
++    if (now - *last_us < 1000000)
++        return;
++    *last_us = now;
++
++    if (app->stat_received || debug)
++        log_printf("Frames: %d (JPEG: %d, H264: %d, discarded: %d). JPEG: %d, MJPEG: %d, H264: %d, RAW: %d\n",
++                   app->stat_received, app->stat_jpeg, app->stat_h264, app->stat_discarded,
++                   app->jpeg_sock.num_clients, app->mjpeg_sock.num_clients,
++                   app->h264_sock.num_clients, app->raw_frame_sock.num_clients);
++    app->stat_received = 0;
++    app->stat_jpeg = 0;
++    app->stat_h264 = 0;
++    app->stat_discarded = 0;
++}
++
++static void print_usage(const char *prog)
++{
++    printf("Usage: %s [options]\n", prog);
++    printf("Options:\n");
++    printf("  --input-sock <path>     Socket that frames are published to (required)\n");
++    printf("  --jpeg-quality <0-10>   JPEG quality (default: 7)\n");
++    printf("  --jpeg-sock <path>      JPEG snapshot socket path, write once and close (optional)\n");
++    printf("  --mjpeg-sock <path>     MJPEG stream output socket path (optional)\n");
++    printf("  --h264-sock <path>      H264 stream output socket path (optional)\n");
++    printf("  --h264-bitrate <kbps>   H264 bitrate in kbps (default: 2000)\n");
++    printf("  --raw-frame-sock <path> Raw frame output socket path (optional)\n");
++    printf("  --fps <fps>             Highest frame rate to encode (default: 30)\n");
++    printf("  --debug                 Enable debug output\n");
++    printf("  --help                  Show this help\n");
++}
++
++int main(int argc, char *argv[])
++{
++    log_printf("capture-raw-mpp - built %s (%s)\n", __DATE__, __FILE__);
++
++    const char *input_path = NULL;
++    const char *jpeg_path = NULL;
++    const char *mjpeg_path = NULL;
++    const char *h264_path = NULL;
++    const char *raw_path = NULL;
++    int opt;
++
++    enum {
++        OPT_INPUT_SOCK = 1,
++        OPT_QUALITY,
++        OPT_JPEG_SOCK,
++        OPT_MJPEG_SOCK,
++        OPT_H264_SOCK,
++        OPT_BITRATE,
++        OPT_RAW_FRAME_SOCK,
++        OPT_FPS,
++        OPT_DEBUG,
++        OPT_HELP,
++    };
++
++    static struct option long_options[] = {
++        {"input-sock",     required_argument, 0, OPT_INPUT_SOCK},
++        {"jpeg-quality",   required_argument, 0, OPT_QUALITY},
++        {"jpeg-sock",      required_argument, 0, OPT_JPEG_SOCK},
++        {"mjpeg-sock",     required_argument, 0, OPT_MJPEG_SOCK},
++        {"h264-sock",      required_argument, 0, OPT_H264_SOCK},
++        {"h264-bitrate",   required_argument, 0, OPT_BITRATE},
++        {"raw-frame-sock", required_argument, 0, OPT_RAW_FRAME_SOCK},
++        {"fps",            required_argument, 0, OPT_FPS},
++        {"debug",          no_argument,       0, OPT_DEBUG},
++        {"help",           no_argument,       0, OPT_HELP},
++        {0, 0, 0, 0}
++    };
++
++    static app_t app = {
++        .publisher_fd = -1,
++        .quality = 7,
++        .bitrate = 2000,
++        .fps = 30,
++        .input_sock = DEFAULT_SOCK_CTX,
++        .jpeg_sock = DEFAULT_SOCK_CTX,
++        .mjpeg_sock = DEFAULT_SOCK_CTX,
++        .h264_sock = DEFAULT_SOCK_CTX,
++        .raw_frame_sock = DEFAULT_SOCK_CTX,
++    };
++
++    while ((opt = getopt_long(argc, argv, "", long_options, NULL)) != -1) {
++        switch (opt) {
++        case OPT_INPUT_SOCK:
++            input_path = optarg;
++            break;
++        case OPT_QUALITY:
++            app.quality = atoi(optarg);
++            break;
++        case OPT_JPEG_SOCK:
++            jpeg_path = optarg;
++            break;
++        case OPT_MJPEG_SOCK:
++            mjpeg_path = optarg;
++            break;
++        case OPT_H264_SOCK:
++            h264_path = optarg;
++            break;
++        case OPT_BITRATE:
++            app.bitrate = atoi(optarg);
++            break;
++        case OPT_RAW_FRAME_SOCK:
++            raw_path = optarg;
++            break;
++        case OPT_FPS:
++            app.fps = atoi(optarg);
++            break;
++        case OPT_DEBUG:
++            debug = 1;
++            break;
++        case OPT_HELP:
++            print_usage(argv[0]);
++            return 0;
++        default:
++            print_usage(argv[0]);
++            return 1;
++        }
++    }
++
++    if (!input_path || app.fps <= 0) {
++        print_usage(argv[0]);
++        return 1;
++    }
++
++    for (int i = 0; i < MAX_DMABUFS; i++)
++        app.dmabufs[i].fd = -1;
++
++    signal(SIGINT, signal_handler);
++    signal(SIGTERM, signal_handler);
++
++    int ret = 1;
++    if (sock_open(&app.input_sock, input_path) < 0) {
++        log_errorf("Failed to open input socket\n");
++        goto out;
++    }
++    if (jpeg_path && sock_open(&app.jpeg_sock, jpeg_path) < 0) {
++        log_errorf("Failed to open JPEG snapshot socket\n");
++        goto out;
++    }
++    app.jpeg_sock.one_frame = true;
++    if (mjpeg_path && sock_open(&app.mjpeg_sock, mjpeg_path) < 0) {
++        log_errorf("Failed to open MJPEG socket\n");
++        goto out;
++    }
++    app.mjpeg_sock.allow_drops = true;
++    if (h264_path && sock_open(&app.h264_sock, h264_path) < 0) {
++        log_errorf("Failed to open H264 socket\n");
++        goto out;
++    }
++    if (raw_path && sock_open(&app.raw_frame_sock, raw_path) < 0) {
++        log_errorf("Failed to open raw socket\n");
++        goto out;
++    }
++
++    log_printf("Waiting for frames on %s\n", input_path);
++
++    int64_t stats_us = now_us();
++    while (running) {
++        struct pollfd pfds[] = {
++            { .fd = app.input_sock.listen_fd, .events = POLLIN },
++            { .fd = app.publisher_fd, .events = POLLIN },
++            { .fd = app.jpeg_sock.listen_fd, .events = POLLIN },
++            { .fd = app.mjpeg_sock.listen_fd, .events = POLLIN },
++            { .fd = app.h264_sock.listen_fd, .events = POLLIN },
++            { .fd = app.raw_frame_sock.listen_fd, .events = POLLIN },
++        };
++
++        if (poll(pfds, sizeof(pfds) / sizeof(pfds[0]), 1000) < 0) {
++            if (errno == EINTR)
++                continue;
++            log_perror("poll");
++            goto out;
++        }
++
++        accept_clients(&app);
++
++        if (pfds[0].revents)
++            publisher_accept(&app);
++        if (app.publisher_fd >= 0 && pfds[1].fd == app.publisher_fd && pfds[1].revents)
++            publisher_read(&app);
++
++        log_stats(&app, &stats_us);
++    }
++    ret = 0;
++
++out:
++    publisher_disconnect(&app, "shutting down");
++    sock_close(&app.raw_frame_sock);
++    sock_close(&app.h264_sock);
++    sock_close(&app.mjpeg_sock);
++    sock_close(&app.jpeg_sock);
++    sock_close(&app.input_sock);
++    close_encoders(&app);
++    free(app.data);
++    return ret;
++}
