@@ -17,6 +17,9 @@ if [ "$1" = start ]; then
             1080p5)  INTERNAL_FPS=5 ;;
             *)       INTERNAL_FPS=25 ;;
         esac
+        if [ "$(/usr/local/bin/extended-config.py get "$EXTENDED_CFG" camera internal_exposure auto)" = manual ]; then
+            (unset LD_PRELOAD; /usr/local/sbin/camera-exposure-manual.sh)
+        fi
         echo "Starting lmd with the internal camera exported from unisrv!"
         export LD_PRELOAD="/usr/local/lib/librockit-export.so${LD_PRELOAD:+:$LD_PRELOAD}"
         export ROCKIT_EXPORT_FPS=$INTERNAL_FPS
