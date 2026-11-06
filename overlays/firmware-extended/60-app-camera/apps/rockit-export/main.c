@@ -16,28 +16,32 @@
 //   ROCKIT_EXPORT_RAW_SOCKET    raw NV12 frames
 //
 // Encoders only run while a socket has clients.
+// Encoders only run while a socket has clients. Sockets and logging come from
+// v4l2-mpp's common headers, so behaviour matches capture-v4l2-raw-mpp. Logs go
+// to unisrv's stdout and stderr.
 
 #define _GNU_SOURCE
+#include <assert.h>
 #include <dlfcn.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <linux/sockios.h>
 #include <pthread.h>
-#include <stdarg.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/ioctl.h>
 #include <sys/select.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/un.h>
-#include <syslog.h>
 #include <time.h>
 #include <unistd.h>
+
+#include "callback_chain.h"
+#include "log.h"
+#include "sock_ctx.h"
 
 // ---------------------------------------------------------------------------
 // Minimal Rockit MPI ABI (aarch64), checked against the Rockit SDK headers
@@ -98,10 +102,8 @@ static void put_u32(uint8_t *base, size_t off, RK_U32 v) { memcpy(base + off, &v
 
 static struct {
     char h264_sock[108], jpeg_sock[108], mjpeg_sock[108], raw_sock[108];
-    char log_file[256];
     int pipe, chn, venc_h264, venc_jpeg;
     int fps, bitrate_kbps, jpeg_qfactor;
-    bool debug;
 } cfg = {
     .h264_sock = "/tmp/capture-mipi-h264.sock",
     .jpeg_sock = "/tmp/capture-mipi-jpeg.sock",
@@ -114,36 +116,8 @@ static struct {
 static bool g_active;
 static pthread_once_t g_once = PTHREAD_ONCE_INIT;
 
-static void logmsg(int prio, const char *fmt, ...)
-{
-    char buf[512];
-    va_list ap;
-    va_start(ap, fmt);
-    vsnprintf(buf, sizeof(buf), fmt, ap);
-    va_end(ap);
-    syslog(prio, "%s", buf);
-    if (cfg.log_file[0]) {
-        FILE *f = fopen(cfg.log_file, "a");
-        if (f) {
-            if (ftell(f) > 1024 * 1024) {
-                fclose(f);
-                f = fopen(cfg.log_file, "w");
-            }
-            if (f) {
-                struct timespec ts;
-                clock_gettime(CLOCK_REALTIME, &ts);
-                struct tm tm;
-                localtime_r(&ts.tv_sec, &tm);
-                fprintf(f, "%02d:%02d:%02d.%03ld %s\n", tm.tm_hour, tm.tm_min, tm.tm_sec,
-                        ts.tv_nsec / 1000000, buf);
-                fclose(f);
-            }
-        }
-    }
-}
-#define LOGI(...) logmsg(LOG_INFO, __VA_ARGS__)
-#define LOGE(...) logmsg(LOG_ERR, __VA_ARGS__)
-#define LOGD(...) do { if (cfg.debug) logmsg(LOG_DEBUG, __VA_ARGS__); } while (0)
+#define LOGI(fmt, ...) log_printf("rockit-export: " fmt "\n", ##__VA_ARGS__)
+#define LOGE(fmt, ...) log_errorf("rockit-export: " fmt "\n", ##__VA_ARGS__)
 
 static void env_str(const char *name, char *dst, size_t n)
 {
@@ -171,7 +145,6 @@ static void init_once(void)
     env_str("ROCKIT_EXPORT_JPEG_SOCKET", cfg.jpeg_sock, sizeof(cfg.jpeg_sock));
     env_str("ROCKIT_EXPORT_MJPEG_SOCKET", cfg.mjpeg_sock, sizeof(cfg.mjpeg_sock));
     env_str("ROCKIT_EXPORT_RAW_SOCKET", cfg.raw_sock, sizeof(cfg.raw_sock));
-    env_str("ROCKIT_EXPORT_LOG_FILE", cfg.log_file, sizeof(cfg.log_file));
     env_int("ROCKIT_EXPORT_VI_PIPE", &cfg.pipe);
     env_int("ROCKIT_EXPORT_VI_CHN", &cfg.chn);
     env_int("ROCKIT_EXPORT_VENC_H264", &cfg.venc_h264);
@@ -179,11 +152,9 @@ static void init_once(void)
     env_int("ROCKIT_EXPORT_FPS", &cfg.fps);
     env_int("ROCKIT_EXPORT_H264_BITRATE", &cfg.bitrate_kbps);
     env_int("ROCKIT_EXPORT_JPEG_QFACTOR", &cfg.jpeg_qfactor);
-    const char *d = getenv("ROCKIT_EXPORT_DEBUG");
-    cfg.debug = d && *d && *d != '0';
     if (cfg.fps <= 0) cfg.fps = 30;
+    assert(cfg.venc_h264 != cfg.venc_jpeg);
 
-    openlog("rockit-export", LOG_PID, LOG_DAEMON);
     g_active = true;
     LOGI("active in unisrv: VI %d:%d, VENC h264=%d jpeg=%d, %d fps, %d kbps, jpeg q%d",
          cfg.pipe, cfg.chn, cfg.venc_h264, cfg.venc_jpeg, cfg.fps, cfg.bitrate_kbps, cfg.jpeg_qfactor);
@@ -238,135 +209,38 @@ static bool load_rockit(void)
 }
 
 // ---------------------------------------------------------------------------
-// Sockets, same behaviour as v4l2-mpp's sock_ctx.h
+// Sockets
 // ---------------------------------------------------------------------------
 
-#define SOCK_MAX_CLIENTS 8
-#define SOCK_WRITE_TIMEOUT_MS 100
 // Room for about five 1080p JPEG frames, so a client that is a little behind
 // never makes a write stall (the default unix socket buffer is ~200 KB).
 #define SOCK_SNDBUF_SIZE (1024 * 1024)
 
-typedef struct {
-    const char *name;
-    const char *path;
-    int listen_fd;
-    int fds[SOCK_MAX_CLIENTS];
-    size_t last_size[SOCK_MAX_CLIENTS];
-    int num_clients;
-    bool one_frame, allow_drops, need_keyframe;
-    unsigned frames, sent, dropped;
-} sock_t;
-
-static int sock_open(sock_t *s, const char *name, const char *path)
+static void set_cloexec(int fd)
 {
-    s->name = name;
-    s->path = path;
-    s->num_clients = 0;
-    for (int i = 0; i < SOCK_MAX_CLIENTS; i++) s->fds[i] = -1;
-    unlink(path);
-    s->listen_fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
-    if (s->listen_fd < 0) return -1;
-    struct sockaddr_un addr = { .sun_family = AF_UNIX };
-    strncpy(addr.sun_path, path, sizeof(addr.sun_path) - 1);
-    if (bind(s->listen_fd, (struct sockaddr *)&addr, sizeof(addr)) < 0 ||
-        listen(s->listen_fd, SOCK_MAX_CLIENTS) < 0) {
-        LOGE("socket %s: %s", path, strerror(errno));
-        close(s->listen_fd);
-        s->listen_fd = -1;
-        return -1;
-    }
-    chmod(path, 0777);
-    fcntl(s->listen_fd, F_SETFL, fcntl(s->listen_fd, F_GETFL, 0) | O_NONBLOCK);
-    return 0;
+    fcntl(fd, F_SETFD, fcntl(fd, F_GETFD, 0) | FD_CLOEXEC);
 }
 
-static void sock_close_client(sock_t *s, int i, const char *why)
+// sock_ctx.h does not set these, and they matter inside unisrv: a child process
+// holding a client fd would keep that client's connection open.
+static void open_socket(sock_ctx_t *s, const char *path)
 {
-    close(s->fds[i]);
-    s->fds[i] = -1;
-    s->num_clients--;
-    if (s->one_frame)
-        LOGD("%s: client %d closed (%s), %d left", s->name, i, why, s->num_clients);
-    else
-        LOGI("%s: client %d closed (%s), %d left", s->name, i, why, s->num_clients);
+    if (sock_open(s, path) == 0)
+        set_cloexec(s->listen_fd);
 }
 
-static void sock_accept(sock_t *s)
+static void accept_clients(sock_ctx_t *s)
 {
-    if (s->listen_fd < 0) return;
-    for (;;) {
-        int fd = accept4(s->listen_fd, NULL, NULL, SOCK_NONBLOCK | SOCK_CLOEXEC);
-        if (fd < 0) return;
-        int slot = -1;
-        for (int i = 0; i < SOCK_MAX_CLIENTS; i++)
-            if (s->fds[i] < 0) { slot = i; break; }
-        if (slot < 0) {
-            close(fd);
-            LOGI("%s: rejected client, max reached", s->name);
-            continue;
-        }
+    if (!sock_accept_clients(s))
+        return;
+    for (int i = 0; i < SOCK_MAX_CLIENTS; i++) {
+        int fd = s->clients[i].fd;
+        if (fd < 0) continue;
+        set_cloexec(fd);
         int sz = SOCK_SNDBUF_SIZE;
         if (setsockopt(fd, SOL_SOCKET, SO_SNDBUFFORCE, &sz, sizeof(sz)) < 0)
             setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &sz, sizeof(sz));
-        s->fds[slot] = fd;
-        s->last_size[slot] = 0;
-        s->num_clients++;
-        s->need_keyframe = true;
-        if (s->one_frame)
-            LOGD("%s: client connected (%d)", s->name, s->num_clients);
-        else
-            LOGI("%s: client connected (%d)", s->name, s->num_clients);
     }
-}
-
-static int write_fully(int fd, const void *data, size_t size)
-{
-    const uint8_t *p = data;
-    uint64_t start = now_ms();
-    while (size > 0) {
-        ssize_t n = send(fd, p, size, MSG_NOSIGNAL);
-        if (n < 0) {
-            if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                if (now_ms() - start >= SOCK_WRITE_TIMEOUT_MS) return -1;
-                usleep(1000);
-                continue;
-            }
-            if (errno == EINTR) continue;
-            return -1;
-        }
-        p += n;
-        size -= (size_t)n;
-    }
-    return 0;
-}
-
-// Writes one or more buffers as one frame to every client.
-static void sock_write(sock_t *s, const void *const *bufs, const size_t *lens, int nbufs)
-{
-    size_t total = 0;
-    for (int b = 0; b < nbufs; b++) total += lens[b];
-    for (int i = 0; i < SOCK_MAX_CLIENTS; i++) {
-        if (s->fds[i] < 0) continue;
-        if (s->allow_drops && s->last_size[i]) {
-            int unsent = 0;
-            if (ioctl(s->fds[i], SIOCOUTQ, &unsent) == 0 && (size_t)unsent >= s->last_size[i]) {
-                s->dropped++;
-                continue;
-            }
-        }
-        bool ok = true;
-        for (int b = 0; b < nbufs && ok; b++)
-            ok = write_fully(s->fds[i], bufs[b], lens[b]) == 0;
-        if (!ok) {
-            sock_close_client(s, i, "write error");
-            continue;
-        }
-        s->last_size[i] = total;
-        s->sent++;
-        if (s->one_frame) sock_close_client(s, i, "one frame sent");
-    }
-    s->frames++;
 }
 
 // ---------------------------------------------------------------------------
@@ -449,10 +323,27 @@ static bool venc_jpeg_open(RK_U32 w, RK_U32 h)
     return true;
 }
 
+static sock_ctx_t s_h264 = DEFAULT_SOCK_CTX, s_jpeg = DEFAULT_SOCK_CTX;
+static sock_ctx_t s_mjpeg = DEFAULT_SOCK_CTX, s_raw = DEFAULT_SOCK_CTX;
+
 static const uint8_t NAL_AUD[] = { 0x00, 0x00, 0x00, 0x01, 0x09, 0xf0 };
 
-// Encodes one frame and writes it to the given sockets.
-static bool encode(int chn, const VIDEO_FRAME_INFO_S *frame, sock_t **socks, int nsocks, bool h264)
+// Checks the first slice of an Annex-B frame. Only the headers before it are
+// scanned, as a start code can't occur inside a NAL unit.
+static bool h264_starts_with_idr(const uint8_t *data, size_t size)
+{
+    for (size_t i = 0; i + 3 < size; i++) {
+        if (data[i] != 0 || data[i + 1] != 0 || data[i + 2] != 1) continue;
+        int type = data[i + 3] & 0x1f;
+        if (type == 5) return true;
+        if (type == 1) return false;
+        i += 2;
+    }
+    return false;
+}
+
+// Encodes one frame and writes it to the given outputs.
+static bool encode(int chn, const VIDEO_FRAME_INFO_S *frame, callback_chain_t *chain, bool h264)
 {
     RK_S32 r = rk.venc_send(chn, frame, 1000);
     if (r != 0) {
@@ -475,10 +366,17 @@ static bool encode(int chn, const VIDEO_FRAME_INFO_S *frame, sock_t **socks, int
     }
     uint8_t *data = rk.mb_vir(pack.pMbBlk);
     if (data && pack.u32Len > 0) {
-        const void *bufs[2] = { data + pack.u32Offset, NAL_AUD };
-        size_t lens[2] = { pack.u32Len, sizeof(NAL_AUD) };
-        for (int i = 0; i < nsocks; i++)
-            if (socks[i]->num_clients > 0) sock_write(socks[i], bufs, lens, h264 ? 2 : 1);
+        const uint8_t *pos = data + pack.u32Offset;
+        if (h264 && s_h264.need_keyframe) {
+            if (h264_starts_with_idr(pos, pack.u32Len)) {
+                s_h264.need_keyframe = false;
+            } else {
+                static bool warned_idr;
+                if (!warned_idr) { warned_idr = true; LOGE("IDR requested, but the encoder returned another frame type; retrying"); }
+            }
+        }
+        callback_chain_write_cb(pos, pack.u32Len, chain);
+        if (h264) callback_chain_write_cb(NAL_AUD, sizeof(NAL_AUD), chain);
     }
     rk.venc_release(chn, &st);
     return true;
@@ -487,23 +385,6 @@ static bool encode(int chn, const VIDEO_FRAME_INFO_S *frame, sock_t **socks, int
 // ---------------------------------------------------------------------------
 // Export thread
 // ---------------------------------------------------------------------------
-
-static sock_t s_h264, s_jpeg, s_mjpeg, s_raw;
-
-static void wait_for_clients(int timeout_ms)
-{
-    fd_set rfds;
-    FD_ZERO(&rfds);
-    int maxfd = -1;
-    sock_t *all[] = { &s_h264, &s_jpeg, &s_mjpeg, &s_raw };
-    for (int i = 0; i < 4; i++) {
-        if (all[i]->listen_fd < 0) continue;
-        FD_SET(all[i]->listen_fd, &rfds);
-        if (all[i]->listen_fd > maxfd) maxfd = all[i]->listen_fd;
-    }
-    struct timeval tv = { .tv_sec = timeout_ms / 1000, .tv_usec = (timeout_ms % 1000) * 1000 };
-    select(maxfd + 1, &rfds, NULL, NULL, &tv);
-}
 
 static void *export_thread(void *arg)
 {
@@ -514,12 +395,12 @@ static void *export_thread(void *arg)
 
     if (!load_rockit()) return NULL;
 
-    sock_open(&s_h264, "h264", cfg.h264_sock);
-    sock_open(&s_jpeg, "jpeg", cfg.jpeg_sock);
+    open_socket(&s_h264, cfg.h264_sock);
+    open_socket(&s_jpeg, cfg.jpeg_sock);
     s_jpeg.one_frame = true;
-    sock_open(&s_mjpeg, "mjpeg", cfg.mjpeg_sock);
+    open_socket(&s_mjpeg, cfg.mjpeg_sock);
     s_mjpeg.allow_drops = true;
-    sock_open(&s_raw, "raw", cfg.raw_sock);
+    open_socket(&s_raw, cfg.raw_sock);
     LOGI("serving %s %s %s %s", cfg.h264_sock, cfg.jpeg_sock, cfg.mjpeg_sock, cfg.raw_sock);
 
     const uint64_t frame_ms = 1000 / (uint64_t)cfg.fps;
@@ -528,17 +409,18 @@ static void *export_thread(void *arg)
     RK_S32 last_err = 0;
 
     for (;;) {
-        sock_accept(&s_h264);
-        sock_accept(&s_jpeg);
-        sock_accept(&s_mjpeg);
-        sock_accept(&s_raw);
+        accept_clients(&s_h264);
+        accept_clients(&s_jpeg);
+        accept_clients(&s_mjpeg);
+        accept_clients(&s_raw);
 
         bool want_h264 = s_h264.num_clients > 0;
         bool want_jpeg = s_jpeg.num_clients > 0 || s_mjpeg.num_clients > 0;
         bool want_raw = s_raw.num_clients > 0;
 
         if (!want_h264 && !want_jpeg && !want_raw) {
-            wait_for_clients(1000);
+            sock_ctx_t *socks[] = { &s_h264, &s_jpeg, &s_mjpeg, &s_raw, NULL };
+            sock_wait_fds(socks, 1000);
             continue;
         }
 
@@ -566,19 +448,24 @@ static void *export_thread(void *arg)
         if (want_h264) {
             if (!g_h264_ready) g_h264_ready = venc_h264_open(frame.u32Width, frame.u32Height);
             if (g_h264_ready) {
+                // Requested again on every frame until an IDR comes out.
                 if (s_h264.need_keyframe) {
-                    rk.venc_idr(cfg.venc_h264, 1);
-                    s_h264.need_keyframe = false;
+                    RK_S32 idr = rk.venc_idr(cfg.venc_h264, 1);
+                    if (idr != 0) LOGE("VENC_RequestIDR failed: 0x%x", (unsigned)idr);
                 }
-                sock_t *socks[] = { &s_h264 };
-                encode(cfg.venc_h264, &frame, socks, 1, true);
+                callback_chain_t chain[] = { { sock_write_cb, &s_h264, true }, { NULL, NULL, false } };
+                encode(cfg.venc_h264, &frame, chain, true);
             }
         }
         if (want_jpeg) {
             if (!g_jpeg_ready) g_jpeg_ready = venc_jpeg_open(frame.u32Width, frame.u32Height);
             if (g_jpeg_ready) {
-                sock_t *socks[] = { &s_jpeg, &s_mjpeg };
-                encode(cfg.venc_jpeg, &frame, socks, 2, false);
+                callback_chain_t chain[] = {
+                    { sock_write_cb, &s_jpeg, s_jpeg.num_clients > 0 },
+                    { sock_write_cb, &s_mjpeg, s_mjpeg.num_clients > 0 },
+                    { NULL, NULL, false },
+                };
+                encode(cfg.venc_jpeg, &frame, chain, false);
             }
         }
         if (want_raw) {
@@ -588,9 +475,7 @@ static void *export_thread(void *arg)
                 RK_U32 vw = frame.u32VirWidth ? frame.u32VirWidth : w;
                 RK_U32 vh = frame.u32VirHeight ? frame.u32VirHeight : h;
                 if (vw == w && vh == h) {
-                    const void *bufs[] = { y };
-                    size_t lens[] = { (size_t)w * h * 3 / 2 };
-                    sock_write(&s_raw, bufs, lens, 1);
+                    sock_write_cb(y, (size_t)w * h * 3 / 2, &s_raw);
                 } else {
                     // Repack to tightly packed NV12.
                     static uint8_t *packed;
@@ -607,9 +492,7 @@ static void *export_thread(void *arg)
                         const uint8_t *uv = y + (size_t)vw * vh;
                         for (RK_U32 row = 0; row < h / 2; row++)
                             memcpy(packed + (size_t)w * h + (size_t)row * w, uv + (size_t)row * vw, w);
-                        const void *bufs[] = { packed };
-                        size_t lens[] = { need };
-                        sock_write(&s_raw, bufs, lens, 1);
+                        sock_write_cb(packed, need, &s_raw);
                     }
                 }
             }
@@ -618,14 +501,10 @@ static void *export_thread(void *arg)
         rk.vi_release_frame(cfg.pipe, cfg.chn, &frame);
 
         if (t - stats_time >= 30000) {
-            double secs = (t - stats_time) / 1000.0;
-            LOGI("%.1f fps in; sent h264 %.1f/s (%d clients), jpeg %u, mjpeg %.1f/s (%d clients, %u skipped), raw %.1f/s (%d clients); %u frame errors",
-                 got / secs, s_h264.sent / secs, s_h264.num_clients, s_jpeg.sent,
-                 s_mjpeg.sent / secs, s_mjpeg.num_clients, s_mjpeg.dropped, s_raw.sent / secs,
-                 s_raw.num_clients, errors);
+            LOGI("%.1f fps in, %u frame errors; clients: h264 %d, jpeg %d, mjpeg %d, raw %d",
+                 got / ((t - stats_time) / 1000.0), errors, s_h264.num_clients,
+                 s_jpeg.num_clients, s_mjpeg.num_clients, s_raw.num_clients);
             got = errors = 0;
-            sock_t *all[] = { &s_h264, &s_jpeg, &s_mjpeg, &s_raw };
-            for (int k = 0; k < 4; k++) all[k]->frames = all[k]->sent = all[k]->dropped = 0;
             stats_time = t;
         }
     }
@@ -633,8 +512,25 @@ static void *export_thread(void *arg)
 }
 
 // ---------------------------------------------------------------------------
-// The only hooked call
+// Hooked calls
 // ---------------------------------------------------------------------------
+
+// VENC channels are numbered by the caller, and this library's two must stay
+// free for it. Its own calls go to the real function through rk.venc_create, so
+// only unisrv and librockit come through here. Without this, unisrv and the
+// export would silently share an encoder.
+RK_S32 RK_MPI_VENC_CreateChn(RK_S32 chn, const void *attr)
+{
+    static RK_S32 (*real)(RK_S32, const void *);
+    if (!real) real = dlsym(RTLD_NEXT, "RK_MPI_VENC_CreateChn");
+
+    pthread_once(&g_once, init_once);
+    if (g_active) {
+        assert(chn != cfg.venc_h264);
+        assert(chn != cfg.venc_jpeg);
+    }
+    return real ? real(chn, attr) : -1;
+}
 
 RK_S32 RK_MPI_VI_EnableChn(RK_S32 pipe, RK_S32 chn)
 {

@@ -19,7 +19,7 @@ echo ">> Compiling v4l2-imposter..."
 make -C "$CUR_DIR/../apps/v4l2-imposter" install DESTDIR="$1"
 
 echo ">> Compiling rockit-export..."
-make -C "$CUR_DIR/../apps/rockit-export" install DESTDIR="$1"
+make -C "$CUR_DIR/../apps/rockit-export" install DESTDIR="$1" V4L2_MPP_DIR="$CACHE_DIR/v4l2-mpp"
 
 echo ">> Compiling fake-service..."
 make -C "$CUR_DIR/../apps/fake-service" install DESTDIR="$1"
