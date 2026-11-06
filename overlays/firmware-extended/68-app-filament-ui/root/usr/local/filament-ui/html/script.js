@@ -24,6 +24,8 @@ let refreshing = false;
 let spoolmanActive = false;
 let spoolmanUrl = null;
 let forceGenericVendor = false;
+// SpoolLink's `tag_store`: card UIDs live in native tags, or in `card_uids`.
+let spoolmanTagApi = false;
 let spoolmanSpools = new Map();
 let spoolPickerChannel = null;
 let spoolRefreshTimer = null;
@@ -200,6 +202,9 @@ function loadSpoolmanStatus() {
         forceGenericVendor =
             rawForceGeneric === true ||
             String(rawForceGeneric).toLowerCase() === 'true';
+
+        spoolmanTagApi =
+            String(config.config?.spoollink?.tag_store).toLowerCase() === 'native';
 
         // Config may arrive after the first channel render.
         rebuildFromCache();
@@ -699,8 +704,9 @@ function hidePopover() {
 
 // ── Spoolman helpers ──────────────────────────────────────────────────────
 
-// UID and colour normalisation, the SpoolLink `card_uids` wire format,
-// filament matching, and the Spoolman payload builders.
+// UID and colour normalisation, the card UID stores (native tags, or the
+// SpoolLink `card_uids` wire format), filament matching, and the Spoolman
+// payload builders.
 
 function cleanText(value) {
     return value == null ? '' : String(value).trim();
@@ -747,9 +753,12 @@ function encodeExtraString(value) {
 }
 
 function parseCardUids(spool) {
+    const values = spoolmanTagApi
+        ? (spool?.tags || []).map(tag => tag?.uid)
+        : decodeExtraString(spool?.extra?.card_uids || '').split(',');
     const seen = new Set();
     const uids = [];
-    for (const value of decodeExtraString(spool?.extra?.card_uids || '').split(',')) {
+    for (const value of values) {
         const uid = normalizeUid(value);
         if (uid && !seen.has(uid)) {
             seen.add(uid);
@@ -888,6 +897,8 @@ function buildFilamentPayload(values, vendorId) {
     return payload;
 }
 
+// Native tags cannot be set on create, so they are linked right after;
+// otherwise the UID is seeded into `card_uids`.
 function buildSpoolPayload(filamentId, values) {
     const id = Number(filamentId);
     const uid = normalizeUid(values?.uid);
@@ -901,8 +912,8 @@ function buildSpoolPayload(filamentId, values) {
         filament_id: id,
         initial_weight: netWeight,
         remaining_weight: netWeight,
-        extra: { card_uids: encodeExtraString(uid) },
     };
+    if (!spoolmanTagApi) payload.extra = { card_uids: encodeExtraString(uid) };
     if (tareWeight != null && tareWeight >= 0) payload.spool_weight = tareWeight;
     return payload;
 }
@@ -1006,7 +1017,7 @@ async function executeSpoolAssignment(channel, targetSpool, uid) {
 
     // SET_SPOOL_ID returns before the UID has moved: Moonraker dispatches the
     // remote method asynchronously and SpoolLink then does its own retried
-    // GET/GET/PATCH, so poll until the target spool owns the UID on its own.
+    // lookups and writes, so poll until the target spool owns the UID on its own.
     for (const wait of [500, 750, 1000, 1500, 2000, 2000]) {
         await new Promise(resolve => setTimeout(resolve, wait));
         const spools = await fetchSpoolmanList('/v1/spool').catch(() => null);
@@ -1223,8 +1234,9 @@ async function clearSpoolForChannel(channel) {
 
 // ── Spool creation ────────────────────────────────────────────────────────
 
-// Spoolman records are created directly, but the RFID link still goes through
-// SET_SPOOL_ID so SpoolLink stays the single writer for UID movement.
+// Spoolman records are created directly, and the new spool gets its UID right
+// away. Moving a UID between spools still goes through SET_SPOOL_ID, so
+// SpoolLink stays the single writer for UID movement.
 
 function setCreateSpoolNotice(message, type = 'warning') {
     const notice = document.getElementById('create-spool-notice');
@@ -1381,6 +1393,12 @@ async function handleCreateSpool(event) {
         });
         if (!spool?.id) throw new Error('Spoolman did not return the created spool ID');
         created.push(`spool #${spool.id}`);
+
+        if (spoolmanTagApi) {
+            setCreateSpoolNotice(`Spool #${spool.id} created. Attaching its RFID tag…`);
+            await spoolmanRequest('POST', `/v1/spool/${spool.id}/tag`, { body: { uid: context.uid } });
+            created.push(`tag ${formatUid(context.uid)} on spool #${spool.id}`);
+        }
 
         setCreateSpoolNotice(`Spool #${spool.id} created. Linking and verifying its RFID…`);
         await executeSpoolAssignment(context.channel, spool, context.uid);

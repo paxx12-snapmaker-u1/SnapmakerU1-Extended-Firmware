@@ -50,6 +50,8 @@ diameter, density, and temperatures under **Advanced**.
 
 UID ownership is rechecked on submit: if the tag turns out to belong to a spool
 already, that spool is assigned instead of a duplicate being created.
+With [native tags](#card-uid-storage) the tag is linked to the new spool right
+after it is created; otherwise it is stored in `card_uids`.
 
 ## Assigning a Spool
 
@@ -61,6 +63,31 @@ a spool's second tag, or to link a blank tag to a spool that already exists.
 Hovering the card's Spoolman badge lists the spool's stored UIDs.
 
 ![Assign tab, with the suggested spool listed first](screenshots/filament-manager-spoolman-suggested-spools.png)
+
+## Card UID Storage
+
+SpoolLink records which RFID card belongs to which spool in one of two
+stores, picked under **Spoolman Tag Storage** in firmware-config. The setting
+is hidden: open firmware-config with `?hidden` at the end of its URL to show
+it.
+
+- **Card UIDs** (default) - the `card_uids` spool extra field. Works with every
+  Spoolman version and every app in the [table below](#apps).
+- **Spoolman native tags** - Spoolman's NFC/RFID tags, shown in the spool's
+  **Tags** section. Needs Spoolman v0.27.0 or newer, and apps that support
+  native tags; apps that only read `card_uids` stop finding spools.
+
+Switching moves every existing link to the new store and clears it from the
+old one, with Moonraker stopped meanwhile. A card listed on more than one
+spool, or one that could not be moved, is left where it was and reported;
+fix it in Spoolman, then run **Retry Spoolman Tag Migration** under
+Troubleshooting in firmware-config (also hidden). Moving to native tags drops a
+`card_uids` entry for a card already tagged on another spool, as that tag is
+the newer link. Filament Manager uses the same store.
+
+The setting is stored as `tag_store` (`card_uids` or `native`) in the
+`[spoolman]` section of `extended2.cfg`. Editing it by hand switches the store
+without moving any links.
 
 ## Apps
 
