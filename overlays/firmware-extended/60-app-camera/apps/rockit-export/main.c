@@ -48,9 +48,60 @@
 // ---------------------------------------------------------------------------
 
 typedef int32_t RK_S32;
+typedef uint8_t RK_U8;
 typedef uint32_t RK_U32;
 typedef uint64_t RK_U64;
+typedef RK_S32 RK_BOOL;
 typedef void *MB_BLK;
+
+typedef struct {
+    RK_U32 u32Width;
+    RK_U32 u32Height;
+} SIZE_S;
+
+typedef struct {
+    RK_S32 s32X;
+    RK_S32 s32Y;
+    RK_U32 u32Width;
+    RK_U32 u32Height;
+} RECT_S;
+
+typedef struct {
+    RK_S32 s32SrcFrameRate;
+    RK_S32 s32DstFrameRate;
+} FRAME_RATE_CTRL_S;
+
+typedef struct {
+    RK_U32 u32BufCount;
+    RK_U32 u32BufSize;
+    RK_S32 enCaptureType;
+    RK_S32 enMemoryType;
+    char aEntityName[32];
+    RK_BOOL bNoUseLibV4L2;
+    SIZE_S stMaxSize;
+    RECT_S stWindow;
+} VI_ISP_OPT_S;
+
+typedef struct {
+    RK_S32 enModId;
+    RK_S32 s32DevId;
+    RK_S32 s32ChnId;
+} MPP_CHN_S;
+
+typedef struct {
+    SIZE_S stSize;
+    RK_S32 enPixelFormat;
+    RK_S32 enDynamicRange;
+    RK_S32 enVideoFormat;
+    RK_S32 enCompressMode;
+    RK_BOOL bMirror;
+    RK_BOOL bFlip;
+    RK_U32 u32Depth;
+    FRAME_RATE_CTRL_S stFrameRate;
+    RK_S32 enAllocBufType;
+    VI_ISP_OPT_S stIspOpt;
+    MPP_CHN_S stShareBufChn;
+} VI_CHN_ATTR_S;
 
 typedef struct {
     MB_BLK pMbBlk;
@@ -84,16 +135,96 @@ _Static_assert(offsetof(VENC_PACK_S, u32Offset) == 36, "u32Offset");
 _Static_assert(sizeof(VENC_STREAM_S) == 400, "VENC_STREAM_S");
 _Static_assert(offsetof(VENC_STREAM_S, u32PackCount) == 16, "u32PackCount");
 
-#define VENC_CHN_ATTR_SIZE 136
-#define VENC_JPEG_PARAM_SIZE 200
-
 #define RK_VIDEO_ID_AVC 8
 #define RK_VIDEO_ID_JPEG 15
 #define RK_FMT_YUV420SP 0
 #define VENC_RC_MODE_H264CBR 1
 #define VENC_GOPMODE_NORMALP 1
 
-static void put_u32(uint8_t *base, size_t off, RK_U32 v) { memcpy(base + off, &v, 4); }
+typedef struct {
+    RK_U8 u8LargeThumbNailNum;
+    SIZE_S astLargeThumbNailSize[2];
+} VENC_MPF_CFG_S;
+
+typedef struct {
+    RK_BOOL bSupportDCF;
+    VENC_MPF_CFG_S stMPFCfg;
+    RK_S32 enReceiveMode;
+} VENC_ATTR_JPEG_S;
+
+typedef struct {
+    RK_U32 u32Level;
+} VENC_ATTR_H264_S;
+
+typedef struct {
+    RK_S32 enType;
+    RK_U32 u32MaxPicWidth;
+    RK_U32 u32MaxPicHeight;
+    RK_S32 enPixelFormat;
+    RK_S32 enMirror;
+    RK_U32 u32BufSize;
+    RK_U32 u32Profile;
+    RK_BOOL bByFrame;
+    RK_U32 u32PicWidth;
+    RK_U32 u32PicHeight;
+    RK_U32 u32VirWidth;
+    RK_U32 u32VirHeight;
+    RK_U32 u32StreamBufCnt;
+    union {
+        VENC_ATTR_H264_S stAttrH264e;
+        VENC_ATTR_JPEG_S stAttrJpege;
+    };
+} VENC_ATTR_S;
+
+typedef struct {
+    RK_U32 u32Gop;
+    RK_U32 u32SrcFrameRateNum;
+    RK_U32 u32SrcFrameRateDen;
+    RK_U32 fr32DstFrameRateNum;
+    RK_U32 fr32DstFrameRateDen;
+    RK_U32 u32BitRate;
+    RK_U32 u32StatTime;
+} VENC_H264_CBR_S;
+
+typedef struct {
+    RK_S32 enRcMode;
+    union {
+        VENC_H264_CBR_S stH264Cbr;
+        uint8_t reserved[36];
+    };
+} VENC_RC_ATTR_S;
+
+typedef struct {
+    RK_S32 enGopMode;
+    RK_S32 s32VirIdrLen;
+    RK_U32 u32MaxLtrCount;
+    RK_U32 u32TsvcPreload;
+} VENC_GOP_ATTR_S;
+
+typedef struct {
+    VENC_ATTR_S stVencAttr;
+    VENC_RC_ATTR_S stRcAttr;
+    VENC_GOP_ATTR_S stGopAttr;
+} VENC_CHN_ATTR_S;
+
+typedef struct {
+    RK_U32 u32Qfactor;
+    RK_U8 u8YQt[64];
+    RK_U8 u8CbQt[64];
+    RK_U8 u8CrQt[64];
+    RK_U32 u32MCUPerECS;
+} VENC_JPEG_PARAM_S;
+
+_Static_assert(sizeof(VI_ISP_OPT_S) == 76, "VI_ISP_OPT_S");
+_Static_assert(offsetof(VI_CHN_ATTR_S, stFrameRate) == 36, "VI_CHN_ATTR_S.stFrameRate");
+_Static_assert(sizeof(VI_CHN_ATTR_S) == 136, "VI_CHN_ATTR_S");
+_Static_assert(sizeof(VENC_MPF_CFG_S) == 20, "VENC_MPF_CFG_S");
+_Static_assert(sizeof(VENC_ATTR_JPEG_S) == 28, "VENC_ATTR_JPEG_S");
+_Static_assert(sizeof(VENC_ATTR_S) == 80, "VENC_ATTR_S");
+_Static_assert(offsetof(VENC_CHN_ATTR_S, stRcAttr) == 80, "VENC_CHN_ATTR_S.stRcAttr");
+_Static_assert(offsetof(VENC_CHN_ATTR_S, stGopAttr) == 120, "VENC_CHN_ATTR_S.stGopAttr");
+_Static_assert(sizeof(VENC_CHN_ATTR_S) == 136, "VENC_CHN_ATTR_S");
+_Static_assert(sizeof(VENC_JPEG_PARAM_S) == 200, "VENC_JPEG_PARAM_S");
 
 // ---------------------------------------------------------------------------
 // Config and logging
@@ -170,6 +301,8 @@ static uint64_t now_ms(void)
 
 static struct {
     RK_S32 (*vi_enable_chn)(RK_S32, RK_S32);
+    RK_S32 (*vi_get_attr)(RK_S32, RK_S32, VI_CHN_ATTR_S *);
+    RK_S32 (*vi_set_attr)(RK_S32, RK_S32, const VI_CHN_ATTR_S *);
     RK_S32 (*vi_get_frame)(RK_S32, RK_S32, VIDEO_FRAME_INFO_S *, RK_S32);
     RK_S32 (*vi_release_frame)(RK_S32, RK_S32, const VIDEO_FRAME_INFO_S *);
     RK_S32 (*venc_create)(RK_S32, const void *);
@@ -188,6 +321,8 @@ static struct {
 static bool load_rockit(void)
 {
 #define LOAD(field, name) if (!(rk.field = dlsym(RTLD_NEXT, name))) { LOGE("missing %s", name); return false; }
+    LOAD(vi_get_attr, "RK_MPI_VI_GetChnAttr");
+    LOAD(vi_set_attr, "RK_MPI_VI_SetChnAttr");
     LOAD(vi_get_frame, "RK_MPI_VI_GetChnFrame");
     LOAD(vi_release_frame, "RK_MPI_VI_ReleaseChnFrame");
     LOAD(venc_create, "RK_MPI_VENC_CreateChn");
@@ -221,30 +356,30 @@ static bool g_h264_ready, g_jpeg_ready;
 
 static bool venc_h264_open(RK_U32 w, RK_U32 h)
 {
-    uint8_t a[VENC_CHN_ATTR_SIZE] = { 0 };
-    put_u32(a, 0, RK_VIDEO_ID_AVC);
-    put_u32(a, 4, w);                 // u32MaxPicWidth
-    put_u32(a, 8, h);                 // u32MaxPicHeight
-    put_u32(a, 12, RK_FMT_YUV420SP);  // enPixelFormat
-    put_u32(a, 20, w * h);            // u32BufSize
-    put_u32(a, 24, 100);              // u32Profile: high, as capture-v4l2-raw-mpp
-    put_u32(a, 28, 1);                // bByFrame
-    put_u32(a, 32, w);
-    put_u32(a, 36, h);
-    put_u32(a, 40, w);                // u32VirWidth
-    put_u32(a, 44, h);                // u32VirHeight
-    put_u32(a, 48, 4);                // u32StreamBufCnt
-    put_u32(a, 52, 41);               // stAttrH264e.u32Level
-    put_u32(a, 80, VENC_RC_MODE_H264CBR);
-    put_u32(a, 84, (RK_U32)cfg.fps * 2);  // u32Gop: keyframe every 2 s
-    put_u32(a, 88, (RK_U32)cfg.fps);      // src fps num
-    put_u32(a, 92, 1);
-    put_u32(a, 96, (RK_U32)cfg.fps);      // dst fps num
-    put_u32(a, 100, 1);
-    put_u32(a, 104, (RK_U32)cfg.bitrate_kbps);
-    put_u32(a, 108, 3);                   // u32StatTime
-    put_u32(a, 120, VENC_GOPMODE_NORMALP);
-    RK_S32 r = rk.venc_create(cfg.venc_h264, a);
+    VENC_CHN_ATTR_S a = { 0 };
+    a.stVencAttr.enType = RK_VIDEO_ID_AVC;
+    a.stVencAttr.u32MaxPicWidth = w;
+    a.stVencAttr.u32MaxPicHeight = h;
+    a.stVencAttr.enPixelFormat = RK_FMT_YUV420SP;
+    a.stVencAttr.u32BufSize = w * h;
+    a.stVencAttr.u32Profile = 100;  // H.264 High
+    a.stVencAttr.bByFrame = 1;
+    a.stVencAttr.u32PicWidth = w;
+    a.stVencAttr.u32PicHeight = h;
+    a.stVencAttr.u32VirWidth = w;
+    a.stVencAttr.u32VirHeight = h;
+    a.stVencAttr.u32StreamBufCnt = 4;
+    a.stVencAttr.stAttrH264e.u32Level = 41;
+    a.stRcAttr.enRcMode = VENC_RC_MODE_H264CBR;
+    a.stRcAttr.stH264Cbr.u32Gop = (RK_U32)cfg.fps * 2;
+    a.stRcAttr.stH264Cbr.u32SrcFrameRateNum = (RK_U32)cfg.fps;
+    a.stRcAttr.stH264Cbr.u32SrcFrameRateDen = 1;
+    a.stRcAttr.stH264Cbr.fr32DstFrameRateNum = (RK_U32)cfg.fps;
+    a.stRcAttr.stH264Cbr.fr32DstFrameRateDen = 1;
+    a.stRcAttr.stH264Cbr.u32BitRate = (RK_U32)cfg.bitrate_kbps;
+    a.stRcAttr.stH264Cbr.u32StatTime = 3;
+    a.stGopAttr.enGopMode = VENC_GOPMODE_NORMALP;
+    RK_S32 r = rk.venc_create(cfg.venc_h264, &a);
     if (r != 0) {
         LOGE("VENC_CreateChn h264 chn=%d failed: 0x%x", cfg.venc_h264, (unsigned)r);
         return false;
@@ -262,24 +397,24 @@ static bool venc_h264_open(RK_U32 w, RK_U32 h)
 
 static bool venc_jpeg_open(RK_U32 w, RK_U32 h)
 {
-    uint8_t a[VENC_CHN_ATTR_SIZE] = { 0 };
-    put_u32(a, 0, RK_VIDEO_ID_JPEG);
-    put_u32(a, 12, RK_FMT_YUV420SP);
-    put_u32(a, 20, w * h * 2);  // same as unisrv's own JPEG channel
-    put_u32(a, 32, w);
-    put_u32(a, 36, h);
-    put_u32(a, 40, w);
-    put_u32(a, 44, h);
-    put_u32(a, 48, 5);
-    RK_S32 r = rk.venc_create(cfg.venc_jpeg, a);
+    VENC_CHN_ATTR_S a = { 0 };
+    a.stVencAttr.enType = RK_VIDEO_ID_JPEG;
+    a.stVencAttr.enPixelFormat = RK_FMT_YUV420SP;
+    a.stVencAttr.u32BufSize = w * h * 2;  // same as unisrv's own JPEG channel
+    a.stVencAttr.u32PicWidth = w;
+    a.stVencAttr.u32PicHeight = h;
+    a.stVencAttr.u32VirWidth = w;
+    a.stVencAttr.u32VirHeight = h;
+    a.stVencAttr.u32StreamBufCnt = 5;
+    RK_S32 r = rk.venc_create(cfg.venc_jpeg, &a);
     if (r != 0) {
         LOGE("VENC_CreateChn jpeg chn=%d failed: 0x%x", cfg.venc_jpeg, (unsigned)r);
         return false;
     }
-    uint8_t jp[VENC_JPEG_PARAM_SIZE] = { 0 };
-    if (rk.venc_get_jpeg(cfg.venc_jpeg, jp) == 0) {
-        put_u32(jp, 0, (RK_U32)cfg.jpeg_qfactor);
-        r = rk.venc_set_jpeg(cfg.venc_jpeg, jp);
+    VENC_JPEG_PARAM_S jp = { 0 };
+    if (rk.venc_get_jpeg(cfg.venc_jpeg, &jp) == 0) {
+        jp.u32Qfactor = (RK_U32)cfg.jpeg_qfactor;
+        r = rk.venc_set_jpeg(cfg.venc_jpeg, &jp);
         if (r != 0) LOGE("VENC_SetJpegParam failed: 0x%x", (unsigned)r);
     }
     RK_S32 recv = -1;
@@ -358,8 +493,7 @@ static void *export_thread(void *arg)
     s_mjpeg.allow_drops = true;
     LOGI("serving %s %s %s", cfg.h264_sock, cfg.jpeg_sock, cfg.mjpeg_sock);
 
-    const uint64_t frame_ms = 1000 / (uint64_t)cfg.fps;
-    uint64_t next_frame = now_ms(), stats_time = now_ms();
+    uint64_t stats_time = now_ms();
     unsigned got = 0, errors = 0;
     RK_S32 last_err = 0;
 
@@ -389,13 +523,7 @@ static void *export_thread(void *arg)
         }
         last_err = 0;
 
-        // Keep to the configured frame rate; extra frames are released unused.
         uint64_t t = now_ms();
-        if (t + 2 < next_frame) {
-            rk.vi_release_frame(cfg.pipe, cfg.chn, &frame);
-            continue;
-        }
-        next_frame = (t > next_frame + frame_ms ? t : next_frame) + frame_ms;
         got++;
 
         if (want_h264) {
@@ -458,9 +586,30 @@ RK_S32 RK_MPI_VENC_CreateChn(RK_S32 chn, const void *attr)
 RK_S32 RK_MPI_VI_EnableChn(RK_S32 pipe, RK_S32 chn)
 {
     if (!rk.vi_enable_chn) rk.vi_enable_chn = dlsym(RTLD_NEXT, "RK_MPI_VI_EnableChn");
-    RK_S32 r = rk.vi_enable_chn ? rk.vi_enable_chn(pipe, chn) : -1;
 
     pthread_once(&g_once, init_once);
+    if (g_active && pipe == cfg.pipe && chn == cfg.chn) {
+        if (!rk.vi_get_attr) rk.vi_get_attr = dlsym(RTLD_NEXT, "RK_MPI_VI_GetChnAttr");
+        if (!rk.vi_set_attr) rk.vi_set_attr = dlsym(RTLD_NEXT, "RK_MPI_VI_SetChnAttr");
+        if (!rk.vi_get_attr || !rk.vi_set_attr) return -1;
+
+        VI_CHN_ATTR_S attr;
+        RK_S32 r = rk.vi_get_attr(pipe, chn, &attr);
+        if (r != 0) {
+            LOGE("VI_GetChnAttr %d:%d failed: 0x%x", pipe, chn, (unsigned)r);
+            return r;
+        }
+        attr.stFrameRate.s32SrcFrameRate = -1;
+        attr.stFrameRate.s32DstFrameRate = cfg.fps;
+        r = rk.vi_set_attr(pipe, chn, &attr);
+        if (r != 0) {
+            LOGE("VI_SetChnAttr %d:%d to %d fps failed: 0x%x", pipe, chn, cfg.fps, (unsigned)r);
+            return r;
+        }
+        LOGI("VI %d:%d configured for %d fps", pipe, chn, cfg.fps);
+    }
+
+    RK_S32 r = rk.vi_enable_chn ? rk.vi_enable_chn(pipe, chn) : -1;
     if (g_active && r == 0 && pipe == cfg.pipe && chn == cfg.chn) {
         static bool started;
         if (!started) {
