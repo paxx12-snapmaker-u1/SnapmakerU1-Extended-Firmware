@@ -4,7 +4,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 @horzadome, @paxx12, @liberodark
 
 GIT_URL=https://github.com/horzadome/snapmaker-u1-timelapse-recovery.git
-GIT_SHA=8e2a2e50e8642a4f368e4e4794585b2a2d2e2857
+GIT_SHA=c73e3338fc15db4dec9ea8c6c2d03606b3cac50c
 
 if [[ -z "$CREATE_FIRMWARE" ]]; then
   echo "Error: This script should be run within the create_firmware.sh environment."
