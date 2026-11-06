@@ -13,9 +13,7 @@
 //                               keyframe for every new client
 //   ROCKIT_EXPORT_JPEG_SOCKET   one JPEG per connection, then close
 //   ROCKIT_EXPORT_MJPEG_SOCKET  one JPEG per frame, dropped for slow clients
-//   ROCKIT_EXPORT_RAW_SOCKET    raw NV12 frames
 //
-// Encoders only run while a socket has clients.
 // Encoders only run while a socket has clients. Sockets and logging come from
 // v4l2-mpp's common headers, so behaviour matches capture-v4l2-raw-mpp. Logs go
 // to unisrv's stdout and stderr.
@@ -40,6 +38,7 @@
 #include <unistd.h>
 
 #include "callback_chain.h"
+#include "h264_frames.h"
 #include "log.h"
 #include "sock_ctx.h"
 
@@ -101,14 +100,13 @@ static void put_u32(uint8_t *base, size_t off, RK_U32 v) { memcpy(base + off, &v
 // ---------------------------------------------------------------------------
 
 static struct {
-    char h264_sock[108], jpeg_sock[108], mjpeg_sock[108], raw_sock[108];
+    char h264_sock[108], jpeg_sock[108], mjpeg_sock[108];
     int pipe, chn, venc_h264, venc_jpeg;
     int fps, bitrate_kbps, jpeg_qfactor;
 } cfg = {
     .h264_sock = "/tmp/capture-mipi-h264.sock",
     .jpeg_sock = "/tmp/capture-mipi-jpeg.sock",
     .mjpeg_sock = "/tmp/capture-mipi-mjpeg.sock",
-    .raw_sock = "/tmp/capture-mipi-raw.sock",
     .pipe = 0, .chn = 2, .venc_h264 = 6, .venc_jpeg = 7,
     .fps = 30, .bitrate_kbps = 2000, .jpeg_qfactor = 77,
 };
@@ -144,7 +142,6 @@ static void init_once(void)
     env_str("ROCKIT_EXPORT_H264_SOCKET", cfg.h264_sock, sizeof(cfg.h264_sock));
     env_str("ROCKIT_EXPORT_JPEG_SOCKET", cfg.jpeg_sock, sizeof(cfg.jpeg_sock));
     env_str("ROCKIT_EXPORT_MJPEG_SOCKET", cfg.mjpeg_sock, sizeof(cfg.mjpeg_sock));
-    env_str("ROCKIT_EXPORT_RAW_SOCKET", cfg.raw_sock, sizeof(cfg.raw_sock));
     env_int("ROCKIT_EXPORT_VI_PIPE", &cfg.pipe);
     env_int("ROCKIT_EXPORT_VI_CHN", &cfg.chn);
     env_int("ROCKIT_EXPORT_VENC_H264", &cfg.venc_h264);
@@ -212,36 +209,9 @@ static bool load_rockit(void)
 // Sockets
 // ---------------------------------------------------------------------------
 
-// Room for about five 1080p JPEG frames, so a client that is a little behind
-// never makes a write stall (the default unix socket buffer is ~200 KB).
-#define SOCK_SNDBUF_SIZE (1024 * 1024)
-
-static void set_cloexec(int fd)
-{
-    fcntl(fd, F_SETFD, fcntl(fd, F_GETFD, 0) | FD_CLOEXEC);
-}
-
-// sock_ctx.h does not set these, and they matter inside unisrv: a child process
-// holding a client fd would keep that client's connection open.
-static void open_socket(sock_ctx_t *s, const char *path)
-{
-    if (sock_open(s, path) == 0)
-        set_cloexec(s->listen_fd);
-}
-
-static void accept_clients(sock_ctx_t *s)
-{
-    if (!sock_accept_clients(s))
-        return;
-    for (int i = 0; i < SOCK_MAX_CLIENTS; i++) {
-        int fd = s->clients[i].fd;
-        if (fd < 0) continue;
-        set_cloexec(fd);
-        int sz = SOCK_SNDBUF_SIZE;
-        if (setsockopt(fd, SOL_SOCKET, SO_SNDBUFFORCE, &sz, sizeof(sz)) < 0)
-            setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &sz, sizeof(sz));
-    }
-}
+// Room for about two 1080p JPEG frames, so a client that is a little behind
+// does not immediately make a write stall (the default is about one frame).
+#define SOCK_SNDBUF_SIZE (512 * 1024)
 
 // ---------------------------------------------------------------------------
 // Encoders
@@ -324,23 +294,9 @@ static bool venc_jpeg_open(RK_U32 w, RK_U32 h)
 }
 
 static sock_ctx_t s_h264 = DEFAULT_SOCK_CTX, s_jpeg = DEFAULT_SOCK_CTX;
-static sock_ctx_t s_mjpeg = DEFAULT_SOCK_CTX, s_raw = DEFAULT_SOCK_CTX;
+static sock_ctx_t s_mjpeg = DEFAULT_SOCK_CTX;
 
 static const uint8_t NAL_AUD[] = { 0x00, 0x00, 0x00, 0x01, 0x09, 0xf0 };
-
-// Checks the first slice of an Annex-B frame. Only the headers before it are
-// scanned, as a start code can't occur inside a NAL unit.
-static bool h264_starts_with_idr(const uint8_t *data, size_t size)
-{
-    for (size_t i = 0; i + 3 < size; i++) {
-        if (data[i] != 0 || data[i + 1] != 0 || data[i + 2] != 1) continue;
-        int type = data[i + 3] & 0x1f;
-        if (type == 5) return true;
-        if (type == 1) return false;
-        i += 2;
-    }
-    return false;
-}
 
 // Encodes one frame and writes it to the given outputs.
 static bool encode(int chn, const VIDEO_FRAME_INFO_S *frame, callback_chain_t *chain, bool h264)
@@ -395,13 +351,12 @@ static void *export_thread(void *arg)
 
     if (!load_rockit()) return NULL;
 
-    open_socket(&s_h264, cfg.h264_sock);
-    open_socket(&s_jpeg, cfg.jpeg_sock);
+    sock_open(&s_h264, cfg.h264_sock);
+    sock_open(&s_jpeg, cfg.jpeg_sock);
     s_jpeg.one_frame = true;
-    open_socket(&s_mjpeg, cfg.mjpeg_sock);
+    sock_open(&s_mjpeg, cfg.mjpeg_sock);
     s_mjpeg.allow_drops = true;
-    open_socket(&s_raw, cfg.raw_sock);
-    LOGI("serving %s %s %s %s", cfg.h264_sock, cfg.jpeg_sock, cfg.mjpeg_sock, cfg.raw_sock);
+    LOGI("serving %s %s %s", cfg.h264_sock, cfg.jpeg_sock, cfg.mjpeg_sock);
 
     const uint64_t frame_ms = 1000 / (uint64_t)cfg.fps;
     uint64_t next_frame = now_ms(), stats_time = now_ms();
@@ -409,17 +364,15 @@ static void *export_thread(void *arg)
     RK_S32 last_err = 0;
 
     for (;;) {
-        accept_clients(&s_h264);
-        accept_clients(&s_jpeg);
-        accept_clients(&s_mjpeg);
-        accept_clients(&s_raw);
+        sock_accept_clients(&s_h264, SOCK_SNDBUF_SIZE);
+        sock_accept_clients(&s_jpeg, SOCK_SNDBUF_SIZE);
+        sock_accept_clients(&s_mjpeg, SOCK_SNDBUF_SIZE);
 
         bool want_h264 = s_h264.num_clients > 0;
         bool want_jpeg = s_jpeg.num_clients > 0 || s_mjpeg.num_clients > 0;
-        bool want_raw = s_raw.num_clients > 0;
 
-        if (!want_h264 && !want_jpeg && !want_raw) {
-            sock_ctx_t *socks[] = { &s_h264, &s_jpeg, &s_mjpeg, &s_raw, NULL };
+        if (!want_h264 && !want_jpeg) {
+            sock_ctx_t *socks[] = { &s_h264, &s_jpeg, &s_mjpeg, NULL };
             sock_wait_fds(socks, 1000);
             continue;
         }
@@ -468,42 +421,12 @@ static void *export_thread(void *arg)
                 encode(cfg.venc_jpeg, &frame, chain, false);
             }
         }
-        if (want_raw) {
-            uint8_t *y = rk.mb_vir(frame.pMbBlk);
-            if (y) {
-                RK_U32 w = frame.u32Width, h = frame.u32Height;
-                RK_U32 vw = frame.u32VirWidth ? frame.u32VirWidth : w;
-                RK_U32 vh = frame.u32VirHeight ? frame.u32VirHeight : h;
-                if (vw == w && vh == h) {
-                    sock_write_cb(y, (size_t)w * h * 3 / 2, &s_raw);
-                } else {
-                    // Repack to tightly packed NV12.
-                    static uint8_t *packed;
-                    static size_t packed_size;
-                    size_t need = (size_t)w * h * 3 / 2;
-                    if (packed_size < need) {
-                        free(packed);
-                        packed = malloc(need);
-                        packed_size = packed ? need : 0;
-                    }
-                    if (packed) {
-                        for (RK_U32 row = 0; row < h; row++)
-                            memcpy(packed + (size_t)row * w, y + (size_t)row * vw, w);
-                        const uint8_t *uv = y + (size_t)vw * vh;
-                        for (RK_U32 row = 0; row < h / 2; row++)
-                            memcpy(packed + (size_t)w * h + (size_t)row * w, uv + (size_t)row * vw, w);
-                        sock_write_cb(packed, need, &s_raw);
-                    }
-                }
-            }
-        }
-
         rk.vi_release_frame(cfg.pipe, cfg.chn, &frame);
 
         if (t - stats_time >= 30000) {
-            LOGI("%.1f fps in, %u frame errors; clients: h264 %d, jpeg %d, mjpeg %d, raw %d",
+            LOGI("%.1f fps in, %u frame errors; clients: h264 %d, jpeg %d, mjpeg %d",
                  got / ((t - stats_time) / 1000.0), errors, s_h264.num_clients,
-                 s_jpeg.num_clients, s_mjpeg.num_clients, s_raw.num_clients);
+                 s_jpeg.num_clients, s_mjpeg.num_clients);
             got = errors = 0;
             stats_time = t;
         }

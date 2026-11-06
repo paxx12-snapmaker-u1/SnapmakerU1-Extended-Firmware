@@ -12,7 +12,7 @@ TARGET = librockit-export.so
 V4L2_MPP_DIR ?=
 
 CFLAGS = -Wall -Wextra -Wno-unused-function -O2 -fPIC
-CFLAGS += -I$(V4L2_MPP_DIR)/common -I$(V4L2_MPP_DIR)/common/capture-common
+CFLAGS += -I$(V4L2_MPP_DIR)/common -I$(V4L2_MPP_DIR)/common/capture-common -I$(V4L2_MPP_DIR)/common/stream-common
 LDFLAGS = -shared -lpthread -ldl
 
 SRCS = main.c
