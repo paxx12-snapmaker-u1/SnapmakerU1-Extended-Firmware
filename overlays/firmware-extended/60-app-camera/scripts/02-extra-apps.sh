@@ -15,14 +15,14 @@ set -eo pipefail
 echo ">> Setting up cross-compilation environment..."
 export CROSS_COMPILE=aarch64-linux-gnu-
 
-echo ">> Compiling v4l2-imposter..."
-make -C "$CUR_DIR/../apps/v4l2-imposter" install DESTDIR="$1"
+echo ">> Compiling rockit-export..."
+make -C "$CUR_DIR/../apps/rockit-export" install DESTDIR="$1" V4L2_MPP_DIR="$CACHE_DIR/v4l2-mpp"
 
 echo ">> Compiling fake-service..."
 make -C "$CUR_DIR/../apps/fake-service" install DESTDIR="$1"
 
 echo ">> Validate binaries..."
-stat "$1/usr/local/lib/libv4l2-imposter.so" >/dev/null
+stat "$1/usr/local/lib/librockit-export.so" >/dev/null
 stat "$1/usr/local/bin/fake-service" >/dev/null
 
 echo ">> Extra apps installation completed successfully."

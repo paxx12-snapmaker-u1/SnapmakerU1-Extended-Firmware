@@ -6,13 +6,21 @@ if [ "$1" = start ]; then
     EXTENDED_CFG="/home/lava/printer_data/config/extended/extended2.cfg"
     CAMERA_INTERNAL=$(/usr/local/bin/extended-config.py get "$EXTENDED_CFG" camera internal snapmaker)
     if [ "$CAMERA_INTERNAL" = paxx12 ]; then
-        echo "Starting lmd in v4l2-imposter mode!"
-        export LD_PRELOAD="/usr/local/lib/libv4l2-imposter.so${LD_PRELOAD:+:$LD_PRELOAD}"
-        export V4L2_IMPOSTER_SOCKET_PATH=/tmp/capture-mipi-raw.sock
-        export V4L2_IMPOSTER_DEVICE=/dev/video11
-        export V4L2_IMPOSTER_WIDTH=1920
-        export V4L2_IMPOSTER_HEIGHT=1080
-        export V4L2_IMPOSTER_FORMAT=nv12
+        # Stock 2.1.0 unisrv captures through librockit. It keeps owning the
+        # internal camera, and librockit-export.so encodes frames from its
+        # unused VI channel into the paxx12 camera sockets.
+        INTERNAL_RESOLUTION=$(/usr/local/bin/extended-config.py get "$EXTENDED_CFG" camera internal_resolution 1080p25)
+        case "$INTERNAL_RESOLUTION" in
+            1080p30) INTERNAL_FPS=30 ;;
+            1080p25) INTERNAL_FPS=25 ;;
+            1080p15) INTERNAL_FPS=15 ;;
+            1080p5)  INTERNAL_FPS=5 ;;
+            *)       INTERNAL_FPS=25 ;;
+        esac
+        echo "Starting lmd with the internal camera exported from unisrv!"
+        export LD_PRELOAD="/usr/local/lib/librockit-export.so${LD_PRELOAD:+:$LD_PRELOAD}"
+        export ROCKIT_EXPORT_FPS=$INTERNAL_FPS
+        unset INTERNAL_RESOLUTION INTERNAL_FPS
     elif [ "$CAMERA_INTERNAL" != snapmaker ]; then
         echo "Internal camera is not set to 'snapmaker', not starting lmd."
         exit 0
