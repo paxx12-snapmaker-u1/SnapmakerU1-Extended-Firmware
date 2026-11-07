@@ -1,0 +1,69 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-PackageHomePage: https://github.com/hanzov69/konnect
+# SPDX-FileCopyrightText: Copyright (c) 2026 @hanzov69
+
+KONNECT_DAEMON="/usr/local/sbin/konnectd"
+KONNECT_PIDFILE="/var/run/konnect.pid"
+
+# konnect is one of the remote-access providers in the Cloud Access
+# dropdown (see the S99cloud patch in this mod), so it is gated on the
+# same key the other providers are.
+EXTENDED_CFG="/home/lava/printer_data/config/extended/extended2.cfg"
+CLOUD_PROVIDER=$(/usr/local/bin/extended-config.py get "$EXTENDED_CFG" remote_access cloud none)
+
+start() {
+    if [ "$CLOUD_PROVIDER" != "konnect" ]; then
+        echo "konnect is not the selected remote-access provider, not starting."
+        exit 0
+    fi
+
+    if [ -f "$KONNECT_PIDFILE" ] && kill -0 "$(cat "$KONNECT_PIDFILE")" 2>/dev/null; then
+        echo "konnect already running"
+        return 0
+    fi
+
+    . /usr/local/sbin/limits-helper.sh
+    limits_enter konnect 80M
+
+    printf "Starting konnect: "
+    start-stop-daemon -S -b -m \
+        -p "$KONNECT_PIDFILE" \
+        -x "$KONNECT_DAEMON"
+
+    echo "OK"
+}
+
+stop() {
+    printf "Stopping konnect: "
+    if [ -f "$KONNECT_PIDFILE" ]; then
+        start-stop-daemon -K -p "$KONNECT_PIDFILE" -s TERM
+        rm -f "$KONNECT_PIDFILE"
+        echo "OK"
+    else
+        echo "not running"
+    fi
+}
+
+case "$1" in
+    start)
+        start
+        ;;
+
+    stop)
+        stop
+        ;;
+
+    restart|reload)
+        stop
+        sleep 1
+        start
+        ;;
+
+    *)
+        echo "Usage: $0 {start|stop|restart}"
+        exit 1
+        ;;
+esac
+
+exit $?

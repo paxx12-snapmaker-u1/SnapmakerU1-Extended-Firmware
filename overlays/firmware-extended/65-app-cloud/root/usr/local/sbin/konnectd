@@ -1,0 +1,64 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-PackageHomePage: https://github.com/hanzov69/konnect
+# SPDX-FileCopyrightText: Copyright (c) 2026 @hanzov69
+
+# Launcher for konnect on the Snapmaker U1, modeled on octoeverywhered.
+# konnect bridges the U1's Klipper/Moonraker to Prusa Connect — the
+# official cloud by default, or a custom Connect-compatible server
+# chosen in konnect's onboarding page (http://<printer>/konnect/).
+
+APP_DIR="/oem/apps/konnect"
+PYTHON="$APP_DIR/venv/bin/python3"
+KONNECT_CFG="/home/lava/printer_data/config/konnect.cfg"
+EXTENDED_CFG="/home/lava/printer_data/config/extended/extended2.cfg"
+CONFIG_TOOL="/usr/local/bin/extended-config.py"
+
+if [[ ! -e "$PYTHON" ]]; then
+    echo "Error: konnect is not installed. Run 'extended-pkg konnect download' first."
+    exit 1
+fi
+
+# konnect derives every default path from $HOME (printer_data config,
+# gcodes, logs); the service account on the U1 is lava.
+export HOME=/home/lava
+
+# Defaults: konnect's own (the official Prusa Connect; HT90 profile).
+# An operator may pin a custom Connect-compatible server in
+# extended2.cfg ([konnect] pcl_host/pcl_port/pcl_tls) — only then is
+# konnect.cfg seeded for it, with the XL toolchanger profile (the U1 is
+# a 4-head toolchanger and custom servers profile Buddy device models).
+# Normally the server choice is made in konnect's onboarding page and
+# no config file is needed at all. Seeding is a heredoc because this
+# image's extended-config.py refuses to create a missing file.
+PCL_HOST=$("$CONFIG_TOOL" get "$EXTENDED_CFG" konnect pcl_host "")
+PCL_PORT=$("$CONFIG_TOOL" get "$EXTENDED_CFG" konnect pcl_port "8080")
+PCL_TLS=$("$CONFIG_TOOL" get "$EXTENDED_CFG" konnect pcl_tls "false")
+if [[ -n "$PCL_HOST" ]]; then
+    if [[ ! -f "$KONNECT_CFG" ]]; then
+        cat > "$KONNECT_CFG" <<EOF
+[konnect]
+backend = pcl
+printer_type = XL
+pcl_host = $PCL_HOST
+pcl_port = $PCL_PORT
+pcl_tls = $PCL_TLS
+EOF
+    else
+        # Existing config: keep the operator's file as the source of
+        # truth but follow a server change made in extended2.cfg.
+        "$CONFIG_TOOL" add "$KONNECT_CFG" konnect pcl_host "$PCL_HOST"
+        "$CONFIG_TOOL" add "$KONNECT_CFG" konnect pcl_port "$PCL_PORT"
+        "$CONFIG_TOOL" add "$KONNECT_CFG" konnect pcl_tls "$PCL_TLS"
+    fi
+fi
+
+# Tune malloc for embedded systems, so Python doesn't eat as much memory.
+export MALLOC_TRIM_THRESHOLD_=65536
+export MALLOC_ARENA_MAX=2
+
+# The env var rather than --config: it is honored by Config's default
+# search path and predates the --config flag, so it works on any
+# installed konnect version.
+export KONNECT_CONFIG="$KONNECT_CFG"
+exec "$PYTHON" -m konnect
