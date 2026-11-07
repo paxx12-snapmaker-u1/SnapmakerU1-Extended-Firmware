@@ -72,6 +72,10 @@ For the selected toolhead, the override:
 
 - repoints `[mcu eN]`'s `serial` at a dummy MCU simulator process instead
   of the (missing) physical USB serial device
+- repoints `[park_detector extruderN]`'s dock sensor `pin` at the simulator,
+  so the toolhead reads as parked even when it has been physically removed
+  from the printer (avoids the "Toolhead Swapping Anomaly ... detached"
+  error)
 - raises the extruder `max_temp` to `999`
 - sets the extruder `max_power` to `0.000001` because Klipper rejects `0`
 - sets the matching nozzle cooling fan `heater_temp` to `999`
