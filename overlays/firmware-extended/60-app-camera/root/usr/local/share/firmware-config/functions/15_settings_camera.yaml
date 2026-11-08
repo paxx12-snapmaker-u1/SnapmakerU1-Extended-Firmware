@@ -105,6 +105,36 @@ settings:
                 /usr/sbin/reboot
         default: 1080p25
 
+      camera-internal-exposure:
+        label: Internal Camera Exposure
+        description: Use Snapmaker's auto exposure, or keep the exposure and gain set in the camera controls.
+        if_cmd: test "$(/usr/local/bin/extended-config.py get /home/lava/printer_data/config/extended/extended2.cfg camera internal paxx12)" = "paxx12"
+        get_cmd:
+          - /usr/local/bin/extended-config.py
+          - get
+          - /home/lava/printer_data/config/extended/extended2.cfg
+          - camera
+          - internal_exposure
+          - auto
+        options:
+          auto:
+            label: Auto
+            cmd:
+              - bash
+              - -xc
+              - |
+                /usr/local/bin/extended-config.py add /home/lava/printer_data/config/extended/extended2.cfg camera internal_exposure auto &&
+                /usr/sbin/reboot
+          manual:
+            label: Manual
+            cmd:
+              - bash
+              - -xc
+              - |
+                /usr/local/bin/extended-config.py add /home/lava/printer_data/config/extended/extended2.cfg camera internal_exposure manual &&
+                /usr/sbin/reboot
+        default: auto
+
       camera-usb:
         label: USB Camera
         description: Enable streaming from an attached USB camera.

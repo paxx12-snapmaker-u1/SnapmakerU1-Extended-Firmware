@@ -52,6 +52,14 @@ Camera settings are automatically saved across reboots:
 
 To reset camera settings to defaults, delete the corresponding JSON file and reboot the printer.
 
+### Internal Camera Exposure
+
+The internal camera uses Snapmaker's auto exposure by default, which overrides `exposure` and `analogue_gain` set in the camera controls. To set them yourself, change **Internal Camera Exposure** to **Manual** in the [firmware-config](firmware_config.md) web interface, or set it in `/home/lava/printer_data/config/extended/extended2.cfg` and reboot the printer:
+```ini
+[camera]
+internal_exposure: manual
+```
+
 ## Configuration
 
 ### Internal Camera Selection
