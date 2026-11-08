@@ -1,0 +1,55 @@
+diff -uNr rootfs.original/etc/init.d/S01aoverlayfs rootfs/etc/init.d/S01aoverlayfs
+--- rootfs.original/etc/init.d/S01aoverlayfs	2025-12-30 05:40:32.000000000 +0100
++++ rootfs/etc/init.d/S01aoverlayfs	2026-01-30 12:00:00.000000000 +0100
+@@ -5,15 +5,49 @@
+ # Description:    Mount Overlayfs
+ ### END INIT INFO
+ 
++path_to_clean() {
++    local root="$1"
++    local config="$2"
++
++    if [ ! -f "$root/$config" ]; then
++        return 1
++    fi
++
++    echo "$root"
++    echo "! -path '$root/$config'"
++    echo "! -path '$root/var/lib/dhcpcd/*'"
++    echo "! -path '$root/etc/dropbear/*'"
++
++    while read LINE; do
++        case "$LINE" in
++            \#*|"")
++                ;;
++
++            *)
++                LINE="${LINE#./}"
++                LINE="${LINE#/}"
++                LINE="${LINE%/}"
++                echo "! -path '$root/$LINE'"
++                echo "! -path '$root/$LINE/*'"
++                ;;
++        esac
++    done < "$root/$config"
++}
++
+ case "$1" in
+     start|"")
+         if [ ! -d /system ];then
+             mkdir -p /system
+         fi
+         # clear the overlayfs
+         if [ ! -f /oem/.debug ]; then
+-            echo "reset overlayfs"
+-            rm -rf /oem/overlay/*
++            if FILES=$(path_to_clean /oem/overlay/upper /etc/overlayfs.conf); then
++                find $FILES ! -type d | xargs -r rm -v --
++                find $FILES -type d | tac | xargs -r rmdir -v --
++            else
++                echo "reset overlayfs"
++                rm -rf /oem/overlay/*
++            fi
+         fi
+ 
+         if [ ! -d /oem/overlay/upper ];then
