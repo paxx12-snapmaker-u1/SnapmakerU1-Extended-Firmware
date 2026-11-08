@@ -159,6 +159,12 @@ Two independent cache layers, both on Cloudflare's edge Cache API:
   both resolve the same release — share one upstream GitHub API call
   instead of doubling it, even though their outer response caches (above)
   are keyed differently.
+- `githubApi()` also keeps each successful GitHub API response under a
+  separate `?stale=1` key for `STALE_SECONDS` (1 day), and serves it when a
+  fresh call fails (any non-`404` error status, or a network error).
+  Unauthenticated calls share GitHub's 60 req/hour per-IP limit with every
+  other tenant on Cloudflare's egress IPs, so `403`/`429`s happen even at
+  low traffic; a day-old release answer beats an error on the device.
 
 | Env var        | Required | Purpose                                                                    |
 |----------------|----------|-------------------------------------------------------------------------------|
