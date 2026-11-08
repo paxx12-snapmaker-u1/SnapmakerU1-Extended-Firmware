@@ -1,6 +1,11 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # SPDX-PackageHomePage: https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware
-# SPDX-FileCopyrightText: Copyright (c) 2026 @paxx12
+# SPDX-FileCopyrightText: Copyright (c) 2026 @paxx12, @BICHENG
+
+# TMC Reduced Current lowers the X/Y motor current to 1.0A. It can be combined
+# with Max Speed (Balanced), whose tool-change speeds stay within the margin
+# that 1.0A leaves. Max Speed (Aggressive) is refused instead, because its
+# tool-change speeds are tuned for 1.2A and are not validated at 1.0A.
 
 settings:
   tweaks:
@@ -16,15 +21,23 @@ settings:
         options:
           enabled:
             label: Enabled
-            confirm: "Enable TMC Reduced Current? This lowers X/Y motor current from 1.2A to 1.0A for quieter operation and less heat. Monitor motor temperatures and print quality after enabling."
+            confirm: |-
+              Enable TMC Reduced Current?
+              This lowers X/Y motor current from 1.2A to 1.0A for quieter operation and less heat.
+              If Max Speed (Balanced) is enabled, both settings apply together: X/Y current stays at 1.0A while motion limits are raised. Reduced current can skip steps under heavy load or fast movements, so confirm that you accept this combination.
+              Monitor motor temperatures and print quality after enabling.
             cmd:
               - bash
               - -xc
               - |
-                if test -f /oem/printer_data/config/extended/klipper/10_max_speed.cfg; then
-                  echo "ERROR: Max Speed is enabled. Lowering X/Y current to 1.0A is untested at its raised speed limits."
-                  echo "Disable Max Speed first, then enable TMC Reduced Current."
+                CFG=/oem/printer_data/config/extended/klipper/10_max_speed.cfg
+                if test -f "$CFG" && grep -q '^# tier: aggressive' "$CFG"; then
+                  echo "ERROR: Max Speed (Aggressive) is enabled. Its tool-change speeds are tuned for 1.2A and are not validated at 1.0A."
+                  echo "Disable Max Speed, or switch to the Balanced tier, before enabling TMC Reduced Current."
                   exit 1
+                fi
+                if test -f "$CFG"; then
+                  echo "Max Speed (Balanced) stays enabled: X/Y current will be 1.0A with raised motion limits."
                 fi
                 cp -v /usr/local/share/firmware-config/tweaks/klipper/tmc_current.cfg /oem/printer_data/config/extended/klipper/tmc_current.cfg &&
                 echo "TMC Reduced Current enabled. Restarting Klipper..." &&
