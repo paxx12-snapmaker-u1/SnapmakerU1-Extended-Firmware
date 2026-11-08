@@ -1,0 +1,46 @@
+Point `wpa-conf` at persistent storage so joined networks survive a reboot.
+
+`if-up.d/wpasupplicant` passes this path to `wpa_supplicant` as `-c`, and that
+is the file `SAVE_CONFIG` rewrites. `wpa_config_write()` does not write it in
+place: it writes `<path>.tmp` and `rename()`s that over `<path>`.
+
+The stock path is `/var/run/wpa_supplicant/wpa_supplicant.conf`, which
+`wpa-conf.sh` symlinks to `/etc/wpa_supplicant.conf`. The rename replaces the
+symlink itself rather than following it, so the save landed on `/run` — tmpfs,
+per `/etc/fstab` — and never reached `/etc`, let alone anywhere persistent.
+Every network joined through `SAVE_CONFIG` was lost on the next boot.
+
+Naming the persistent file directly sidesteps both problems: there is no
+symlink for the rename to clobber, and `<path>.tmp` lands on `/oem` beside its
+target, so the rename stays within one filesystem.
+
+`do_start()` in `if-up.d/wpasupplicant` refuses to start `wpa_supplicant` at
+all when this file is missing ("cannot read contents of ..."), which would
+leave the printer with no WiFi and no obvious cause - reachable on a fresh
+printer, after a `full-recover`, or if the stock GUI is midway through
+rewriting its copy. `pre-up` seeds it from the pristine `/etc` copy before
+`wpa_supplicant` ever looks for it, guarded with `cp -n` so a real saved
+network is never clobbered. `/oem` is mounted by `S00mountall.sh` from
+`/etc/fstab`, long before `S40network` runs this.
+
+Each seeding step is `|| true`: `ifup` treats a failing `pre-up` as fatal and
+refuses to bring up the interface at all, and none of these are conditions
+worth failing WiFi over - `/etc/wpa_supplicant.conf` missing or `/oem` not
+yet mounted just means there is nothing to seed from (or nowhere to put it)
+yet, and a `chown` failing changes nothing that stops `wpa_supplicant` from
+reading the file.
+
+This is the same file the stock GUI keeps its own copy in, so both touchscreen
+UIs continue to see the same networks.
+
+--- a/etc/network/interfaces.d/wlan0
++++ b/etc/network/interfaces.d/wlan0
+@@ -1,4 +1,7 @@
+ iface wlan0 inet manual
++	pre-up mkdir -p /oem/printer_data/gui || true
++	pre-up cp -vn /etc/wpa_supplicant.conf /oem/printer_data/gui/wpa_supplicant.conf || true
++	pre-up chown lava:lava /oem/printer_data/gui/wpa_supplicant.conf || true
+ 	dhcp-up /sbin/dhcpcd
+ 	dhcp-down /sbin/dhcpcd -k
+-	wpa-conf /var/run/wpa_supplicant/wpa_supplicant.conf
++	wpa-conf /oem/printer_data/gui/wpa_supplicant.conf

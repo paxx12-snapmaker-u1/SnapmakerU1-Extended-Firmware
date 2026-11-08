@@ -1,0 +1,52 @@
+Remove the stock `wpa-conf.sh`.
+
+It exists to link `$IF_WPA_CONF` to a writable copy of the config, but
+`interfaces.d/wlan0` now points `wpa-conf` straight at a file on `/oem`, so
+`wpa_supplicant` reads and rewrites persistent storage directly and there is
+nothing left to link.
+
+It must not run in that arrangement: it `rm -rf`s `$IF_WPA_CONF` on every `ifup`
+before re-linking, which would delete the saved networks on every boot, and the
+symlink it creates is what defeated `SAVE_CONFIG` to begin with.
+
+Deleted rather than shadowed by a same-named overlay file so a future stock
+change to this script fails the build loudly instead of being silently
+discarded.
+
+Seeding `$IF_WPA_CONF` from the pristine `/etc` copy moves to `pre-up` on
+`interfaces.d/wlan0` instead - see `02-wpa-conf-persistent-path.patch`.
+
+--- a/etc/network/if-pre-up.d/wpa-conf.sh
++++ /dev/null
+@@ -1,31 +0,0 @@
+-#!/bin/sh
+-
+-# This file is executed by ifupdown in pre-up, post-up, pre-down and
+-# post-down phases of network interface configuration.
+-
+-# run this script only for interfaces which have wpa-conf option
+-[ -z "$IF_WPA_CONF" ] && exit 0
+-
+-# Check for original conf
+-WPA_CONF="${WPA_CONF:-/etc/wpa_supplicant.conf}"
+-[ -r "$WPA_CONF" ] || exit 0
+-
+-mkdir -p "$(dirname "$IF_WPA_CONF")" || exit 0
+-rm -rf "$IF_WPA_CONF"
+-
+-# The original conf is writable
+-if touch "$WPA_CONF" 2>/dev/null; then
+-	ln -sf "$WPA_CONF" "$IF_WPA_CONF"
+-	exit 0
+-fi
+-
+-# Prefer using /userdata to store new conf
+-if [ -d /userdata ] && touch /userdata 2>/dev/null; then
+-	mkdir -p /userdata/cfg
+-	cp -p "$WPA_CONF" /userdata/cfg/wpa_config.conf
+-	ln -sf /userdata/cfg/wpa_config.conf "$IF_WPA_CONF"
+-	exit 0
+-fi
+-
+-cp -p "$WPA_CONF" "$IF_WPA_CONF"
+-exit 0
