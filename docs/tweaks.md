@@ -4,9 +4,9 @@ title: Klipper Tweaks
 
 # Klipper Tweaks
 
-Advanced experimental tweaks for Klipper stepper motor driver configuration. These settings can **only** be configured via the [Firmware Configuration](firmware_config.md) web interface under **Settings → Tweaks**.
+Configurable Klipper motion, motor-current, and fan-control tweaks. These settings can **only** be configured via the [Firmware Configuration](firmware_config.md) web interface under **Settings → Tweaks**.
 
-> **Warning**: These are experimental features that modify low-level stepper driver parameters. Use with caution and monitor your printer carefully after enabling.
+> **Note**: `Max Speed` and `TMC Reduced Current` change motion and motor-current settings. `Custom` is the fan profile the firmware ships, and its curves never cool less than the stock fans do at any temperature.
 
 ## TMC AutoTune
 
@@ -99,11 +99,56 @@ is short, so a slightly slower dock approach is expected, not a regression.
 - Start with `Balanced` and a small test print, and watch the first tool changes
 - Disable if you see dock alignment problems or layer shifts
 
-**Note:** This tweak cannot be combined with
-[TMC Reduced Current](#tmc-reduced-current) — running the X/Y motors at 1.0A with
-these raised speed limits is untested. Firmware Config refuses that combination
-and tells you which tweak to disable first. [TMC AutoTune](#tmc-autotune) can be
-used alongside Max Speed; the two no longer change any setting in common.
+**Note:** This tweak can be combined with
+[TMC Reduced Current](#tmc-reduced-current). Firmware Config asks for an
+explicit confirmation when either setting is enabled. Together they run X/Y
+motors at 1.0A with raised speed limits. [TMC AutoTune](#tmc-autotune) can
+also be used alongside Max Speed; the two do not change any setting in common.
+
+**Configuration:**
+This feature can **only** be configured via Firmware Configuration web interface. Manual configuration is not supported.
+
+## Fan Curves
+
+Selects cooling curves for the power fan and all four nozzle fans.
+
+**Options:**
+
+- `Stock` - the printer's own stepped fan table. It has no file, the editor shows it read only, and it is what the printer runs when no curve file is active.
+- `Custom` - the profile the firmware ships. It is the stock cooling drawn as a curve: its nozzle curve passes through every step of the stock nozzle table, and its power curve holds the stock 60% from `45°C` on, so the shipped profile never cools less than the printer's own fans do. Between two steps the curve is a line, so it runs a little above the stock step there, never below it.
+- Every other profile is a curve of your own. How much it cools the hotend is on your risk.
+
+Every profile except `Stock` is a file named `fan_curves_<name>.json` in `/oem/printer_data/config/extended/fan-curves-profiles/`. That directory is the only place profiles are looked for, so a file you add, rename or remove is the one the editor and the driver see. A profile is a configuration like any other: it can be drawn, renamed and removed, and the editor writes the shipped version back with **Restore the shipped profile**.
+
+A printer that has no profile of its own gets the profile the firmware ships: when the printer boots and the profile directory holds no profile file, the shipped one is put in as `Custom`. The printer only does that while the directory is empty, so a profile of your own is never overwritten. Remove your last profile and the shipped one takes the empty place at the next boot.
+
+The duty between two points of a curve is the line between them, so the fan follows the temperature instead of jumping from step to step. The stock tables stay stepped tables, the curves do not. The profile the firmware ships puts a point at every step of the stock nozzle table, so its duty at a step is the stock duty and it only runs above it in between.
+
+The nozzle curve follows the effective toolhead temperature, the same as the stock table, so a print that sets 240°C selects the 240°C speed right away. The power fan follows target temperatures only, the same way the stock `temp_speed_table` does, so a toolhead with a faulty thermistor cannot push the power fan up. Every curve profile carries its own hysteresis in its file, and the profile the firmware ships uses `5°C`. Ordinary duty stays at or below 100%, probing still locks the nozzle fans to their `probe_speed`, and the cavity temperature guard still forces the fans to 100% when the chamber leaves its guard range.
+
+**Drawing a curve:**
+
+The setting is available under **Settings → Tweaks → Fan Curves**. The curve editor belongs to that setting: it sits under the dropdown, draws the profile that is running, and is the only place where a curve is drawn.
+
+- Click empty space in the chart to add a point, drag a point to move it, remove it with **Delete point** or the right mouse button.
+- Click a point to select it, then edit its temperature and duty in the fields under the chart.
+- A press takes hold of the point that is nearest to it, so a point is easy to grab even when the press lands beside the dot.
+- The profile menu creates a new profile, renames one, deletes one, and puts the shipped profile back.
+- **Save** writes the curve into the profile file. **Apply** makes that profile the running one and restarts Klipper.
+
+The editor draws the selected curve next to the stock curve. A profile that is running can be deleted: the printer goes back to the stock curves first, so the running curve always has a file behind it.
+
+Applying an option atomically replaces `/oem/printer_data/config/extended/fan-curves-active.json` and restarts Klipper. When the printer is upgraded from the older editor, the curve it kept in `fan-curves.json` is imported as a profile file named `custom`, so nothing you drew is lost. `Stock` names the printer's own stepped tables in the active file and leaves the original printer configuration in control. A legacy `20_fan_curves.cfg` is renamed before Klipper starts so an older install cannot be loaded accidentally.
+
+**Risks:**
+
+- A profile of your own is your own risk. Different materials need different cooling, so test it before a long print
+- The driver runs the curve as it is written. Below the first point the fan is off, and a curve that asks for less gets less, so a profile of your own can leave the nozzle fan below the duty the stock table would run. Apart from the heavy load rule, probing and the cavity temperature guard, the curve decides the duty
+- The power fan heavy-load rule is part of the profile: it reaches 100% when at least three toolheads heat up and one of them targets more than `260°C`
+
+**Recommendation:**
+- Start from the profile the firmware ships: it never cools less than the stock tables do. Use `Stock` when you want the printer's own stepped tables, and a curve of your own when you want it quieter
+- Test a profile of your own with a short print before a long one
 
 **Configuration:**
 This feature can **only** be configured via Firmware Configuration web interface. Manual configuration is not supported.
@@ -157,6 +202,8 @@ These tweaks work by adding or removing configuration files from `/oem/printer_d
 - `klipper/tmc_autotune.cfg` - TMC AutoTune parameters
 - `klipper/tmc_current.cfg` - Reduced current settings
 - `klipper/10_max_speed.cfg` - Max Speed motion limits and tool change speeds (either tier installs to this one file)
+- `fan-curves-active.json` - Selected profile and curves read by the patched fan driver
+- `fan-curves-profiles/` - The profile files, one per profile, that the editor draws and the driver reads
 - `moonraker/object_processing.cfg` - Moonraker object processing settings
 
-These files are automatically included by the main printer configuration if present. Manual editing of these files is not recommended as they will be overwritten by the Firmware Configuration interface.
+The JSON files are read by the patched fan driver; the remaining files are included by the main printer configuration when present. Manual editing is not recommended while the Firmware Configuration interface is running.
