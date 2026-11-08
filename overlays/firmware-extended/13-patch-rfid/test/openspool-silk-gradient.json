@@ -1,0 +1,17 @@
+{
+  "protocol": "openspool",
+  "version": "1.0",
+  "brand": "Generic",
+  "type": "PLA",
+  "subtype": "Silk",
+  "color_hex": "FF0000",
+  "additional_color_hexes": ["0000FF"],
+  "color_type": 0,
+  "alpha": "FF",
+  "min_temp": 190,
+  "max_temp": 230,
+  "bed_min_temp": 45,
+  "bed_max_temp": 65,
+  "weight": 1000,
+  "diameter": 1.75
+}
