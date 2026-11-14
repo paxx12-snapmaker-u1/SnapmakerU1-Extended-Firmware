@@ -57,7 +57,7 @@ def ndef_parse(data_buf):
 
         cc = data_io.read(4)
         if len(cc) < 4 or cc[0] != 0xE1:
-            return NDEF_PARAMETER_ERR, []
+            return NDEF_PARAMETER_ERR, [], card_uid
 
         records = []
 
