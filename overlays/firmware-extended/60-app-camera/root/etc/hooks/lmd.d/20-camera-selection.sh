@@ -21,8 +21,12 @@ if [ "$1" = start ]; then
         export LD_PRELOAD="/usr/local/lib/librockit-export.so${LD_PRELOAD:+:$LD_PRELOAD}"
         export ROCKIT_EXPORT_FPS=$INTERNAL_FPS
         unset INTERNAL_RESOLUTION INTERNAL_FPS
-    elif [ "$CAMERA_INTERNAL" != snapmaker ]; then
+    elif [ "$CAMERA_INTERNAL" = none ] || [ "$CAMERA_INTERNAL" = paxx12-ai ]; then
         echo "Internal camera is not set to 'snapmaker', not starting lmd."
         exit 0
+    elif [ "$CAMERA_INTERNAL" != snapmaker ]; then
+        # A typo or an unreadable config must not leave the printer without lmd.
+        echo "Unknown internal camera setting '$CAMERA_INTERNAL', starting lmd with the stock camera."
+        logger -p user.warning -t "lmd[$$]" -- "Unknown internal camera setting '$CAMERA_INTERNAL', using 'snapmaker'"
     fi
 fi
