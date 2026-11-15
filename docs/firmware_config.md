@@ -47,6 +47,7 @@ Toggle settings directly from the web interface:
 | Require Login (Fluidd only) | Enabled, Disabled | Require login for Moonraker API access |
 | Internal Camera | Paxx12, Snapmaker, Disabled | Select camera service |
 | Internal Camera Resolution | 1080p30, 1080p25, 1080p15, 1080p5 | Framerate for the internal camera (paxx12 service only; resolution is fixed at 1080p for AI detection) |
+| Internal Camera Exposure | Auto, Manual | Snapmaker's auto exposure, or exposure and gain from the camera controls (paxx12 service only) |
 | Camera RTSP Stream | Enabled, Disabled | Enable RTSP streaming |
 | USB Camera | Enabled, Disabled | Enable USB camera support |
 | USB Camera Resolution | 1080p30, 1080p25, 1080p5, 720p30, 720p25, 720p5, 360p30, 360p25, 360p5 | Resolution and framerate for the USB camera (paxx12 service only) |
@@ -155,6 +156,10 @@ Note: Remote screen requires additional Moonraker configuration. See [Remote Scr
 **internal_resolution** - Internal camera framerate (paxx12 service only; resolution is fixed at 1080p for AI detection)
 - `1080p30`, `1080p25` (default), `1080p15`, `1080p5`
 
+**internal_exposure** - Internal camera exposure (paxx12 service only)
+- `auto` (default) - Snapmaker's auto exposure; `exposure` and `analogue_gain` set in the camera controls are overridden
+- `manual` - Exposure and gain stay at the values set in the camera controls
+
 **usb** - USB camera service selection
 - `paxx12` - Enable USB camera with paxx12 service at `http://<printer-ip>/webcam2/`
 - `none` (default) - USB camera disabled
@@ -222,6 +227,8 @@ remote_screen: false
 internal: paxx12
 # Internal (Case) camera resolution/framerate preset, resolution is always 1080p: 1080p30, 1080p25, 1080p15, 1080p5
 # internal_resolution: 1080p25
+# Internal (Case) camera exposure: auto (Snapmaker's auto exposure), manual (exposure and gain from the camera controls)
+# internal_exposure: auto
 # External (USB) camera options: paxx12, none
 usb: none
 # External (USB) camera resolution/framerate preset: 1080p30, 1080p25, 1080p5, 720p30, 720p25, 720p5, 360p30, 360p25, 360p5
