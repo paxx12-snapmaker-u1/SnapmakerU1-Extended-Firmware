@@ -1,0 +1,37 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-PackageHomePage: https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware
+# SPDX-FileCopyrightText: Copyright (c) 2026 @paxx12, @Simon-CR
+
+settings:
+  print_preferences:
+    items:
+      fast_nozzle_cooldown:
+        label: Fast Nozzle Cooldown
+        description: Accelerates pre-print nozzle cooldowns using the side auxiliary blower (cavity_fan) and eliminates the redundant 220°C -> 130°C -> 170°C -> 130°C reheat cycle during PRINT_START by rough-homing and wiping on a single monotonic cooldown pass.
+        help_url: http://snapmakeru1-extended-firmware.pages.dev/tweaks#fast-nozzle-cooldown
+        get_cmd:
+          - bash
+          - -c
+          - test -f /oem/printer_data/config/extended/klipper/fast_nozzle_cooldown.cfg && echo "enabled" || echo "disabled"
+        options:
+          enabled:
+            label: Enabled
+            confirm: "Enable Fast Nozzle Cooldown? During pre-print nozzle cooldowns, the toolhead cools in front of the left auxiliary blower (X5 Y140), performs rough Z-homing and fine nozzle wiping on a single pass through ~168°C without reheating, and stops blowing 1.5°C before the final probing temperature."
+            cmd:
+              - bash
+              - -xc
+              - |
+                mkdir -p /oem/printer_data/config/extended/klipper &&
+                ln -sf /usr/local/share/firmware-config/tweaks/klipper/fast_nozzle_cooldown.cfg /oem/printer_data/config/extended/klipper/fast_nozzle_cooldown.cfg &&
+                echo "Fast nozzle cooldown enabled. Restarting Klipper..." &&
+                /etc/init.d/S60klipper restart
+          disabled:
+            label: Disabled
+            cmd:
+              - bash
+              - -xc
+              - |
+                rm -f /oem/printer_data/config/extended/klipper/fast_nozzle_cooldown.cfg &&
+                echo "Fast nozzle cooldown disabled. Restarting Klipper..." &&
+                /etc/init.d/S60klipper restart
+        default: disabled

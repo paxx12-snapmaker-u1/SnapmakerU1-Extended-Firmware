@@ -140,6 +140,18 @@ Enables object processing in Moonraker's file manager to support adaptive mesh f
 **Configuration:**
 This feature can **only** be configured via Firmware Configuration web interface. Manual configuration is not supported.
 
+## Fast Nozzle Cooldown
+
+Speeds up pre-print nozzle cooling using the left side blower (`cavity_fan` at `X5 Y140`) and eliminates the redundant `220°C -> 130°C -> 170°C -> 130°C` cool-reheat-cool cycle during `PRINT_START`.
+
+**What it does (using PLA at `220°C` as an example):**
+- **Step 1 — Quick Initial Drop (`220°C -> 188°C`)**: Right after the `220°C` purge, sets the heater target to `168°C` and moves the toolhead to the left side blower (`X5 Y140`) with fans at `100%` until the nozzle reaches `188°C`. Instead of standing still waiting all the way down to `130°C`, it immediately starts the rough wipe, rough Z-home, and build-plate check while the nozzle continues cooling down to `168°C` (holding a `168°C` floor if the bed starts at the bottom of the printer)
+- **Step 2 — Scrub on the Way Down (`~168°C -> 145°C`)**: When the start sequence asks for `170°C` to scrub the nozzle, the nozzle is already at `~168°C`, so the reheat wait is skipped (`0s`). It sets the heater target directly to `130°C` and runs both nozzle-scrubbing stages while the fans continue cooling the nozzle down toward `~145°C`
+- **Step 3 — Final Settle (`~145°C -> 130°C`)**: Moves back to the left side blower at `100%` fan speed for the remaining `~15°C` drop toward `130°C`, then stops both fans `1.5°C` before the target (`131.5°C`) so the temperature glides smoothly into `130.0°C` during the return move without undershooting
+
+**Configuration:**
+This feature can be toggled via the Firmware Configuration web interface under **Settings → Print Preferences → Fast Nozzle Cooldown**.
+
 ## How to Configure
 
 1. Open the printer's web interface (Fluidd or Mainsail)
@@ -157,6 +169,7 @@ These tweaks work by adding or removing configuration files from `/oem/printer_d
 - `klipper/tmc_autotune.cfg` - TMC AutoTune parameters
 - `klipper/tmc_current.cfg` - Reduced current settings
 - `klipper/10_max_speed.cfg` - Max Speed motion limits and tool change speeds (either tier installs to this one file)
+- `klipper/fast_nozzle_cooldown.cfg` - Fast Nozzle Cooldown macro (`M109` wrapper)
 - `moonraker/object_processing.cfg` - Moonraker object processing settings
 
 These files are automatically included by the main printer configuration if present. Manual editing of these files is not recommended as they will be overwritten by the Firmware Configuration interface.
