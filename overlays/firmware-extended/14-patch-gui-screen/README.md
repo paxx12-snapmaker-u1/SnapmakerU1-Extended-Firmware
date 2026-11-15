@@ -28,3 +28,7 @@ This permanently leaves the physical LCD black (`-EBUSY`) until a full system re
 1. `libgui-screen-fix.so` (loaded via `/etc/hooks/lmd.d/40-gui-screen-fix.sh` only when stock `/usr/bin/gui` is active) intercepts `fopen("/sys/class/drm/card0-DPI-1/status", "w")` and redirects it to `/sys/class/backlight/backlight/bl_power`, translating `"off"` -> `"1"` (backlight off) and `"on"` -> `"0"` (backlight on) — matching the behavior of `/usr/bin/gui`'s own `system_module_set_screen_backlight_on_off`.
 2. `/etc/hooks/lmd.d/40-gui-screen-fix.sh` also disables `drm_kms_helper` connector polling (`echo N > /sys/module/drm_kms_helper/parameters/poll`) on the fixed internal DPI panel.
 3. Because the VOP2 CRTC (`vp0`) and `/dev/fb0` are never torn down during screen sleep, the physical LCD wakes instantaneously without risking an IOMMU `-EBUSY` lockup, and Remote Screen (`fb-http.py`) remains uninterrupted whether the physical backlight is on or off.
+
+## Upstream Bug Report
+
+This issue and its source-level C fix have been reported upstream to Snapmaker at [Snapmaker/u1-klipper#29](https://github.com/Snapmaker/u1-klipper/issues/29). Once Snapmaker updates `/usr/bin/gui` in a future stock firmware release to call `system_module_set_screen_backlight_on_off()` instead of `system_module_force_screen_on_off()`, this overlay patch can be removed.
