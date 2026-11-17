@@ -1,9 +1,11 @@
 --- a/moonraker/components/spoollink.py
 +++ b/moonraker/components/spoollink.py
-@@ -48,6 +48,39 @@
+@@ -59,6 +59,39 @@
+     if variant:
+         return variant
      return "Basic" if vendor.lower() == "snapmaker" else ""
- 
- 
++
++
 +def _parse_pa_matrix(raw: Any) -> Dict[str, float]:
 +    if not raw:
 +        return {}
@@ -35,28 +37,26 @@
 +        except (ValueError, TypeError):
 +            pass
 +    return {}
-+
-+
+ 
+ 
  class SpoolLink:
-     def __init__(self, config: ConfigHelper) -> None:
-         self.server = config.get_server()
-@@ -68,6 +101,7 @@
-         self._active_spool_id: Optional[int] = None
+@@ -86,6 +119,7 @@
  
          self.server.register_remote_method(RESOLVE_METHOD, self._resolve_spool)
+         self.server.register_remote_method(UNLINK_METHOD, self._unlink_card)
 +        self.server.register_remote_method("spoollink_save_pa", self._handle_remote_save_pa)
          self.server.register_event_handler(
              "server:klippy_ready", self._handle_klippy_ready)
          self.server.register_event_handler(
-@@ -284,6 +318,7 @@
-     async def _ensure_fields(self) -> None:
-         await self._ensure_field("spool", "card_uids", "Card UIDs")
+@@ -336,6 +370,7 @@
+         if not self._tag_api:
+             await self._ensure_field("spool", "card_uids", "Card UIDs")
          await self._ensure_field("filament", "variant", "Variant")
 +        await self._ensure_field("spool", "pressure_advance_matrix", "Pressure Advance Matrix")
  
      async def _ensure_field(self, entity_type: str, key: str, name: str) -> None:
          base = f"{self._spoolman_url}/api/v1/field/{entity_type}"
-@@ -316,6 +351,47 @@
+@@ -368,6 +403,47 @@
                  "[spoollink] custom fields check failed (%s/%s): %s",
                  entity_type, key, e)
  
@@ -88,7 +88,7 @@
 +        if resp.status_code == 200:
 +            logging.info("[spoollink] saved pressure_advance %.6f (%s) to spool #%d", pa_value, nozzle_key, spool_id)
 +            return resp.json()
-+        raise RuntimeError(f"HTTP {resp.status_code}: {resp.text}")
++        raise RuntimeError(f"HTTP {resp.status_code}: {resp.text()}")
 +
 +    async def _handle_remote_save_pa(self, spool_id: Any = None, nozzle_key: Any = None, pa_value: Any = None, **kwargs) -> None:
 +        try:
@@ -104,7 +104,7 @@
      async def _spoolman_get_by_id(self, spool_id: int) -> Optional[dict]:
          resp = await self.http_client.get(
              f"{self._spoolman_url}/api/v1/spool/{spool_id}", enable_cache=False)
-@@ -458,6 +534,10 @@
+@@ -586,6 +662,10 @@
          vendor = (filament.get("vendor") or {}).get("name", "Generic")
          variant = _parse_variant(vendor, filament)
  
@@ -115,7 +115,7 @@
          if (self._force_generic_vendor
                  and vendor.strip().lower() != "snapmaker"):
              vendor = "Generic"
-@@ -477,6 +557,7 @@
+@@ -605,6 +685,7 @@
          alpha = 0xFF
          info = {
              "VENDOR": vendor,
