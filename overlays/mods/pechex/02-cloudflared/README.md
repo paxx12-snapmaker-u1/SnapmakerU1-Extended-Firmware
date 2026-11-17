@@ -10,33 +10,41 @@ The mod is fully integrated into the **Firmware Config** web interface:
 
 1. **Open Firmware Config** in your browser (`http://<printer-ip>/config` or via Fluidd sidebar link).
 2. Go to **Settings > Remote Access > Cloud Provider** and select **Cloudflared**.
-3. A modal dialog will appear asking for your desired subdomain:
-   ```text
-   Domain / Subdomain: [ u1.yourdomain.com ]
-   ```
+3. A modal dialog will appear asking for:
+   - **Domain / Subdomain**: (e.g. `u1.yourdomain.com`)
+   - **Admin Email (OTP Login)**: Your email address (e.g. `user@gmail.com`)
+   - **Cloudflare API Token**: A Cloudflare token with `Access: Apps and Policies (Edit)` and `Access: Identity Providers (Edit)` permissions.
 4. Click **Confirm**.
-5. An authorization link will appear directly in the web console:
+5. An authorization link will appear in the web console:
    ```text
    Please open the URL below in a new tab, select your domain, and click 'Authorize':
    https://dash.cloudflare.com/argotunnel?callback=https%3A%2F%2Flogin...
    ```
 6. Click the link in a new tab, select your domain on Cloudflare, and click **Authorize**.
-7. **Done!** The printer automatically receives the certificate, creates the tunnel in your account, configures the DNS CNAME record, starts the service, and puts your printer online at `https://u1.yourdomain.com`.
+7. **Done!** In one single automated flow, the printer:
+   - Creates the tunnel and credentials in your Cloudflare account.
+   - Configures the DNS CNAME record for your subdomain.
+   - Activates Cloudflare Zero Trust **One-Time PIN (OTP)** authentication.
+   - Adds your email to the Access policy (preserving any other existing login methods or users).
+   - Starts the `cloudflared` service and puts your printer securely online at `https://u1.yourdomain.com`.
 
 ---
 
-## Securing with a Login Screen (Web Authentication)
+## Zero Trust Edge Authentication (One-Time PIN)
 
-To ensure only authorized users can access the printer over the tunnel:
+When you access `https://u1.yourdomain.com` from anywhere in the world:
+1. Cloudflare intercepts the connection at the edge before anything reaches your printer.
+2. Prompts for your authorized email address.
+3. Sends an instant 6-digit PIN code to your inbox.
+4. You enter the PIN and access Fluidd immediately.
 
-1. In **Firmware Config > Settings > Remote Access > Web Authentication**, select **Enabled**.
-2. Note the generated admin password.
-3. When accessing the printer from the internet via your Cloudflare URL, Fluidd will present a graphical login screen asking for your username & password.
+> [!NOTE]
+> If your Cloudflare Zero Trust account already has other identity providers (such as Google, GitHub, Azure AD) or existing access policies configured, they are **preserved**. The One-Time PIN method and your authorized email are added seamlessly alongside them.
 
 ---
 
 ## Web Troubleshooting & Diagnostics
 
 Under **Firmware Config > Actions**:
-- **Cloudflared Status**: Inspect live tunnel status, active connection, and recent logs directly from the web app.
-- **Upgrade Cloudflared**: Update to the latest pinned version with one click.
+- **Cloudflared Status**: Inspect live tunnel status, Zero Trust protection state, active connection, and recent logs directly from the web app.
+

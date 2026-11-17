@@ -199,13 +199,47 @@ EOF
     echo ">> Starting Cloudflare service..."
     /etc/init.d/S99cloud restart
 
+    local AUTH_EMAIL="$3"
+    local CF_API_TOKEN="$4"
+    local ACCOUNT_ID=""
+
+    if [[ -f "$CONFIG_FILE" ]]; then
+        local CRED_FILE
+        CRED_FILE=$(grep -E "^\s*credentials-file:" "$CONFIG_FILE" 2>/dev/null | awk '{print $NF}')
+        if [[ -f "$CRED_FILE" ]]; then
+            ACCOUNT_ID=$(python3 -c "import json; print(json.load(open('$CRED_FILE')).get('AccountTag', ''))" 2>/dev/null || true)
+        fi
+    fi
+
+    if [[ -z "$ACCOUNT_ID" ]]; then
+        for f in "$CONFIG_DIR"/*.json /home/lava/.cloudflared/*.json; do
+            if [[ -f "$f" && "$f" != *"access.json"* ]]; then
+                ACCOUNT_ID=$(python3 -c "import json; print(json.load(open('$f')).get('AccountTag', ''))" 2>/dev/null || true)
+                [[ -n "$ACCOUNT_ID" ]] && break
+            fi
+        done
+    fi
+
+    if [[ -n "$AUTH_EMAIL" && -n "$CF_API_TOKEN" && -n "$ACCOUNT_ID" ]]; then
+        echo ">> Step 4/4: Activating Cloudflare Zero Trust OTP for $AUTH_EMAIL..."
+        if /usr/local/bin/cloudflared-access.py setup --account-id "$ACCOUNT_ID" --domain "$HOSTNAME" --email "$AUTH_EMAIL" --token "$CF_API_TOKEN"; then
+            echo ">> Zero Trust OTP Access configured successfully!"
+        else
+            echo "Notice: Cloudflare Access setup could not be completed. You can re-run with: cloudflared-pkg access-setup <email> <token>"
+        fi
+    fi
+
     echo
     echo "============================================================"
     echo "  🎉 SUCCESS! YOUR PRINTER IS NOW ONLINE!"
     echo "============================================================"
     echo "  Public URL: https://${HOSTNAME}"
     echo
-    if [[ -f /oem/printer_data/config/extended/moonraker/authorization.cfg ]]; then
+    if [[ -f "$CONFIG_DIR/access.json" ]]; then
+        local ACCESS_EMAIL
+        ACCESS_EMAIL=$(python3 -c "import json; print(json.load(open('$CONFIG_DIR/access.json')).get('email', ''))" 2>/dev/null || true)
+        echo "  [✓] Login Protection: Cloudflare Zero Trust OTP ACTIVE (sent to ${ACCESS_EMAIL})."
+    elif [[ -f /oem/printer_data/config/extended/moonraker/authorization.cfg ]]; then
         echo "  [✓] Login Screen: Web Authentication is active (Fluidd login enabled)."
     else
         echo "  [!] Notice: Web Authentication is currently DISABLED."
@@ -241,7 +275,11 @@ status() {
         fi
     fi
 
-    if [[ -f /oem/printer_data/config/extended/moonraker/authorization.cfg ]]; then
+    if [[ -f "$CONFIG_DIR/access.json" ]]; then
+        local ACCESS_EMAIL
+        ACCESS_EMAIL=$(python3 -c "import json; print(json.load(open('$CONFIG_DIR/access.json')).get('email', ''))" 2>/dev/null || true)
+        echo "Login Protection: Cloudflare Zero Trust OTP ENABLED ($ACCESS_EMAIL)"
+    elif [[ -f /oem/printer_data/config/extended/moonraker/authorization.cfg ]]; then
         echo "Login Protection: Web Authentication ENABLED (Fluidd login active)"
     else
         echo "Login Protection: Web Authentication DISABLED"
@@ -304,11 +342,43 @@ case "$1" in
     status)
         status
         ;;
+    access-setup|setup-access)
+        shift
+        local AUTH_EMAIL="$1"
+        local CF_API_TOKEN="$2"
+        local HOSTNAME=""
+        if [[ -f "$CONFIG_FILE" ]]; then
+            HOSTNAME=$(grep -E "^\s*-\s*hostname:" "$CONFIG_FILE" 2>/dev/null | head -n 1 | awk '{print $NF}')
+        fi
+        if [[ -z "$HOSTNAME" ]]; then
+            echo "Error: Cloudflared tunnel is not configured or hostname not found in $CONFIG_FILE."
+            exit 1
+        fi
+        local ACCOUNT_ID=""
+        local CRED_FILE
+        CRED_FILE=$(grep -E "^\s*credentials-file:" "$CONFIG_FILE" 2>/dev/null | awk '{print $NF}')
+        if [[ -f "$CRED_FILE" ]]; then
+            ACCOUNT_ID=$(python3 -c "import json; print(json.load(open('$CRED_FILE')).get('AccountTag', ''))" 2>/dev/null || true)
+        fi
+        if [[ -z "$ACCOUNT_ID" ]]; then
+            for f in "$CONFIG_DIR"/*.json /home/lava/.cloudflared/*.json; do
+                if [[ -f "$f" && "$f" != *"access.json"* ]]; then
+                    ACCOUNT_ID=$(python3 -c "import json; print(json.load(open('$f')).get('AccountTag', ''))" 2>/dev/null || true)
+                    [[ -n "$ACCOUNT_ID" ]] && break
+                fi
+            done
+        fi
+        if [[ -z "$AUTH_EMAIL" || -z "$CF_API_TOKEN" || -z "$ACCOUNT_ID" ]]; then
+            echo "Usage: $0 access-setup <email> <cloudflare_api_token>"
+            exit 1
+        fi
+        /usr/local/bin/cloudflared-access.py setup --account-id "$ACCOUNT_ID" --domain "$HOSTNAME" --email "$AUTH_EMAIL" --token "$CF_API_TOKEN"
+        ;;
     clean)
         clean
         ;;
     *)
-        echo "Usage: $0 {web-setup <hostname>|status|update|check|download|clean}"
+        echo "Usage: $0 {web-setup <hostname> [tunnel_name] [email] [api_token]|access-setup <email> <api_token>|status|update|check|download|clean}"
         exit 1
         ;;
 esac
