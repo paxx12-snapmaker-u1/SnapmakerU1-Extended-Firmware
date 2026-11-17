@@ -7,7 +7,7 @@ settings:
     items:
       fast_nozzle_cooldown:
         label: Fast Nozzle Cooldown
-        description: Accelerates pre-print nozzle cooldowns using the side auxiliary blower (cavity_fan) and eliminates the redundant 220°C -> 130°C -> 170°C -> 130°C reheat cycle during PRINT_START by rough-homing and wiping on a single monotonic cooldown pass.
+        description: Accelerates pre-print nozzle cooldowns using the side auxiliary blower (cavity_fan) and eliminates the redundant 220°C -> 130°C -> 170°C -> 130°C (and post-flow-calibration 170°C -> 220°C -> 170°C) reheat cycles during PRINT_START by rough-homing and wiping on a single monotonic 220°C -> 170°C -> 130°C pass.
         help_url: http://snapmakeru1-extended-firmware.pages.dev/tweaks#fast-nozzle-cooldown
         get_cmd:
           - bash
@@ -16,7 +16,7 @@ settings:
         options:
           enabled:
             label: Enabled
-            confirm: "Enable Fast Nozzle Cooldown? During pre-print nozzle cooldowns, the toolhead cools in front of the left auxiliary blower (X5 Y140), performs rough Z-homing and fine nozzle wiping on a single pass through ~168°C without reheating, and stops blowing 1.5°C before the final probing temperature."
+            confirm: "Enable Fast Nozzle Cooldown? During pre-print nozzle cooldowns, the toolhead cools in front of the left auxiliary blower (X5 Y140), performs rough Z-homing and fine nozzle wiping on a single pass through 170°C without reheating (including skipping the redundant 220°C pre-extrude reheat when that nozzle just finished flow calibration), and stops blowing 1.5°C before the final probing temperature."
             cmd:
               - bash
               - -xc
