@@ -35,6 +35,7 @@ Dynamic links based on current settings:
 - **Internal Camera** - Camera stream (when paxx12 service is enabled)
 - **USB Camera** - USB camera stream (when enabled)
 - **Remote Screen** - Remote screen access (when enabled)
+- **Push Notifications** - Notification settings ([Push Notifications](notifications.md))
 
 ### Settings
 

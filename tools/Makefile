@@ -2,12 +2,17 @@
 # SPDX-PackageHomePage: https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware
 # SPDX-FileCopyrightText: Copyright (c) 2025 @paxx12
 
-all: rk2918_tools upfile resource_tool
+TOOLS := rk2918_tools upfile resource_tool
+
+all: $(TOOLS)
 
 # ================= Tools =================
 
-%: FORCE
+$(TOOLS): FORCE
 	make -C $@
+
+.PHONY: FORCE
+FORCE:
 
 clean:
 	rm -rf tmp
@@ -18,7 +23,8 @@ test: test_repack_upfile test_repack_afptool test_repack_img
 
 # re-pack using upfile tool
 
-tmp/test/update.img: $(FIRMWARE_FILE) upfile
+# always re-unpack: tmp/test may hold a different FIRMWARE_FILE
+tmp/test/update.img: $(FIRMWARE_FILE) upfile FORCE
 ifeq (,$(FIRMWARE_FILE))
 	$(error FIRMWARE_FILE is not set)
 endif

@@ -75,7 +75,8 @@ Heavily expanded firmware with extensive features and customization:
 **Monitoring & Notifications:**
 
 - [Monitoring](monitoring.md) - Integration with Prometheus, Home Assistant, DataDog, and other monitoring systems
-- Moonraker Apprise Notifications - Send print notifications to Discord, Telegram, Slack, and 90+ services
+- [Push Notifications](notifications.md) - Print, progress and error notifications with camera snapshots and error codes via [ntfy](https://ntfy.sh), Gotify, [Pushover](https://pushover.net), Telegram, Discord, email or a webhook, configured in Firmware Config
+- Moonraker Apprise Notifications - Send print notifications to Discord, Telegram, Slack, and 90+ services ([custom notifiers](https://github.com/noon92/pushraker/blob/main/docs/guide.md#configuration-file))
 
 **Remote Access:**
 

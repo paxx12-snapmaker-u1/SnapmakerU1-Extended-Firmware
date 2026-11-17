@@ -13,8 +13,8 @@ docs: Update TEST_RESONANCES + SHAPER_CALIBRATE with missing parameters and brac
 
 Signed-off-by: Maksim Bolgov <maksim8024@gmail.com>
 ---
- klippy/extras/resonance_tester.py | 8 +++-----
- 1 file changed, 3 insertions(+), 5 deletions(-)
+ klippy/extras/resonance_tester.py | 2 ++
+ 1 file changed, 2 insertions(+)
 
 diff --git a/klippy/extras/resonance_tester.py b/klippy/extras/resonance_tester.py
 index 5657adbe2..d6048cddf 100644
@@ -29,19 +29,6 @@ index 5657adbe2..d6048cddf 100644
          self.hz_per_sec = gcmd.get_float("HZ_PER_SEC", self.hz_per_sec,
                                           above=0., maxval=2.)
      def run_test(self, axis, gcmd):
-@@ -231,11 +233,7 @@ class ResonanceTester:
-     def _parse_chips(self, accel_chips):
-         parsed_chips = []
-         for chip_name in accel_chips.split(','):
--            if "adxl345" in chip_name:
--                chip_lookup_name = chip_name.strip()
--            else:
--                chip_lookup_name = "adxl345 " + chip_name.strip();
--            chip = self.printer.lookup_object(chip_lookup_name)
-+            chip = self.printer.lookup_object(chip_name.strip())
-             parsed_chips.append(chip)
-         return parsed_chips
-     def _get_max_calibration_freq(self):
 -- 
 2.47.3
 

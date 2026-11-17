@@ -1,0 +1,28 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-PackageHomePage: https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware
+# SPDX-FileCopyrightText: Copyright (c) 2026 @paxx12
+
+actions:
+  troubleshooting:
+    items:
+      spoollink-retry-migration:
+        label: Retry Spoolman Tag Migration
+        description: Move card links still left in the other store into the selected Spoolman Tag Storage, after fixing what the last switch reported.
+        hidden: true
+        if_cmd: test -n "$(/usr/local/bin/extended-config.py get /oem/printer_data/config/extended/extended2.cfg spoolman host '' 2>/dev/null)"
+        confirm: "Move every card link left in the other store into the selected Spoolman Tag Storage? Moonraker restarts."
+        cmd:
+          - bash
+          - -c
+          - |
+            CFG=/oem/printer_data/config/extended/extended2.cfg
+            HOST=$(/usr/local/bin/extended-config.py get "$CFG" spoolman host "" 2>/dev/null)
+            STORE=$(/usr/local/bin/extended-config.py get "$CFG" spoolman tag_store card_uids 2>/dev/null)
+            # Stop Moonraker so SpoolLink writes no links while they move.
+            /etc/init.d/S61moonraker stop
+            /usr/local/bin/spoollink_migrate.py --host "$HOST" "${STORE:-card_uids}"
+            RC=$?
+            echo "Starting Moonraker..."
+            /etc/init.d/S61moonraker start
+            exit $RC
+        message: "Migrating Spoolman tag links..."
