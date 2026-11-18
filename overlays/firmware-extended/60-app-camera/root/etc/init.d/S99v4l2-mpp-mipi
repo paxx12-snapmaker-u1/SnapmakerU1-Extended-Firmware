@@ -14,17 +14,6 @@ if [ "$CAMERA_LOGS" = "syslog" ]; then
 fi
 RTSP_ENABLED=$(/usr/local/bin/extended-config.py get "$EXTENDED_CFG" camera rtsp false)
 
-INTERNAL_RESOLUTION=$(/usr/local/bin/extended-config.py get "$EXTENDED_CFG" camera internal_resolution 1080p25)
-case "$INTERNAL_RESOLUTION" in
-    1080p30) INTERNAL_WIDTH=1920; INTERNAL_HEIGHT=1080; INTERNAL_FPS=30 ;;
-    1080p25) INTERNAL_WIDTH=1920; INTERNAL_HEIGHT=1080; INTERNAL_FPS=25 ;;
-    1080p15) INTERNAL_WIDTH=1920; INTERNAL_HEIGHT=1080; INTERNAL_FPS=15 ;;
-    1080p5)  INTERNAL_WIDTH=1920; INTERNAL_HEIGHT=1080; INTERNAL_FPS=5  ;;
-    *)       INTERNAL_WIDTH=1920; INTERNAL_HEIGHT=1080; INTERNAL_FPS=25 ;;
-esac
-
-CMD_CAPTURE="/usr/local/bin/capture-v4l2-raw-mpp --device /dev/video11 --format nv12 --jpeg-quality 7 --jpeg-sock /tmp/capture-mipi-jpeg.sock --mjpeg-sock /tmp/capture-mipi-mjpeg.sock --h264-sock /tmp/capture-mipi-h264.sock --raw-frame-sock /tmp/capture-mipi-raw.sock --width $INTERNAL_WIDTH --height $INTERNAL_HEIGHT --fps $INTERNAL_FPS --buffers 3"
-
 CMD_WEBRTC="/usr/local/bin/stream-webrtc --h264-sock /tmp/capture-mipi-h264.sock --webrtc-sock /tmp/capture-mipi-webrtc.sock"
 
 CMD_HTTP="/usr/bin/python3 /usr/local/bin/stream-http.py --jpeg-sock /tmp/capture-mipi-jpeg.sock --mjpeg-sock /tmp/capture-mipi-mjpeg.sock --h264-sock /tmp/capture-mipi-h264.sock --webrtc-sock /tmp/capture-mipi-webrtc.sock --control-sock /tmp/v4l2-control-mipi.sock --bind 127.0.0.1"
@@ -52,9 +41,9 @@ start() {
     mkdir -p /userdata/.tmp_timelapse
     chown -R lava:lava /userdata/.tmp_timelapse
 
-    printf "Starting capture-mipi-mpp: "
-    start-stop-daemon -S -b -q -m -p /var/run/capture-mipi-mpp.pid -x $CMD_FAKE_SERVICE -- $CMD_FAKE_SERVICE_ARGS $CMD_CAPTURE
-    echo "OK"
+    # The capture sockets (/tmp/capture-mipi-{h264,jpeg,mjpeg,raw}.sock) are
+    # served from inside unisrv by librockit-export.so, which the lmd hook
+    # preloads. unisrv owns the camera as on stock firmware.
 
     printf "Starting stream-webrtc: "
     start-stop-daemon -S -b -q -m -p /var/run/stream-mipi-webrtc.pid -c lava -x $CMD_FAKE_SERVICE -- $CMD_FAKE_SERVICE_ARGS $CMD_WEBRTC

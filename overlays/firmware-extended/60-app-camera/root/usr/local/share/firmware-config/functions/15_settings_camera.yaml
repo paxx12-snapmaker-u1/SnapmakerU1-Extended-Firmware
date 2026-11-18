@@ -40,8 +40,7 @@ settings:
               - -xc
               - |
                 /usr/local/bin/extended-config.py add /home/lava/printer_data/config/extended/extended2.cfg camera internal paxx12 &&
-                /etc/init.d/S90lmd stop &&
-                /etc/init.d/S99v4l2-mpp-mipi restart
+                /usr/sbin/reboot
           snapmaker:
             label: Snapmaker
             cmd:
@@ -49,8 +48,7 @@ settings:
               - -xc
               - |
                 /usr/local/bin/extended-config.py add /home/lava/printer_data/config/extended/extended2.cfg camera internal snapmaker &&
-                /etc/init.d/S99v4l2-mpp-mipi stop &&
-                /etc/init.d/S90lmd start
+                /usr/sbin/reboot
           none:
             label: Disabled
             cmd:
@@ -58,8 +56,7 @@ settings:
               - -xc
               - |
                 /usr/local/bin/extended-config.py add /home/lava/printer_data/config/extended/extended2.cfg camera internal none &&
-                /etc/init.d/S99v4l2-mpp-mipi stop &&
-                /etc/init.d/S90lmd stop
+                /usr/sbin/reboot
         default: paxx12
 
       camera-internal-resolution:
@@ -81,7 +78,7 @@ settings:
               - -xc
               - |
                 /usr/local/bin/extended-config.py add /home/lava/printer_data/config/extended/extended2.cfg camera internal_resolution 1080p30 &&
-                /etc/init.d/S99v4l2-mpp-mipi restart
+                /usr/sbin/reboot
           1080p25:
             label: 1920x1080 @ 25fps
             cmd:
@@ -89,7 +86,7 @@ settings:
               - -xc
               - |
                 /usr/local/bin/extended-config.py add /home/lava/printer_data/config/extended/extended2.cfg camera internal_resolution 1080p25 &&
-                /etc/init.d/S99v4l2-mpp-mipi restart
+                /usr/sbin/reboot
           1080p15:
             label: 1920x1080 @ 15fps
             cmd:
@@ -97,7 +94,7 @@ settings:
               - -xc
               - |
                 /usr/local/bin/extended-config.py add /home/lava/printer_data/config/extended/extended2.cfg camera internal_resolution 1080p15 &&
-                /etc/init.d/S99v4l2-mpp-mipi restart
+                /usr/sbin/reboot
           1080p5:
             label: 1920x1080 @ 5fps
             cmd:
@@ -105,7 +102,7 @@ settings:
               - -xc
               - |
                 /usr/local/bin/extended-config.py add /home/lava/printer_data/config/extended/extended2.cfg camera internal_resolution 1080p5 &&
-                /etc/init.d/S99v4l2-mpp-mipi restart
+                /usr/sbin/reboot
         default: 1080p25
 
       camera-usb:
