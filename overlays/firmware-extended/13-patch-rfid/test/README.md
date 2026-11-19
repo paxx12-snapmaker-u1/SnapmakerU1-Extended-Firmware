@@ -19,6 +19,7 @@ The CLI automatically detects the file type:
 python3 -m app.cli openspool-pla-basic.json
 python3 -m app.cli openspool-petg-rapid.json
 python3 -m app.cli openspool-silk-multicolor.json
+python3 -m app.cli openspool-silk-gradient.json
 python3 -m app.cli openspool-abs-transparent.json
 python3 -m app.cli openspool-tpu-flexible.json
 ```

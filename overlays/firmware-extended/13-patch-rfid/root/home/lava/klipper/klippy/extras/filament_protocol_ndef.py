@@ -180,6 +180,11 @@ def openspool_parse_payload(payload, card_uid=[]):
             info['COLOR_NUMS'] = idx
             info[f'RGB_{idx}'] = parse_color_hex(hex_color)
 
+        # color_type uses OrcaSlicer's filament_colour_type values
+        # (0 = gradient, 1 = default). MULTI_MODE uses Snapmaker's values
+        # (0 = segment, 1 = gradient). Missing or other values are default.
+        info['MULTI_MODE'] = 1 if str(data.get('color_type', '')).strip() == '0' else 0
+
         try:
             info['ALPHA'] = max(0x00, min(0xFF, int(data.get('alpha'))))
         except (ValueError, TypeError):
