@@ -140,6 +140,25 @@ Enables object processing in Moonraker's file manager to support adaptive mesh f
 **Configuration:**
 This feature can **only** be configured via Firmware Configuration web interface. Manual configuration is not supported.
 
+## Smart Flow Calibration
+
+When **Flow Calibration** is checked at print start, the stock firmware calibrates every toolhead used in the print (`T0` through `T3`). Each lane takes **~3.5 minutes** and purges **up to ~640 mm (~2g) of filament** across 4 test passes (`~159 mm` per pass) into the waste chute. On a 4-color print where you only swapped a single spool on Lane 4, checking **Flow Calibration** wastes **~10.5 minutes and up to ~1.9 meters (~6g) of filament** re-calibrating Lanes 1, 2, and 3 to the exact same values they already had.
+
+**What it does (step by step):**
+- **Remembers which lanes are already calibrated**: Once a lane finishes Flow Calibration, the printer saves a record that this lane's currently loaded spool and nozzle have been calibrated.
+- **Watches for any spool or filament change**: A lane is automatically marked as needing calibration again whenever any of the following happen:
+  - You unload filament from the hotend or load a new filament into the hotend
+  - The feeder entrance sensor or toolhead filament sensor goes clear (spool removed or ran out)
+  - An RFID spool tag is scanned, or you edit the filament brand, type, subtype, color, or nozzle size in the UI
+- **Preserves existing calibration if Flow Calibration is unchecked**: Marking a lane as needing calibration only updates the smart-tracking flag — it never wipes the previously calibrated value in `flow_calibrator.json` unless OEM firmware itself resets it on an RFID/UI filament type change.
+- **Skips unchanged lanes at print start**: When you start a print with **Flow Calibration** enabled, any lane whose filament has stayed loaded and untouched since its last calibration is skipped in `0 seconds` (saving `~3.5 minutes` and up to `~640 mm / ~2g` of purged filament per unchanged lane, without even preheating that nozzle to `140°C` while waiting), reusing its saved calibration value while only calibrating the lane(s) you actually changed.
+- **Manual override macros in Fluidd / Mainsail**:
+  - `SMART_FLOW_RESET`: Marks all lanes (or a single lane with `SMART_FLOW_RESET EXTRUDER=0..3`) as needing calibration on the next print without having to unload the filament.
+  - `SMART_FLOW_MARK_VALID`: Marks all currently loaded lanes (or `EXTRUDER=0..3`) as already calibrated if you enable this setting when your spools are already calibrated.
+
+**Configuration:**
+This feature can be toggled via the Firmware Configuration web interface under **Settings → Print Preferences → Smart Flow Calibration (Changed Lanes Only)**.
+
 ## How to Configure
 
 1. Open the printer's web interface (Fluidd or Mainsail)
@@ -157,6 +176,7 @@ These tweaks work by adding or removing configuration files from `/oem/printer_d
 - `klipper/tmc_autotune.cfg` - TMC AutoTune parameters
 - `klipper/tmc_current.cfg` - Reduced current settings
 - `klipper/10_max_speed.cfg` - Max Speed motion limits and tool change speeds (either tier installs to this one file)
+- `klipper/smart_flow_calibration.cfg` - Smart Flow Calibration (Changed Lanes Only) macros and state tracking
 - `moonraker/object_processing.cfg` - Moonraker object processing settings
 
 These files are automatically included by the main printer configuration if present. Manual editing of these files is not recommended as they will be overwritten by the Firmware Configuration interface.
