@@ -24,7 +24,7 @@ import json
 import logging
 import os
 import re
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set
 
 if TYPE_CHECKING:
     from ..confighelper import ConfigHelper
@@ -38,20 +38,109 @@ TAG_API_MIN_VERSION = (0, 27, 0)
 
 
 def _unquote(value: str) -> str:
-    s = value.strip()
+    s = str(value).strip()
     if len(s) >= 2 and s[0] == '"' and s[-1] == '"':
         s = s[1:-1]
     return s
 
 
+def _normalize_uid(val: Any) -> str:
+    if not val:
+        return ""
+    s = _unquote(str(val).strip())
+    for ch in (":", "-", "_", " ", "\t", "\n", "\r", '"', "'", "[", "]"):
+        s = s.replace(ch, "")
+    return s.upper()
+
+
+def _add_normalized_uids(target: Set[str], val: Any) -> None:
+    if not val:
+        return
+    if isinstance(val, str):
+        for part in _unquote(val).split(","):
+            norm = _normalize_uid(part)
+            if norm:
+                target.add(norm)
+    elif isinstance(val, (list, tuple, set)):
+        for item in val:
+            _add_normalized_uids(target, item)
+
+
+def _extract_primary_uids(spool: dict) -> Set[str]:
+    uids: Set[str] = set()
+    for k in ("rfid_uid", "rfid_uid_2"):
+        _add_normalized_uids(uids, spool.get(k))
+    for field in ("custom_fields", "extra"):
+        custom = spool.get(field) or {}
+        if isinstance(custom, str):
+            try:
+                custom = json.loads(custom)
+            except Exception:
+                custom = {}
+        if isinstance(custom, dict):
+            for k in ("rfid_uid", "rfid_uid_2"):
+                _add_normalized_uids(uids, custom.get(k))
+    return uids
+
+
+def _extract_secondary_uids(spool: dict) -> Set[str]:
+    uids: Set[str] = set()
+    for k in ("bambu_tray_uid", "card_uids", "previous_tag", "tray_uid", "nfc_id", "tag"):
+        _add_normalized_uids(uids, spool.get(k))
+    for field in ("custom_fields", "extra"):
+        custom = spool.get(field) or {}
+        if isinstance(custom, str):
+            try:
+                custom = json.loads(custom)
+            except Exception:
+                custom = {}
+        if isinstance(custom, dict):
+            for k in ("card_uids", "previous_tag", "bambu_tray_uid", "tray_uid", "nfc_id", "tag"):
+                _add_normalized_uids(uids, custom.get(k))
+    return uids
+
+
+def _filter_active_spools(candidates: List[dict]) -> List[dict]:
+    if len(candidates) <= 1:
+        return candidates
+    active: List[dict] = []
+    for s in candidates:
+        if not isinstance(s, dict):
+            continue
+        try:
+            weight = s.get("remaining_weight")
+            if weight is None:
+                weight = s.get("remaining_weight_g")
+            if (
+                (weight is None or float(weight) > 0)
+                and not s.get("archived", False)
+                and s.get("status_id") != 5
+            ):
+                active.append(s)
+        except Exception:
+            active.append(s)
+    if active and len(active) < len(candidates):
+        return active
+    return candidates
+
+
 def _parse_card_uids(spool: dict) -> List[str]:
     raw = _unquote((spool.get("extra") or {}).get("card_uids") or "")
-    return [u.strip().upper() for u in raw.split(",") if u.strip()]
+    uids: List[str] = []
+    for u in raw.split(","):
+        norm = _normalize_uid(u)
+        if norm and norm not in uids:
+            uids.append(norm)
+    return uids
 
 
 def _parse_tag_uids(spool: dict) -> List[str]:
-    return [str(t["uid"]).upper() for t in spool.get("tags") or []
-            if t.get("uid")]
+    uids: List[str] = []
+    for t in spool.get("tags") or []:
+        norm = _normalize_uid(t.get("uid"))
+        if norm and norm not in uids:
+            uids.append(norm)
+    return uids
 
 
 def _parse_variant(vendor: str, filament: dict) -> str:
@@ -261,7 +350,7 @@ class SpoolLink:
     def _cache_path(self, card_uid: str) -> Optional[str]:
         if not self._cache_dir:
             return None
-        return os.path.join(self._cache_dir, f"{card_uid.upper()}.json")
+        return os.path.join(self._cache_dir, f"{_normalize_uid(card_uid)}.json")
 
     def _load_cache(self, card_uid: str) -> Optional[dict]:
         path = self._cache_path(card_uid)
@@ -382,21 +471,43 @@ class SpoolLink:
             return _parse_tag_uids(spool)
         return _parse_card_uids(spool)
 
+    def _has_card_uid(self, spool: dict, card_uid: str) -> bool:
+        uid_norm = _normalize_uid(card_uid)
+        if not uid_norm:
+            return False
+        if self._tag_api:
+            return uid_norm in self._card_uids(spool)
+        return uid_norm in (
+            _extract_primary_uids(spool) | _extract_secondary_uids(spool)
+        )
+
     async def _spoolman_find_by_card(self, card_uid: str) -> List[dict]:
-        uid_upper = card_uid.upper()
+        uid_norm = _normalize_uid(card_uid)
+        if not uid_norm:
+            return []
         if self._tag_api:
             resp = await self.http_client.get(
-                f"{self._spoolman_url}/api/v1/spool?tag={uid_upper}",
+                f"{self._spoolman_url}/api/v1/spool?tag={uid_norm}",
                 enable_cache=False)
             if resp.status_code != 200:
                 raise RuntimeError(f"HTTP {resp.status_code}: {resp.text()}")
-            return resp.json()
+            return _filter_active_spools(resp.json())
         resp = await self.http_client.get(
             f"{self._spoolman_url}/api/v1/spool?limit=1000", enable_cache=False)
         if resp.status_code != 200:
             raise RuntimeError(f"HTTP {resp.status_code}: {resp.text()}")
         spools = resp.json()
-        return [s for s in spools if uid_upper in _parse_card_uids(s)]
+        primary_matches = []
+        secondary_matches = []
+        for s in spools:
+            if not isinstance(s, dict):
+                continue
+            if uid_norm in _extract_primary_uids(s):
+                primary_matches.append(s)
+            elif uid_norm in _extract_secondary_uids(s):
+                secondary_matches.append(s)
+        candidates = primary_matches if primary_matches else secondary_matches
+        return _filter_active_spools(candidates)
 
     # Links a native tag to the spool, taking it from another spool holding it.
     async def _spoolman_link_tag(self, spool: dict, card_uid: str) -> None:
@@ -429,7 +540,7 @@ class SpoolLink:
         raise RuntimeError(f"HTTP {resp.status_code}: {resp.text()}")
 
     async def _spoolman_add_card_uid(self, spool: dict, card_uid: str) -> dict:
-        uid_upper = card_uid.upper()
+        uid_upper = _normalize_uid(card_uid)
         existing = self._card_uids(spool)
         if uid_upper in existing:
             return spool
@@ -439,14 +550,14 @@ class SpoolLink:
         return await self._spoolman_patch_card_uids(spool, existing + [uid_upper])
 
     async def _spoolman_remove_card_uid(self, spool: dict, card_uid: str) -> dict:
-        uid_upper = card_uid.upper()
+        uid_upper = _normalize_uid(card_uid)
         existing = self._card_uids(spool)
         if uid_upper not in existing:
             return spool
         if self._tag_api:
             await self._spoolman_unlink_tag(spool, uid_upper)
             return dict(spool, tags=[t for t in spool.get("tags") or []
-                                     if str(t.get("uid")).upper() != uid_upper])
+                                     if _normalize_uid(t.get("uid")) != uid_upper])
         return await self._spoolman_patch_card_uids(
             spool, [u for u in existing if u != uid_upper])
 
@@ -455,7 +566,7 @@ class SpoolLink:
     async def _unlink_card(self, channel: int, card_uid: Any = None) -> None:
         """Unbind a card from every spool holding it, so clearing a channel
         is not undone by the next scan of the same card."""
-        card_uid = str(card_uid or "").upper()
+        card_uid = _normalize_uid(card_uid)
         if channel is None or not card_uid.strip("0"):
             return
         if not await self._check_tag_api():
@@ -563,7 +674,7 @@ class SpoolLink:
                         "[spoollink] ch%d: unbind card %s from spool %s failed: %s",
                         channel, card_uid, stale["id"], e)
 
-            if card_uid.upper() not in self._card_uids(spool_by_id):
+            if not self._has_card_uid(spool_by_id, card_uid):
                 try:
                     spool = await self._retry(
                         self._spoolman_add_card_uid, spool_by_id, card_uid)
@@ -580,10 +691,26 @@ class SpoolLink:
 
     async def _apply_spool(self, channel: int, spool: dict, uid_hex: str,
                            cached: bool = False) -> None:
+        uid_hex = _normalize_uid(uid_hex)
         spool_id = spool.get("id", 0)
         filament = spool.get("filament", {})
-        material = filament.get("material", "PLA")
-        vendor = (filament.get("vendor") or {}).get("name", "Generic")
+        mat_raw = (filament.get("material") or filament.get("material_type") or "PLA").strip()
+        mat_upper = mat_raw.upper().replace("_", "-")
+        if mat_upper in ("PLA-PLUS", "PLA+", "PLA PLUS", "APLA", "SUPPORT FOR PLA"):
+            material = "PLA"
+        elif mat_upper in ("PETG-PLUS", "PETG+", "PETG PLUS"):
+            material = "PETG"
+        elif mat_upper in ("ABS-PLUS", "ABS+", "ABS PLUS"):
+            material = "ABS"
+        else:
+            material = mat_raw
+        vendor_obj = filament.get("vendor") or filament.get("manufacturer") or {}
+        if isinstance(vendor_obj, dict):
+            vendor = vendor_obj.get("name") or "Generic"
+        elif isinstance(vendor_obj, str):
+            vendor = vendor_obj.strip() or "Generic"
+        else:
+            vendor = "Generic"
         variant = _parse_variant(vendor, filament)
 
         if (self._force_generic_vendor
