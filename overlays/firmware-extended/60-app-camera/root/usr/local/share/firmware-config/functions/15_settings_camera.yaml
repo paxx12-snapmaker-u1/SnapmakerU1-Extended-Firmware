@@ -65,7 +65,7 @@ settings:
       camera-internal-resolution:
         label: Internal Camera Resolution
         description: Resolution and framerate for the built-in MIPI camera. Resolution is always 1080p; only framerate can be lowered.
-        if_cmd: test "$(/usr/local/bin/extended-config.py get /home/lava/printer_data/config/extended/extended2.cfg camera internal paxx12)" = "paxx12"
+        if_config: {section: camera, key: internal, default: paxx12, is: paxx12}
         get_cmd:
           - /usr/local/bin/extended-config.py
           - get
@@ -145,7 +145,7 @@ settings:
       camera-usb-resolution:
         label: USB Camera Resolution
         description: Resolution and framerate for the USB camera stream. Only supported by the paxx12 USB camera driver.
-        if_cmd: test "$(/usr/local/bin/extended-config.py get /home/lava/printer_data/config/extended/extended2.cfg camera usb none)" = "paxx12"
+        if_config: {section: camera, key: usb, default: none, is: paxx12}
         get_cmd:
           - /usr/local/bin/extended-config.py
           - get

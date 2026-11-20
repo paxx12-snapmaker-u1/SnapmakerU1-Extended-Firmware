@@ -53,6 +53,23 @@ header {
     gap: 12px;
 }
 
+.back-links {
+    max-width: 1200px;
+    margin: 0 auto 8px;
+    display: flex;
+    gap: 16px;
+    font-size: 13px;
+}
+
+.back-links a {
+    color: var(--muted);
+    text-decoration: none;
+}
+
+.back-links a:hover {
+    text-decoration: underline;
+}
+
 header h1 {
     color: var(--accent);
     font-size: 24px;

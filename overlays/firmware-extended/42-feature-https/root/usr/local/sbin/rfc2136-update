@@ -1,0 +1,101 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-PackageHomePage: https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware
+# SPDX-FileCopyrightText: Copyright (c) 2026 @paxx12
+
+"""Add or remove an ACME challenge TXT record with an RFC 2136 dynamic update.
+
+Usage: rfc2136-update add|rm <fqdn> <txt-value>
+
+Configured through the environment (see dns_rfc2136.sh):
+  RFC2136_SERVER      DNS server to send the update to (IP or hostname)
+  RFC2136_PORT        Port (default 53)
+  RFC2136_KEY_NAME    TSIG key name (optional, unsigned update without it)
+  RFC2136_KEY_SECRET  TSIG secret, base64
+  RFC2136_KEY_ALG     TSIG algorithm (default hmac-sha256)
+  RFC2136_ZONE        Zone to update (default: found via SOA lookup on the server)
+"""
+
+import os
+import socket
+import sys
+
+import dns.name
+import dns.query
+import dns.rcode
+import dns.resolver
+import dns.tsigkeyring
+import dns.update
+
+TTL = 60
+TIMEOUT = 15
+
+
+def fail(msg):
+    print(f"rfc2136-update: {msg}", file=sys.stderr)
+    sys.exit(1)
+
+
+def server_address(server):
+    try:
+        return socket.getaddrinfo(server, None, proto=socket.IPPROTO_TCP)[0][4][0]
+    except OSError as e:
+        fail(f"cannot resolve RFC2136_SERVER {server}: {e}")
+
+
+def find_zone(fqdn, server, port):
+    resolver = dns.resolver.Resolver(configure=False)
+    resolver.nameservers = [server]
+    resolver.port = port
+    resolver.lifetime = TIMEOUT
+    try:
+        return dns.resolver.zone_for_name(fqdn, resolver=resolver)
+    except Exception as e:
+        fail(f"cannot find the zone for {fqdn} on {server}, set RFC2136_ZONE: {e}")
+
+
+def main():
+    if len(sys.argv) != 4 or sys.argv[1] not in ("add", "rm"):
+        fail("usage: rfc2136-update add|rm <fqdn> <txt-value>")
+    action, fqdn, value = sys.argv[1:]
+
+    server = os.environ.get("RFC2136_SERVER", "")
+    if not server:
+        fail("RFC2136_SERVER is not set")
+    server = server_address(server)
+    port = int(os.environ.get("RFC2136_PORT") or 53)
+    key_name = os.environ.get("RFC2136_KEY_NAME", "")
+    key_secret = os.environ.get("RFC2136_KEY_SECRET", "")
+    key_alg = os.environ.get("RFC2136_KEY_ALG") or "hmac-sha256"
+
+    name = dns.name.from_text(fqdn)
+    zone_text = os.environ.get("RFC2136_ZONE", "")
+    zone = dns.name.from_text(zone_text) if zone_text else find_zone(name, server, port)
+
+    kwargs = {}
+    if key_name:
+        if not key_secret:
+            fail("RFC2136_KEY_NAME is set but RFC2136_KEY_SECRET is not")
+        kwargs["keyring"] = dns.tsigkeyring.from_text({key_name: key_secret})
+        kwargs["keyname"] = key_name
+        kwargs["keyalgorithm"] = key_alg
+
+    update = dns.update.Update(zone, **kwargs)
+    relative = name.relativize(zone)
+    if action == "add":
+        update.add(relative, TTL, "TXT", f'"{value}"')
+    else:
+        update.delete(relative, "TXT", f'"{value}"')
+
+    try:
+        response = dns.query.tcp(update, server, port=port, timeout=TIMEOUT)
+    except Exception as e:
+        fail(f"update to {server}:{port} failed: {e}")
+    rcode = response.rcode()
+    if rcode != dns.rcode.NOERROR:
+        fail(f"server {server}:{port} refused the update for zone {zone}: {dns.rcode.to_text(rcode)}")
+    print(f"rfc2136-update: {action} TXT {fqdn} in zone {zone} via {server}:{port}")
+
+
+if __name__ == "__main__":
+    main()
