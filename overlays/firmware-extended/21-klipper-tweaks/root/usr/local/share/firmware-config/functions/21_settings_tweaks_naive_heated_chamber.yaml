@@ -1,0 +1,32 @@
+settings:
+  tweaks:
+    items:
+      naive_heated_chamber:
+        label: Naive Heated Chamber
+        description: Enables naive heated chamber support.
+        help_url: http://snapmakeru1-extended-firmware.pages.dev/tweaks#naive-heated-chamber
+        get_cmd:
+          - bash
+          - -c
+          - test -f /oem/printer_data/config/extended/klipper/naive_heated_chamber.cfg && echo "enabled" || echo "disabled"
+        options:
+          enabled:
+            label: Enabled
+            confirm: "Enable Naive Heated Chamber? This enables naive heated chamber support. Chamber is heated using bed heater (set to 100C)."
+            cmd:
+              - bash
+              - -xc
+              - |
+                cp -v /usr/local/share/firmware-config/tweaks/klipper/naive_heated_chamber.cfg /oem/printer_data/config/extended/klipper/naive_heated_chamber.cfg &&
+                echo "Naive Heated Chamber enabled. Restarting Klipper..." &&
+                /etc/init.d/S60klipper restart
+          disabled:
+            label: Disabled
+            cmd:
+              - bash
+              - -xc
+              - |
+                rm -vf /oem/printer_data/config/extended/klipper/naive_heated_chamber.cfg &&
+                echo "Naive Heated Chamber disabled. Restarting Klipper..." &&
+                /etc/init.d/S60klipper restart
+        default: disabled
