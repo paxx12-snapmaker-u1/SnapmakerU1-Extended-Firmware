@@ -30,7 +30,10 @@ toolhead board takes down all four.
   the simulator's pty instead of the (missing) real USB serial device, plus
   the same heater-safety clamps as the existing thermistor bypass
   (`max_temp: 999`, `max_power: 0.000001`, fan forced off) as defense in
-  depth.
+  depth. It also repoints `[park_detector extruderN] pin:` from its mainboard
+  dock sensor to `eN:PC4` on the simulator, so the toolhead still reads
+  "parked" when it has been physically removed from the printer (otherwise
+  the empty dock trips extruder.py's "extruderN is detached" check).
 - Every toolhead's printer.cfg also has an `[inductance_coil extruderN]`
   (Z-offset probing) and a `[power_loss_check eN]` section, so klippy
   validates a handful of MCU commands for those against the connecting
@@ -49,7 +52,7 @@ toolhead board takes down all four.
 
 ### Shipped `pins.conf` defaults
 
-The default `root/usr/local/share/toolhead-sim/pins.conf` sets three pins
+The default `root/usr/local/share/toolhead-sim/pins.conf` sets four pins
 so a bypassed toolhead reads a plausible, non-conflicting idle state
 instead of whatever an all-zero fallback would decode to:
 
@@ -69,6 +72,10 @@ instead of whatever an all-zero fallback would decode to:
   parked and picked states" (`TTF`/`TTT`) check. Raw `4090` pushes the
   derived resistance to ~3.8M ohms, outside both ranges, so the toolhead
   reads a clean "parked, not active, not grabbed" state instead.
+- `PC4` (unused by printer.cfg; the bypass's `[park_detector extruderN]`
+  `pin:` override) - raw `0`, which decodes to 0 ohms, inside the
+  `analog_range 0-470`, so the toolhead always reads "parked" whether it is
+  still docked or removed.
 
 ## Warning
 
