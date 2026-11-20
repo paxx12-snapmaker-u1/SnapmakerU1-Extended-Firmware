@@ -9,6 +9,16 @@
 5. [toolhead: Reduce LOOKAHEAD_FLUSH_TIME to 0.150 seconds](https://github.com/Klipper3d/klipper/commit/16fc46fe5)
 6. snapmaker: Fix self.test references after upstream refactor
 
+## U1 fixes (offered to Snapmaker/u1-klipper, not merged there yet)
+
+10. [exclude_object: drop the skipped-object offset after a park outside the transform](https://github.com/Snapmaker/u1-klipper/pull/24) (fixes [u1-klipper#22](https://github.com/Snapmaker/u1-klipper/issues/22): skip an object, pause, and Resume fails with "Move out of range")
+
+The part-fan fix for [u1-klipper#18](https://github.com/Snapmaker/u1-klipper/issues/18) (M106/M107 switch the fan
+seconds early) is #787, by @alternativniy.
+
+It comes with a printer-free regression test in
+[u1-fixpack](https://github.com/DesignMaster-Solutions/u1-fixpack) (`tests/extended/`).
+
 ## How patches were generated
 
 These patches were generated from the `snapmaker-lava/snapmaker-klipper` repository
