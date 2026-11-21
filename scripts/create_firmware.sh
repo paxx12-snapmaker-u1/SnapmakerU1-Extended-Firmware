@@ -99,6 +99,12 @@ for overlay; do
 
   if [[ -d "$overlay/root/" ]]; then
     echo ">> Copying custom files..."
+    # __pycache__ is gitignored, so running a component's tests in place leaves it
+    # here and the copy below would ship it, host Python version and all
+    while IFS= read -r cache; do
+      echo "[!] Removing stray Python cache: ${cache#"$overlay/root/"}"
+      rm -rf "$cache"
+    done < <(find "$overlay/root/" -type d -name "__pycache__")
     cp -rv "$overlay/root/." "$ROOTFS_DIR/"
   fi
 
