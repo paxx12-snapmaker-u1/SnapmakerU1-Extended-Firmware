@@ -1,0 +1,37 @@
+--- a/home/lava/moonraker/moonraker/components/zeroconf.py	2026-02-06 19:12:24.179575409 +0100
++++ b/home/lava/moonraker/moonraker/components/zeroconf.py	2026-02-06 19:13:16.448036223 +0100
+@@ -165,7 +165,7 @@
+             addresses=self.addresses,
+             port=LAN_MQTT_PORT,
+             properties=self.zc_service_props,
+-            server=f"U1-{instance_name}.local.",
++            server=f"{self.mdns_name}.local.",
+         )
+         await self.runner.register_services([self.service_info])
+         if self.ssdp_server is not None:
+@@ -200,7 +200,7 @@
+                     addresses=self.addresses,
+                     port=LAN_MQTT_PORT,
+                     properties=self.zc_service_props,
+-                    server=f"U1-{self.zc_service_props['sn']}.local.",
++                    server=f"{self.mdns_name}.local.",
+                 )
+                 await self.runner.register_services([self.service_info])
+ 
+@@ -219,14 +219,14 @@
+                     self.zc_service_props["ip"] = str(ip_addr)
+                 except ValueError:
+                     pass
+-            self.service_info.addresses = addresses
++            self.addresses = addresses
+             self.service_info = AsyncServiceInfo(
+                     ZC_SERVICE_TYPE,
+                     self.zc_service_name,
+                     addresses=self.addresses,
+                     port=LAN_MQTT_PORT,
+                     properties=self.zc_service_props,
+-                    server=f"U1-{self.zc_service_props['sn']}.local.",
++                    server=f"{self.mdns_name}.local.",
+             )
+             logging.info("update zeroconf, new props:{}".format(self.zc_service_props))
+             await self.runner.register_services([self.service_info])
