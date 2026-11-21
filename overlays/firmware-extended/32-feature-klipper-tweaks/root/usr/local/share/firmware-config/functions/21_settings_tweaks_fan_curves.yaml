@@ -1,0 +1,26 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-PackageHomePage: https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware
+# SPDX-FileCopyrightText: Copyright (c) 2026 @paxx12
+
+settings:
+  tweaks:
+    items:
+      fan_curves:
+        label: Fan Curves
+        description: Select cooling curves for the power fan and all four nozzle fans.
+        help_url: http://snapmakeru1-extended-firmware.pages.dev/tweaks#fan-curves
+        get_cmd:
+          - bash
+          - -c
+          - |
+            python3 /usr/local/bin/fan_curves.py profile 2>/dev/null || echo stock
+        options:
+          stock:
+            label: Stock
+            confirm: Run the printer's own stepped fan tables?
+            cmd:
+              - bash
+              - -xc
+              - |
+                python3 /usr/local/bin/fan_curves.py apply stock
+        default: stock

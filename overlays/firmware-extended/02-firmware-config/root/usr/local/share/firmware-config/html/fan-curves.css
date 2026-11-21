@@ -1,0 +1,134 @@
+/* The fan curve editor of the settings page.
+ *
+ * The rules live under .fc-editor, so the settings page cannot reach the
+ * editor and the editor cannot reach the settings page. The colours come
+ * from the settings page, so both look the same.
+ */
+.fc-editor, .fc-editor * { box-sizing: border-box; }
+.fc-editor {
+    background: var(--card);
+    border: 1px solid #3a3a3a;
+    border-radius: 8px;
+    color: var(--text);
+    display: flex;
+    flex-direction: column;
+    font-family: inherit;
+    font-size: 14px;
+    gap: 10px;
+    margin-top: 12px;
+    min-width: 0;
+    padding: 12px;
+}
+.fc-editor button { font-family: inherit; }
+.fc-editor .btn {
+    background: var(--item); border: 1px solid #555; border-radius: 6px;
+    color: var(--text); cursor: pointer; font-size: 13px; font-weight: normal;
+    min-height: 34px; padding: 8px 14px;
+}
+.fc-editor .btn:hover:not(:disabled) { background: var(--hover); }
+.fc-editor .btn:disabled { cursor: not-allowed; opacity: 0.45; }
+.fc-editor .btn-primary { background: var(--accent); border-color: var(--accent); color: #000; font-weight: 600; }
+.fc-editor .btn-primary:hover:not(:disabled) { background: #6fd0f8; }
+.fc-editor .btn-secondary { background: var(--item); }
+.fc-editor .btn-icon { line-height: 1; padding: 8px 11px; }
+.fc-editor select, .fc-editor input[type="number"], .fc-editor input[type="text"] {
+    background: var(--item); border: 1px solid #555; border-radius: 6px;
+    color: var(--text); font-family: inherit; font-size: 13px; padding: 8px 10px;
+}
+.fc-editor select:focus, .fc-editor input:focus { outline: none; border-color: var(--accent); }
+
+.fc-editor .editor-head { align-items: center; display: flex; flex-wrap: wrap; gap: 10px; }
+.fc-editor .editor-head-left { align-items: center; display: flex; gap: 8px; }
+.fc-editor .editor-head label { color: var(--muted); font-size: 12px; }
+.fc-editor .editor-head select { min-width: 170px; }
+.fc-editor .editor-active { color: var(--muted); font-size: 12px; }
+.fc-editor .editor-tabs { display: flex; gap: 8px; margin-left: auto; }
+.fc-editor .info {
+    align-items: center; border: 1px solid #555; border-radius: 50%; color: var(--muted);
+    cursor: help; display: inline-flex; font-size: 11px; height: 18px;
+    justify-content: center; width: 18px;
+}
+.fc-editor .info:hover { color: var(--text); }
+
+.fc-editor .menu-wrap { position: relative; }
+.fc-editor .menu {
+    background: var(--bg); border: 1px solid #444; border-radius: 8px;
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.55); display: flex; flex-direction: column;
+    left: 0; min-width: 190px; padding: 4px; position: absolute; top: calc(100% + 6px); z-index: 20;
+}
+.fc-editor .menu[hidden] { display: none; }
+.fc-editor .menu button {
+    background: none; border: 0; border-radius: 6px; color: var(--text); cursor: pointer;
+    font-size: 13px; padding: 8px 10px; text-align: left;
+}
+.fc-editor .menu button:hover:not(:disabled) { background: var(--hover); }
+.fc-editor .menu button:disabled { color: #666; cursor: not-allowed; }
+.fc-editor .profile-name { width: 180px; }
+
+.fc-editor .editor-main { display: flex; flex: 1 1 auto; min-height: 0; }
+.fc-editor .panel { background: var(--bg); border: 1px solid #3a3a3a; border-radius: 8px; padding: 12px; }
+.fc-editor .panel-chart { display: flex; flex: 1; flex-direction: column; min-height: 0; padding: 8px; }
+
+.fc-editor .chart-wrap { background: #202020; border-radius: 6px; flex: 1 1 auto; min-height: 320px; position: relative; }
+.fc-editor .chart { display: block; height: 100%; left: 0; position: absolute; top: 0; touch-action: none; width: 100%; }
+.fc-editor .chart:focus { outline: none; }
+.fc-editor .chart text { fill: var(--muted); font-size: 11px; }
+.fc-editor .chart-grid { stroke: #3d3d3d; stroke-width: 1; }
+.fc-editor .chart-axis { stroke: #6a6a6a; stroke-width: 1; }
+.fc-editor .chart-line { fill: none; stroke: var(--accent); stroke-width: 2.5; }
+.fc-editor .chart-reference { fill: none; stroke: #6a6a6a; stroke-dasharray: 5 4; stroke-width: 1.5; }
+.fc-editor .chart-guide { stroke: #555; stroke-dasharray: 2 3; stroke-width: 1; }
+.fc-editor .chart-guide-dot { fill: var(--accent); }
+/* The readout floats over the chart, so it must not take the press that was
+   meant for a point underneath it. */
+.fc-editor .chart-readout { pointer-events: none; }
+.fc-editor .chart-readout-bg { fill: #111; opacity: 0.9; }
+.fc-editor .chart-readout-text { fill: var(--text); font-size: 11px; }
+.fc-editor .chart-dot { fill: #7a7a7a; }
+.fc-editor .chart-point { cursor: grab; fill: var(--accent); stroke: #111; stroke-width: 2; }
+.fc-editor .chart-point:active { cursor: grabbing; }
+.fc-editor .chart-point.selected { stroke: #fff; stroke-width: 3; }
+.fc-editor .chart-point:focus { outline: none; }
+
+.fc-editor .legend { align-items: center; color: var(--muted); display: flex; flex-wrap: wrap; font-size: 11px; gap: 16px; padding: 8px 4px 0; }
+.fc-editor .legend-item { align-items: center; display: flex; gap: 7px; }
+.fc-editor .legend-item[hidden] { display: none; }
+.fc-editor .swatch { border-top: 2px solid var(--accent); display: inline-block; height: 0; width: 24px; }
+.fc-editor .swatch.stock { border-top: 1.5px dashed #6a6a6a; }
+
+/* The chart, its legend and the manual that belongs to the chart. */
+.fc-editor .chart-note { color: var(--muted); font-size: 12px; margin: 0; padding: 6px 4px 0; }
+
+/* The point being edited, the message and the buttons are one row. The
+   message takes the room that is left between the point and the buttons. */
+.fc-editor .editor-toolbar { align-items: center; display: flex; flex-wrap: wrap; gap: 8px 16px; }
+.fc-editor .strip-title { color: var(--muted); font-size: 11px; letter-spacing: 0.5px; text-transform: uppercase; }
+.fc-editor .strip-fields { align-items: center; display: flex; flex-wrap: wrap; gap: 8px 16px; }
+.fc-editor .strip-fields[hidden] { display: none; }
+.fc-editor .strip-field { align-items: center; color: var(--muted); display: flex; font-size: 12px; gap: 6px; }
+.fc-editor .strip-field input { width: 84px; }
+.fc-editor .strip-button { font-size: 12px; padding: 5px 10px; }
+.fc-editor .unit { color: var(--muted); font-size: 12px; }
+.fc-editor .strip-hint { color: var(--muted); font-size: 12px; }
+.fc-editor .strip-hint[hidden] { display: none; }
+.fc-editor .status { color: var(--muted); flex: 1 1 0; font-size: 12px; line-height: 1.4; min-width: 0; }
+.fc-editor .status.error { color: var(--error); }
+.fc-editor .status.success { color: var(--success); }
+.fc-editor .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-left: auto; }
+
+.fc-editor .backdrop {
+    align-items: center; background: rgba(0, 0, 0, 0.6); display: flex;
+    inset: 0; justify-content: center; padding: 24px; position: fixed; z-index: 50;
+}
+.fc-editor .backdrop[hidden] { display: none; }
+.fc-editor .dialog { background: var(--card); border: 1px solid #444; border-radius: 10px; max-width: 460px; padding: 18px; width: 100%; }
+.fc-editor .dialog-title { font-size: 15px; margin-bottom: 10px; }
+.fc-editor .dialog-body { color: var(--muted); font-size: 13px; line-height: 1.7; white-space: pre-wrap; }
+.fc-editor .dialog-log { color: var(--muted); font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; line-height: 1.6; margin: 0; max-height: 220px; overflow: auto; white-space: pre-wrap; }
+.fc-editor .dialog-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+
+/* A narrow card has no room for the message beside the buttons, so the
+   message takes a line of its own below them. */
+@media (max-width: 900px) {
+    .fc-editor .status { flex: 1 1 100%; order: 10; }
+}
