@@ -1,0 +1,17 @@
+# Keep runtime interpreter lines valid on Windows checkouts.
+*.sh text eol=lf
+*.py text eol=lf
+*.patch text eol=lf
+
+# Extensionless shell entry points copied from overlays into the firmware.
+overlays/**/root/etc/init.d/* text eol=lf
+overlays/**/root/usr/sbin/wlan-powersave-disable text eol=lf
+overlays/**/root/usr/local/bin/extended-pkg text eol=lf
+overlays/**/root/usr/local/bin/memory-report text eol=lf
+overlays/**/root/usr/local/sbin/restore-mac text eol=lf
+overlays/**/root/usr/local/sbin/octoeverywhered text eol=lf
+overlays/**/root/usr/local/sbin/tailscaled text eol=lf
+overlays/**/root/usr/local/sbin/multiace-control text eol=lf
+overlays/**/root/usr/local/bin/tailscale text eol=lf
+overlays/**/root/usr/local/share/extended-pkg/multiace text eol=lf
+overlays/**/root/usr/local/bin/entware-ctrl text eol=lf
