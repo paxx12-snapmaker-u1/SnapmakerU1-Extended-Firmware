@@ -1,0 +1,19 @@
+From: LixNix <105106115+LixNix@users.noreply.github.com>
+Subject: klippy_apis: forward line_width_percent
+
+Pass line_width_percent to SDCARD_PRINT_FILE_WITH_PARAMETERS.
+
+Original work by @LixNix (patch 05 of the U1 2.0.0.205
+nozzle-map fix), rebased onto firmware-extended without changes.
+
+--- a/moonraker/components/klippy_apis.py
++++ b/moonraker/components/klippy_apis.py
+@@ -289,7 +289,7 @@
+                         metadata: Dict[str, Any],
+                         script: str) -> str:
+         metadata_fields = [
+-            'line_width', 'layer_height', 'outer_wall_speed', 'nozzle_diameter_list',
++            'line_width', 'line_width_percent', 'layer_height', 'outer_wall_speed', 'nozzle_diameter_list',
+             'nozzle_temp', 'filament_type', 'filament_flow_ratio', 'filament_diameter',
+             'filament_max_volumetric_speed', 'filament_used_g', 'filament_used_mm',
+             'outer_wall_acceleration', 'filament_volume_type', 'print_sequence',
