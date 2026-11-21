@@ -17,3 +17,15 @@ quick_actions:
             /usr/local/bin/extended-pkg octoeverywhere upgrade
             /etc/init.d/S99cloud restart
         message: "Upgrading OctoEverywhere..."
+      konnect-upgrade:
+        label: Upgrade Konnect
+        description: Download and install the latest pinned Konnect version.
+        if_cmd: /usr/local/bin/extended-pkg konnect needs_upgrade
+        confirm: "Upgrade Konnect and restart the cloud service?"
+        cmd:
+          - bash
+          - -ec
+          - |
+            /usr/local/bin/extended-pkg konnect upgrade
+            /etc/init.d/S99cloud restart
+        message: "Upgrading Konnect..."

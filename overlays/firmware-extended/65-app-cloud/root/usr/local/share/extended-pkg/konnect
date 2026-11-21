@@ -1,0 +1,65 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-PackageHomePage: https://github.com/hanzov69/konnect
+# SPDX-FileCopyrightText: Copyright (c) 2026 @hanzov69
+
+PKG_LABEL="Konnect"
+PKG_VERSION=0.3.0
+# A release ASSET, not a tag archive: GitHub tag archives are not
+# guaranteed byte-stable, release assets are. scripts/release-u1.sh in
+# the konnect repo builds the asset and prints the checksum.
+PKG_URL="https://github.com/hanzov69/konnect/releases/download/u1-${PKG_VERSION}/konnect-u1-${PKG_VERSION}.zip"
+PKG_SHA256=c9155f70c140cb3720d276c96bc2c6d4b62295ca35215986f56222313f8c21d0
+# The asset unpacks to `konnect-u1-<version>`.
+PKG_PREFIX="konnect-u1"
+
+# Like octoeverywhere: the venv lives beside the versioned directory so
+# `konnectd` can reference it by a fixed path across upgrades.
+#
+# Two deviations from the stock recipe, both learned on real hardware:
+# the image's python3 has a broken/absent ensurepip (venv dies trying to
+# bootstrap pip), so the venv is created --without-pip and pip comes
+# from get-pip.py; and pip is run with --no-cache-dir + a scratch dir on
+# /oem, because /tmp is a small tmpfs. extended-pkg already lifts the
+# memory cap (limits_enter actions max) before calling this.
+pkg_post_install() {
+    local staging=$1
+    local pip="$PKG_APP_DIR/venv/bin/pip"
+    local scratch="$PKG_APP_DIR/pip-tmp"
+
+    echo "Setting up Python virtual environment..."
+    if ! python3 -m venv --without-pip "$PKG_APP_DIR/venv"; then
+        echo "Failed to create virtual environment"
+        return 1
+    fi
+
+    echo "Bootstrapping pip (ensurepip is broken on this image)..."
+    if ! /usr/local/bin/curl -fsSL https://bootstrap.pypa.io/get-pip.py \
+            -o "$PKG_APP_DIR/get-pip.py"; then
+        echo "Failed to download get-pip.py"
+        return 1
+    fi
+    if ! "$PKG_APP_DIR/venv/bin/python3" "$PKG_APP_DIR/get-pip.py" \
+            --no-cache-dir; then
+        echo "Failed to bootstrap pip"
+        return 1
+    fi
+    rm -f "$PKG_APP_DIR/get-pip.py"
+
+    mkdir -p "$scratch"
+    echo "Installing dependencies (this can take a few minutes)..."
+    if ! TMPDIR="$scratch" "$pip" install --disable-pip-version-check \
+            --no-cache-dir -r "$staging/requirements-u1.txt"; then
+        echo "Failed to install dependencies"
+        rm -rf "$scratch"
+        return 1
+    fi
+
+    echo "Installing konnect..."
+    if ! TMPDIR="$scratch" "$pip" install --disable-pip-version-check \
+            --no-cache-dir --no-deps "$staging"; then
+        echo "Failed to install konnect"
+        rm -rf "$scratch"
+        return 1
+    fi
+    rm -rf "$scratch"
+}
