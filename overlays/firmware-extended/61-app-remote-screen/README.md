@@ -12,6 +12,7 @@ A lightweight Python HTTP server that exposes the framebuffer as PNG snapshots a
 
 - `GET /` - HTML viewer with auto-refresh and touch support
 - `GET /snapshot` - Current framebuffer as PNG image
+- `GET /stream` - PNG frames pushed whenever the screen changes (`multipart/mixed` stream)
 - `POST /touch?x=&y=` - Send touch event at coordinates
 
 ## Configuration
