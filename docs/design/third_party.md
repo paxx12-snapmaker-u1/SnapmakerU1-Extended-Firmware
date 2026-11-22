@@ -63,6 +63,7 @@ The rest are optional and default to something derived from `<name>`:
 | `PKG_LABEL` | `<name>` | Human-readable name used in messages. |
 | `PKG_APP_DIR` | `/oem/apps/<name>` | Install root. |
 | `PKG_PREFIX` | `<name>` | Versioned directory name, minus `-$PKG_VERSION`. Set it when the archive does not unpack to `<name>-<version>`. |
+| `PKG_STRIP_COMPONENTS` | `1` | Leading directories dropped when unpacking, `1` or `0`. Set `0` when the archive's files sit at its top level rather than inside a single directory. |
 | `PKG_BINARIES` | *(none)* | Paths, relative to the install directory, that must exist and be executable for the package to count as installed. When empty, the directory merely has to exist. |
 | `PKG_CLEAN_PATHS` | *(none)* | Extra paths `clean` removes, such as state directories living outside the install root. |
 | `PKG_LEGACY_DIR` | *(none)* | A pre-`latest` install directory. Used until an upgrade replaces it, and removed once one does. |

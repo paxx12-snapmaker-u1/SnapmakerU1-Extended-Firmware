@@ -23,6 +23,10 @@
 #   PKG_APP_DIR      Install root (default: /oem/apps/<name>)
 #   PKG_PREFIX       Versioned directory name, minus `-$PKG_VERSION`
 #                    (default: <name>)
+#   PKG_STRIP_COMPONENTS
+#                    Leading directories to drop when unpacking, `1` or `0`
+#                    (default: 1). Use `0` for archives whose files sit at the
+#                    top level instead of inside a single directory.
 #   PKG_BINARIES     Paths, relative to the install directory, that must exist
 #                    and be executable for the package to count as installed.
 #                    When empty, the install directory merely has to exist.
@@ -64,6 +68,7 @@ fi
 PKG_LABEL="$PKG"
 PKG_APP_DIR="/oem/apps/$PKG"
 PKG_PREFIX="$PKG"
+PKG_STRIP_COMPONENTS=1
 PKG_BINARIES=""
 PKG_CLEAN_PATHS=""
 PKG_LEGACY_DIR=""
@@ -77,6 +82,11 @@ for required in PKG_VERSION PKG_URL PKG_SHA256; do
         exit 1
     fi
 done
+
+if [[ "$PKG_STRIP_COMPONENTS" != 0 && "$PKG_STRIP_COMPONENTS" != 1 ]]; then
+    echo "Package '$PKG' sets PKG_STRIP_COMPONENTS to '$PKG_STRIP_COMPONENTS', expected 0 or 1"
+    exit 1
+fi
 
 VERSIONED_DIR="$PKG_APP_DIR/$PKG_PREFIX-$PKG_VERSION"
 TMP_DIR="$PKG_APP_DIR/tmp"
@@ -129,7 +139,8 @@ clean() {
     echo "Removed."
 }
 
-# Unpack `$1` into `$2`, dropping the archive's single leading directory.
+# Unpack `$1` into `$2`, dropping the archive's single leading directory
+# unless `PKG_STRIP_COMPONENTS` is `0`.
 extract() {
     local archive=$1 dest=$2
 
@@ -138,6 +149,12 @@ extract() {
             rm -rf "$dest.unpack"
             mkdir -p "$dest.unpack"
             unzip -q "$archive" -d "$dest.unpack" || return 1
+
+            if [[ "$PKG_STRIP_COMPONENTS" == 0 ]]; then
+                rm -rf "$dest"
+                mv "$dest.unpack" "$dest" || return 1
+                return 0
+            fi
 
             local top=("$dest.unpack"/*)
             if [[ ${#top[@]} -ne 1 || ! -d "${top[0]}" ]]; then
@@ -151,7 +168,7 @@ extract() {
             ;;
         *)
             mkdir -p "$dest"
-            tar --strip-components=1 -xzf "$archive" -C "$dest" || return 1
+            tar --strip-components="$PKG_STRIP_COMPONENTS" -xzf "$archive" -C "$dest" || return 1
             ;;
     esac
 }
