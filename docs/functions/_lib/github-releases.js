@@ -1,6 +1,11 @@
 export const DEFAULT_REPO = "paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware";
 export const CACHE_SECONDS = 60;
 
+// How long `githubApi()` keeps a last-known-good copy of each GitHub API
+// response, served only when a fresh call fails (rate-limited or
+// unreachable). Releases change rarely, so a day-old answer beats an error.
+export const STALE_SECONDS = 24 * 60 * 60;
+
 // Tag of the single rolling pre-release that `.github/workflows/develop.yaml`
 // overwrites (via `ncipollo/release-action`'s `allowUpdates`) on every push
 // to `develop`. Its `name` carries the real build version; the tag itself
@@ -14,9 +19,17 @@ export const DEVELOP_RELEASE_TAG = "rolling";
 // request. This is what lets `latest.js` and `upgrade_desc.js` — two
 // separate device requests that each resolve the same release — share one
 // upstream GitHub API call instead of doubling it.
+//
+// Every success is also kept under a separate key for `STALE_SECONDS`, and
+// served when a fresh call fails: unauthenticated calls share GitHub's 60
+// req/hour limit per IP with every other tenant on Cloudflare's egress IPs,
+// so 403/429s happen even at low traffic.
 async function githubApi(path, env) {
   const apiUrl = `https://api.github.com${path}`;
   const cacheKey = new Request(apiUrl);
+  const staleUrl = new URL(apiUrl);
+  staleUrl.searchParams.set("stale", "1");
+  const staleKey = new Request(staleUrl.toString());
   const cache = caches.default;
 
   const hit = await cache.match(cacheKey);
@@ -28,21 +41,41 @@ async function githubApi(path, env) {
   };
   if (env.GITHUB_TOKEN) headers.authorization = `Bearer ${env.GITHUB_TOKEN}`;
 
-  const res = await fetch(apiUrl, { headers });
+  let res;
+  try {
+    res = await fetch(apiUrl, { headers });
+  } catch (err) {
+    const stale = await cache.match(staleKey);
+    if (stale) return stale.json();
+    throw err;
+  }
+
   if (!res.ok) {
+    // A missing release is a real answer, not an outage, so never mask it.
+    if (res.status !== 404) {
+      const stale = await cache.match(staleKey);
+      if (stale) return stale.json();
+    }
     const err = new Error(`GitHub API ${path} returned ${res.status}`);
     err.status = res.status;
     throw err;
   }
 
-  const body = await res.json();
-  await cache.put(cacheKey, new Response(JSON.stringify(body), {
+  const body = JSON.stringify(await res.json());
+  await Promise.all([
+    cache.put(cacheKey, cachedJson(body, CACHE_SECONDS)),
+    cache.put(staleKey, cachedJson(body, STALE_SECONDS)),
+  ]);
+  return JSON.parse(body);
+}
+
+function cachedJson(body, maxAge) {
+  return new Response(body, {
     headers: {
       "content-type": "application/json",
-      "cache-control": `public, max-age=${CACHE_SECONDS}`,
+      "cache-control": `public, max-age=${maxAge}`,
     },
-  }));
-  return body;
+  });
 }
 
 // `stable` uses GitHub's dedicated "latest release" endpoint, which already
