@@ -86,7 +86,7 @@ MULTIACE_CONFIG_FILE="$CONFIG_FILE"
 TEST_BIN="$TEST_DIR/bin"
 mkdir -p "$TEST_BIN" "$MULTIACE_APP_ROOT/config/extended" \
     "$MULTIACE_APP_ROOT/tools" "$MULTIACE_STATE_DIR"
-printf '%s\n' '1.27b' > "$MULTIACE_APP_ROOT/VERSION"
+printf '%s\n' '1.90.1' > "$MULTIACE_APP_ROOT/VERSION"
 cat > "$MULTIACE_APP_ROOT/config/extended/ace.cfg" <<'EOF'
 [ace]
 new_default_option: true
@@ -99,7 +99,7 @@ if ! multiace_merge_config 2>"$TEST_DIR/missing-merge-helper.log"; then
     exit 1
 fi
 cmp -s "$CONFIG_FILE" "$TEST_DIR/before-merge.cfg"
-grep -Fqx '1.27b' "$MULTIACE_CONFIG_MERGE_WARNING_VERSION"
+grep -Fqx '1.90.1' "$MULTIACE_CONFIG_MERGE_WARNING_VERSION"
 
 cat > "$TEST_BIN/python3" <<'EOF'
 #!/bin/sh
@@ -123,7 +123,7 @@ export PATH
 multiace_merge_config
 grep -q '^ace_device_count: 2$' "$CONFIG_FILE"
 grep -Fq '# refreshed with the package template' "$CONFIG_FILE"
-grep -Fqx '1.27b' "$MULTIACE_CONFIG_TEMPLATE_VERSION"
+grep -Fqx '1.90.1' "$MULTIACE_CONFIG_TEMPLATE_VERSION"
 [ ! -e "$MULTIACE_CONFIG_MERGE_WARNING_VERSION" ]
 
 # A failed merge must leave the user's original file intact and avoid marking
@@ -170,9 +170,9 @@ grep -Fq 'value: multiace' "$LINKS_FILE"
 # Keep the package pin on the provider's published release and validate the
 # extra files required by the current managed payload.
 PACKAGE_FILE="$OVERLAY_DIR/root/usr/local/share/extended-pkg/multiace"
-grep -Fqx 'PKG_VERSION="1.27b"' "$PACKAGE_FILE"
-grep -Fqx 'PKG_URL="https://github.com/decay71/multiACE/releases/download/v1.27b/multiace-managed-1.27b.tar.gz"' "$PACKAGE_FILE"
-grep -Fqx 'PKG_SHA256="aedc432f1ca56854ae3da98e28d6a947a9b4adc2bdb88e7feb760be472968556"' "$PACKAGE_FILE"
+grep -Fqx 'PKG_VERSION="1.90.1"' "$PACKAGE_FILE"
+grep -Fqx 'PKG_URL="https://github.com/decay71/multiACE/releases/download/v1.90.1/multiace-managed-1.90.1.tar.gz"' "$PACKAGE_FILE"
+grep -Fqx 'PKG_SHA256="6e72f3d99656961cf9b23c337d041a94e16c05745818ab8d4a8fc84b8e977dde"' "$PACKAGE_FILE"
 grep -Fq 'klipper/extras/ace_gen1_tunnel.py' "$PACKAGE_FILE"
 grep -Fq 'tools/post_process_virtual_toolheads.py' "$PACKAGE_FILE"
 grep -Fq 'requirements.txt" || return 1' "$PACKAGE_FILE"
@@ -186,8 +186,8 @@ grep -Fq 'tools/merge_ace_cfg.py' "$COMMON_FILE"
 grep -Fq 'if ! multiace_merge_config; then' "$COMMON_FILE"
 grep -Fq 'ace_gen1_tunnel.py' "$COMMON_FILE"
 DOCS_FILE="$OVERLAY_DIR/../../../../docs/multiace.md"
-grep -Fq 'v1.27b' "$DOCS_FILE"
-grep -Fq 'excludes `tools/merge_ace_cfg.py`' "$DOCS_FILE"
+grep -Fq 'v1.90.1' "$DOCS_FILE"
+grep -Fq 'ships `tools/merge_ace_cfg.py`' "$DOCS_FILE"
 ! grep -Fq 'v1.11b-test' "$DOCS_FILE"
 
 echo "multiACE managed config sanitizer test passed"

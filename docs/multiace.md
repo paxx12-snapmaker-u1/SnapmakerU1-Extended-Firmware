@@ -119,22 +119,20 @@ is treated as an error rather than silently replacing another installation.
 
 ## Current pin and scope
 
-PAXX pins multiACE version `1.27b` from the regular
-[`v1.27b` release](https://github.com/decay71/multiACE/releases/tag/v1.27b),
+PAXX pins multiACE version `1.90.1` from the regular
+[`v1.90.1` release](https://github.com/decay71/multiACE/releases/tag/v1.90.1),
 built from source commit
-[`a1a7b91`](https://github.com/decay71/multiACE/commit/a1a7b91b1fd297c1486a13ea22c61e01499a196d).
+[`bcc4542`](https://github.com/decay71/multiACE/commit/bcc454235fb1284b1d098be33c644069008e9e34).
 The exact managed archive URL and SHA256 are pinned in the package definition;
 the installer does not follow a moving `latest` release or an unverified
-branch. This release includes the Gen 1 tunnel and web preflight helper as
-required managed-package files.
+branch. This release includes the Gen 1 tunnel, the web preflight helper and
+the split Klipper modules (`ace_drivers.py`, `ace_unit.py`, `ace_swap.py` and
+others) as required managed-package files. PAXX bind-mounts each of them into
+the Klipper `extras` tree.
 
-There is one remaining provider-package gap: the `v1.27b` managed archive
-excludes `tools/merge_ace_cfg.py`, even though that helper exists in the
-multiACE source tree. PAXX preserves the existing `ace.cfg` and will invoke the
-provider helper during package refresh when it is present, but this release
-cannot merge new template options into an existing user config. Including that
-helper in a managed multiACE release (or an equivalent provider-supported
-managed migration interface) is still needed to complete safe config upgrades.
+The `v1.90.1` managed archive ships `tools/merge_ace_cfg.py`, so PAXX invokes the
+provider helper during package refresh to merge new template options into an
+existing user `ace.cfg`.
 
 This is a draft integration for hardware testing. It has been checked for
 package structure, checksum verification, shell syntax, and provider-side
