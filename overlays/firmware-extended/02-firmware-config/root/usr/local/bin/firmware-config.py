@@ -8,7 +8,6 @@ import configparser
 import glob
 import json
 import os
-import pwd
 import re
 import subprocess
 import threading
@@ -440,11 +439,16 @@ class FirmwareConfigHandler(SimpleHTTPRequestHandler):
         """Mainsail shows .theme/navi.json entries in its sidebar. Keep ours
         (marked "extended": true) in step with the visible links, leaving any
         entries the user added alone. Fluidd gets the same links from nav.js."""
+        # .theme/ belongs to lava and is editable from Fluidd/Mainsail: read and
+        # write navi.json as lava, so a symlink planted there can't make this
+        # root service read, overwrite or chown another file.
         try:
             entries = []
             if os.path.exists(MAINSAIL_NAVI):
-                with open(MAINSAIL_NAVI) as f:
-                    entries = [e for e in json.load(f) if isinstance(e, dict) and not e.get("extended")]
+                result = subprocess.run(
+                    ["su", "-s", "/bin/sh", "-c", 'exec cat -- "$1"', "--", "lava", "sh", MAINSAIL_NAVI],
+                    capture_output=True, text=True, timeout=10, check=True)
+                entries = [e for e in json.loads(result.stdout) if isinstance(e, dict) and not e.get("extended")]
         except Exception as e:
             log(f"Not updating {MAINSAIL_NAVI}: {e}")
             return
@@ -459,13 +463,12 @@ class FirmwareConfigHandler(SimpleHTTPRequestHandler):
         if not entries and not os.path.exists(MAINSAIL_NAVI):
             return
         try:
-            os.makedirs(os.path.dirname(MAINSAIL_NAVI), exist_ok=True)
-            tmp = MAINSAIL_NAVI + ".tmp"
-            with open(tmp, "w") as f:
-                json.dump(entries, f, indent=2)
-            lava = pwd.getpwnam("lava")
-            os.chown(tmp, lava.pw_uid, lava.pw_gid)
-            os.replace(tmp, MAINSAIL_NAVI)
+            subprocess.run(
+                ["su", "-s", "/bin/sh", "-c",
+                 'set -e; umask 022; mkdir -p "${1%/*}"; cat > "$1.tmp"; mv -f "$1.tmp" "$1"',
+                 "--", "lava", "sh", MAINSAIL_NAVI],
+                input=json.dumps(entries, indent=2), text=True, capture_output=True,
+                timeout=10, check=True)
         except Exception as e:
             log(f"Failed to write {MAINSAIL_NAVI}: {e}")
 
