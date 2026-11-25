@@ -1,0 +1,50 @@
+#!/bin/sh
+#
+# Re-start the Remote Screen service (fb-http) when HelixScreen owns the
+# display launcher.
+#
+# HelixScreen's autostart hook replaces /etc/init.d/S99fb-http with a delegate
+# that starts HelixScreen INSTEAD of the fb-http daemon, preserving the
+# original as S99fb-http.stock. Without this script the Remote Screen feature
+# (http://<printer-ip>/screen/) silently dies on the first boot after
+# installing HelixScreen.
+#
+# This script ships in the squashfs (so it is in the busybox boot glob, which
+# is frozen before the overlay pivot) and sorts right after S99fb-http. It
+# starts the preserved stock launcher, which itself no-ops unless Remote
+# Screen is enabled in extended2.cfg. No-op when HelixScreen is not installed
+# or when S99fb-http was not hijacked.
+#
+
+case "${1:-}" in
+    start)
+        # Only act when HelixScreen owns the display.
+        [ -x /userdata/helixscreen/config/helixscreen.init ] || exit 0
+
+        # HelixScreen is pinned to the fbdev backend (Remote Screen
+        # compatibility, see install-helixscreen.sh), so nothing performs DRM
+        # commits after startup and the panel would stay frozen on the last
+        # boot-logo/splash frame while /dev/fb0 updates invisibly. The restore
+        # must wait out helix-screen/helix-splash startup (an immediate
+        # blank/unblank loses the race to the splash's page flips), so run it
+        # detached — init must not block.
+        if [ -x /usr/local/bin/helix-restore-panel-scanout ]; then
+            /usr/local/bin/helix-restore-panel-scanout >/tmp/helix-scanout-restore.log 2>&1 &
+        fi
+
+        # Restart the Remote Screen daemon that the HelixScreen boot hook
+        # skips (it replaced S99fb-http, preserving the stock launcher).
+        if [ -x /etc/init.d/S99fb-http.stock ]; then
+            /etc/init.d/S99fb-http.stock start || true
+        fi
+        ;;
+    stop|restart|reload)
+        # The real S99fb-http (or its .stock copy) handles stop at shutdown.
+        ;;
+    *)
+        echo "Usage: $0 {start|stop}"
+        exit 1
+        ;;
+esac
+
+exit 0
