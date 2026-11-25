@@ -1,0 +1,57 @@
+From 5168969ce703152949c1be230f18263619b0bde5 Mon Sep 17 00:00:00 2001
+From: Codex <codex@openai.com>
+Date: Fri, 3 Apr 2026 16:05:00 +0200
+Subject: [PATCH] snapmaker: Ignore config sections marked for internal removal
+
+Add support for an internal `__internal_remove: true` option that prunes
+the containing config section after include resolution. This lets
+generated configs disable a section without having to physically rewrite
+the merged source file layout.
+---
+ klippy/configfile.py | 17 +++++++++++++++++
+ 1 file changed, 17 insertions(+)
+
+diff --git a/klippy/configfile.py b/klippy/configfile.py
+index 983118cf7..2833a1f21 100644
+--- a/klippy/configfile.py
++++ b/klippy/configfile.py
+@@ -144,6 +144,8 @@ AUTOSAVE_HEADER = """
+ #*#
+ """
+ 
++INTERNAL_REMOVE_OPTION = "__internal_remove"
++
+ class PrinterConfig:
+     def __init__(self, printer):
+         self.printer = printer
+@@ -269,6 +271,20 @@ class PrinterConfig:
+                 buffer.append(line)
+         self._parse_config_buffer(buffer, filename, fileconfig)
+         visited.remove(path)
++    def _prune_internal_removed_sections(self, fileconfig):
++        for section in list(fileconfig.sections()):
++            if not fileconfig.has_option(section, INTERNAL_REMOVE_OPTION):
++                continue
++            try:
++                should_remove = fileconfig.getboolean(
++                    section, INTERNAL_REMOVE_OPTION)
++            except configparser.Error:
++                raise
++            except:
++                raise error("Unable to parse option '%s' in section '%s'"
++                            % (INTERNAL_REMOVE_OPTION, section))
++            if should_remove:
++                fileconfig.remove_section(section)
+     def _build_config_wrapper(self, data, filename):
+         if sys.version_info.major >= 3:
+             fileconfig = configparser.RawConfigParser(
+@@ -276,6 +292,7 @@ class PrinterConfig:
+         else:
+             fileconfig = configparser.RawConfigParser()
+         self._parse_config(data, filename, fileconfig, set())
++        self._prune_internal_removed_sections(fileconfig)
+         return ConfigWrapper(self.printer, fileconfig, {}, 'printer')
+     def _build_config_string(self, config):
+         sfile = io.StringIO()
+-- 
+2.47.3
