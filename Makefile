@@ -63,6 +63,12 @@ tools: tools/rk2918_tools tools/upfile tools/resource_tool
 tools/%: FORCE
 	make -C $@
 
+.PHONY: tools-clean
+tools-clean:
+	make -C tools/rk2918_tools clean
+	make -C tools/upfile clean
+	make -C tools/resource_tool clean
+
 # =============== Firmware ===============
 
 .PHONY: firmware
@@ -73,6 +79,10 @@ firmware/$(FIRMWARE_FILE):
 	wget -O $@.tmp "https://public.resource.snapmaker.com/firmware/U1/$(FIRMWARE_FILE)"
 	echo "$(FIRMWARE_SHA256)  $@.tmp" | sha256sum -c --quiet
 	mv $@.tmp $@
+
+.PHONY: clean-firmware
+firmware-clean:
+	rm -rf firmware/
 
 # ================= Test =================
 
@@ -88,3 +98,9 @@ changelog:
 
 .PHONY: FORCE
 FORCE:
+
+# ================= Clean =================
+
+.PHONY: clean
+clean: tools-clean firmware-clean
+	rm -rf $(BUILD_DIR)
