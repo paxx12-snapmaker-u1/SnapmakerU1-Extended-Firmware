@@ -10,10 +10,10 @@ fi
 
 set -eo pipefail
 
-RKNN_VERSION=2.3.2
+RKNN_VERSION=2.5.0
 RKNN_FILENAME=rknn_toolkit_lite2-${RKNN_VERSION}-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl
 RKNN_URL=https://github.com/airockchip/rknn-toolkit2/raw/refs/heads/master/rknn-toolkit-lite2/packages/$RKNN_FILENAME
-RKNN_SHA256=bda74f1179e15fccb8726054a24898982522784b65bb340b20146955d254e800
+RKNN_SHA256=1f1ef5df21d0abf9c8d6d582e21fb8226c2f7ffc17d7744cd18260a7343d503f
 
 echo ">> Downloading RKNN Toolkit Lite2..."
 cache_file.sh "$CACHE_DIR/$RKNN_FILENAME" "$RKNN_URL" "$RKNN_SHA256"
