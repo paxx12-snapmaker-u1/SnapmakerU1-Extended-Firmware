@@ -20,6 +20,8 @@ Access the Firmware Config tool at `http://<printer-ip>/firmware-config/`
 
 ![Firmware Config overview](screenshots/firmware-config.png)
 
+You don't need to type the address: in Fluidd, open the three-dots menu at the top right, where the **Extended Firmware** section links to Firmware Config and the other enabled pages. The section is hidden while Fluidd's printer switcher shows another printer, since the links always open this printer's pages. In Mainsail the same links are added to the sidebar (through `config/.theme/navi.json`; entries you add there yourself are kept).
+
 ### Status
 
 Displays system information including:
@@ -35,6 +37,7 @@ Dynamic links based on current settings:
 - **Internal Camera** - Camera stream (when paxx12 service is enabled)
 - **USB Camera** - USB camera stream (when enabled)
 - **Remote Screen** - Remote screen access (when enabled)
+- **Filament Manager** - Filament and RFID tag management
 - **Push Notifications** - Notification settings ([Push Notifications](notifications.md))
 
 ### Settings
@@ -54,6 +57,7 @@ Toggle settings directly from the web interface:
 | Klipper Metrics Exporter | Enabled, Disabled | Enable Prometheus metrics |
 | VPN Provider | None, Tailscale | Enable VPN remote access (Experimental) |
 | Cloud | None, OctoEverywhere | Enable Cloud-based remote access (Experimental) |
+| HTTPS | Disabled, Self-Signed, Manual Certificate, ACME | Serve the web interface over HTTPS, with optional client certificates (Experimental, [HTTPS](https.md)) |
 | Tweaks | Max Speed, TMC AutoTune, TMC Reduced Current, Object Processing, AFC Stub | Experimental Klipper tweaks ([tweaks](tweaks.md)) |
 | Troubleshooting | Faulty Toolhead Bypass | Temporary toolhead thermistor bypass so the remaining toolheads can still be used ([faulty_toolhead](faulty_toolhead.md)) |
 | RFID Detection System | External, Snapmaker, OpenRFID, OpenRFID (force generic vendor) | Set how filament is detected ([RFID Format & Reader Design](design/rfid.md)) |
@@ -196,6 +200,16 @@ See [VPN Remote Access](vpn.md) for setup instructions.
 - `octoeverywhere` - [OctoEverywhere.com](https://octoeverywhere.com) remote access
 
 See the [3D Printing Clouds](cloud.md) for setup instructions.
+
+#### [https]
+
+**mode** - Serve the web interface over HTTPS
+- `none` (default) - HTTPS disabled
+- `self_signed` - Certificate generated on the printer
+- `manual` - Your own certificate in `extended/tls/`
+- `acme` - Automatically issued and renewed certificate from an ACME CA
+
+See [HTTPS](https.md) for all options, including client certificates (mTLS).
 
 #### [monitoring]
 

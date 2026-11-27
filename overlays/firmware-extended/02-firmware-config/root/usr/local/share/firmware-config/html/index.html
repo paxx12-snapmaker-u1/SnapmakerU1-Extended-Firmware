@@ -16,6 +16,7 @@
         a { color: var(--accent); text-decoration: none; }
         a:hover { text-decoration: underline; }
         .container { max-width: 900px; margin: 0 auto; }
+        .back-link { display: inline-block; color: var(--muted); font-size: 13px; margin-bottom: 8px; }
         h1 { color: var(--accent); margin-bottom: 20px; font-size: 24px; display: flex; justify-content: space-between; align-items: center; }
         .card { background: var(--card); border-radius: 8px; padding: 16px; margin-bottom: 16px; }
         .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
@@ -88,6 +89,7 @@
 </head>
 <body>
     <div class="container">
+        <a class="back-link" href="/">&larr; Web Interface</a>
         <h1>Firmware Config <button class="btn btn-primary" onclick="refreshAll()">&#x21bb; Refresh</button></h1>
 
         <div id="service-notice" class="notice">
