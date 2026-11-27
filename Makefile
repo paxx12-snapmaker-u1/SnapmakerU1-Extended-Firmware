@@ -68,16 +68,22 @@ tools/%: FORCE
 .PHONY: firmware
 firmware: firmware/$(FIRMWARE_FILE)
 
-firmware/$(FIRMWARE_FILE):
-	@mkdir -p firmware
-	wget -O $@.tmp "https://public.resource.snapmaker.com/firmware/U1/$(FIRMWARE_FILE)"
-	echo "$(FIRMWARE_SHA256)  $@.tmp" | sha256sum -c --quiet
-	mv $@.tmp $@
+firmware/$(FIRMWARE_FILE): FORCE
+	bash scripts/helpers/cache_file.sh "$@" \
+		"https://public.resource.snapmaker.com/firmware/U1/$(FIRMWARE_FILE)" \
+		"$(FIRMWARE_SHA256)"
 
 # ================= Test =================
 
-test: firmware/$(FIRMWARE_FILE)
+test: test-downloads test-build-guards firmware/$(FIRMWARE_FILE) tools
 	make -C tools test FIRMWARE_FILE=$(CURDIR)/firmware/$(FIRMWARE_FILE)
+
+.PHONY: test-downloads test-build-guards
+test-downloads:
+	PYTHONDONTWRITEBYTECODE=1 python3 scripts/tests/cache_file_test.py
+
+test-build-guards:
+	PYTHONDONTWRITEBYTECODE=1 python3 scripts/tests/build_guard_test.py
 
 # ================= Helpers =================
 

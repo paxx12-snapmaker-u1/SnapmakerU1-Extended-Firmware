@@ -8,6 +8,8 @@ set -e
 IMAGE_NAME="snapmaker-u1-dev"
 BUILD_CONTEXT=".github/dev"
 
+bash scripts/helpers/check_build_environment.sh "$PWD"
+
 if ! docker build --cache-from "$IMAGE_NAME" -t "$IMAGE_NAME" "$BUILD_CONTEXT"; then
     echo "[!] Docker build failed."
     exit 1
