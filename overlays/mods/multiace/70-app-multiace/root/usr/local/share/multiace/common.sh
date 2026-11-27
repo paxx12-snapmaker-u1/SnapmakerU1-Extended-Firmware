@@ -294,6 +294,16 @@ multiace_unmount_modules() {
     multiace_unmount_file /home/lava/klipper/klippy/extras/ace_tipform.py
     multiace_unmount_file /home/lava/klipper/klippy/extras/ace_rc522.py
     multiace_unmount_file /home/lava/klipper/klippy/extras/ace_gen1_tunnel.py
+    multiace_unmount_file /home/lava/klipper/klippy/extras/ace_macro_layout.py
+    multiace_unmount_file /home/lava/klipper/klippy/extras/ace_protocol_cfs.py
+    multiace_unmount_file /home/lava/klipper/klippy/extras/ace_protocol_ace2k.py
+    multiace_unmount_file /home/lava/klipper/klippy/extras/ace_resistance.py
+    multiace_unmount_file /home/lava/klipper/klippy/extras/ace_display.py
+    multiace_unmount_file /home/lava/klipper/klippy/extras/ace_spool.py
+    multiace_unmount_file /home/lava/klipper/klippy/extras/ace_settings.py
+    multiace_unmount_file /home/lava/klipper/klippy/extras/ace_swap.py
+    multiace_unmount_file /home/lava/klipper/klippy/extras/ace_unit.py
+    multiace_unmount_file /home/lava/klipper/klippy/extras/ace_drivers.py
     multiace_unmount_file /home/lava/klipper/klippy/extras/filament_feed_ace.py
     multiace_unmount_file /home/lava/klipper/klippy/extras/filament_feed.py
     multiace_unmount_file /home/lava/klipper/klippy/extras/filament_switch_sensor_ace.py
@@ -319,6 +329,26 @@ multiace_mount_modules() {
         /home/lava/klipper/klippy/extras/ace_rc522.py || return 1
     multiace_bind_file "$MULTIACE_APP_ROOT/klipper/extras/ace_gen1_tunnel.py" \
         /home/lava/klipper/klippy/extras/ace_gen1_tunnel.py || return 1
+    multiace_bind_file "$MULTIACE_APP_ROOT/klipper/extras/ace_macro_layout.py" \
+        /home/lava/klipper/klippy/extras/ace_macro_layout.py || return 1
+    multiace_bind_file "$MULTIACE_APP_ROOT/klipper/extras/ace_protocol_cfs.py" \
+        /home/lava/klipper/klippy/extras/ace_protocol_cfs.py || return 1
+    multiace_bind_file "$MULTIACE_APP_ROOT/klipper/extras/ace_protocol_ace2k.py" \
+        /home/lava/klipper/klippy/extras/ace_protocol_ace2k.py || return 1
+    multiace_bind_file "$MULTIACE_APP_ROOT/klipper/extras/ace_resistance.py" \
+        /home/lava/klipper/klippy/extras/ace_resistance.py || return 1
+    multiace_bind_file "$MULTIACE_APP_ROOT/klipper/extras/ace_display.py" \
+        /home/lava/klipper/klippy/extras/ace_display.py || return 1
+    multiace_bind_file "$MULTIACE_APP_ROOT/klipper/extras/ace_spool.py" \
+        /home/lava/klipper/klippy/extras/ace_spool.py || return 1
+    multiace_bind_file "$MULTIACE_APP_ROOT/klipper/extras/ace_settings.py" \
+        /home/lava/klipper/klippy/extras/ace_settings.py || return 1
+    multiace_bind_file "$MULTIACE_APP_ROOT/klipper/extras/ace_swap.py" \
+        /home/lava/klipper/klippy/extras/ace_swap.py || return 1
+    multiace_bind_file "$MULTIACE_APP_ROOT/klipper/extras/ace_unit.py" \
+        /home/lava/klipper/klippy/extras/ace_unit.py || return 1
+    multiace_bind_file "$MULTIACE_APP_ROOT/klipper/extras/ace_drivers.py" \
+        /home/lava/klipper/klippy/extras/ace_drivers.py || return 1
     multiace_bind_file "$MULTIACE_APP_ROOT/klipper/extras/filament_feed_ace.py" \
         /home/lava/klipper/klippy/extras/filament_feed_ace.py || return 1
     multiace_bind_file "$MULTIACE_APP_ROOT/klipper/extras/filament_feed_ace.py" \

@@ -6,9 +6,9 @@
 # This definition intentionally pins the provider release. Updating multiACE
 # requires a reviewed firmware change with a new version and checksum.
 PKG_LABEL="multiACE"
-PKG_VERSION="1.27b"
-PKG_URL="https://github.com/decay71/multiACE/releases/download/v1.27b/multiace-managed-1.27b.tar.gz"
-PKG_SHA256="aedc432f1ca56854ae3da98e28d6a947a9b4adc2bdb88e7feb760be472968556"
+PKG_VERSION="1.91"
+PKG_URL="https://github.com/decay71/multiACE/releases/download/v1.91/multiace-managed-1.91.tar.gz"
+PKG_SHA256="c657a5fb4bebd7e84e3973a7d0d399ed738a6084a675a6b1f05d3e7d91ec9cbb"
 PKG_APP_DIR="/oem/apps/multiace"
 PKG_PREFIX="multiace"
 PKG_BINARIES="web/backend/vendor/.paxx-dependencies-ready"
@@ -22,6 +22,16 @@ pkg_post_install() {
     for required in \
         klipper/extras/ace.py \
         klipper/extras/ace_gen1_tunnel.py \
+        klipper/extras/ace_macro_layout.py \
+        klipper/extras/ace_protocol_cfs.py \
+        klipper/extras/ace_protocol_ace2k.py \
+        klipper/extras/ace_resistance.py \
+        klipper/extras/ace_display.py \
+        klipper/extras/ace_spool.py \
+        klipper/extras/ace_settings.py \
+        klipper/extras/ace_swap.py \
+        klipper/extras/ace_unit.py \
+        klipper/extras/ace_drivers.py \
         klipper/extras/ace_protocol.py \
         klipper/extras/filament_feed_ace.py \
         klipper/kinematics/extruder_ace.py \
