@@ -176,6 +176,26 @@ Overlays are applied in the following order:
 1. Firmware-specific overlays from `firmware-${firmware}/` (in numeric order)
 1. Mod-specific overlays from `mods/${mod}/` (in numeric order), for each `-${mod}` in `PROFILE`, in the order given
 
+### Firmware Config Functions
+
+Overlays add entries to the firmware-config page with YAML files in
+`/usr/local/share/firmware-config/functions/`. Every page load evaluates each
+entry's `get_cmd` and conditions, and firmware-config runs within a 48 MB
+memory limit, so prefer forms that do not start a process:
+
+- A `get_cmd` of exactly `[/usr/local/bin/extended-config.py, get, <file>, <section>, <key>, <default>]`
+  is read in-process (same parser and defaults as the script).
+- `if_config` shows an entry only when an `extended2.cfg` value matches,
+  without running a command:
+
+  ```yaml
+  if_config: {section: https, key: mode, default: none, not: none}   # or is: <value or list>
+  ```
+
+  It works on settings, actions, quick actions, status sections and links,
+  and combines with `if_cmd` (both must pass). Use `if_cmd` only for checks
+  that need a command, such as `test -f <file>`.
+
 ### Integrating Upstream Klipper Patches
 
 The `20-klipper-patches` overlay in `firmware-extended/` backports upstream Klipper commits. To add new patches:
