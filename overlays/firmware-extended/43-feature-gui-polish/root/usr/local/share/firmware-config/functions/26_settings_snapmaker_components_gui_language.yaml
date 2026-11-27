@@ -1,0 +1,42 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-PackageHomePage: https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware
+# SPDX-FileCopyrightText: Copyright (c) 2026 @xtronets
+
+settings:
+  snapmaker_components:
+    items:
+      gui_language:
+        label: Touchscreen Language
+        description: Adds Polish to the stock Snapmaker touchscreen UI. The stock UI has a fixed list of languages, so Polish takes the place of Turkish while selected.
+        help_url: https://snapmakeru1-extended-firmware.pages.dev/touchscreen_language
+        get_cmd:
+          - /usr/local/bin/extended-config.py
+          - get
+          - /oem/printer_data/config/extended/extended2.cfg
+          - components
+          - gui_language
+          - stock
+        options:
+          stock:
+            label: Stock
+            confirm: "Restore the stock touchscreen languages?\n\nTurkish (Türkçe) comes back in place of Polish.\n\nThe printer reboots to apply the change."
+            cmd:
+              - bash
+              - -xec
+              - |
+                /usr/local/bin/extended-config.py add /oem/printer_data/config/extended/extended2.cfg components gui_language stock
+                echo ""
+                echo ">> Stock touchscreen languages selected. Rebooting..."
+                (sleep 3; /sbin/reboot) >/dev/null 2>&1 &
+          polish:
+            label: Polski (replaces Türkçe)
+            confirm: "Add Polish to the stock touchscreen UI?\n\nThe stock UI has a fixed list of languages, so Polish replaces Turkish: after the reboot, select \"Polski\" under Settings > Language on the printer.\n\nOnly the stock Snapmaker UI is translated, not HelixScreen.\n\nThe printer reboots to apply the change."
+            cmd:
+              - bash
+              - -xec
+              - |
+                /usr/local/bin/extended-config.py add /oem/printer_data/config/extended/extended2.cfg components gui_language polish
+                echo ""
+                echo ">> Polish selected. Rebooting..."
+                (sleep 3; /sbin/reboot) >/dev/null 2>&1 &
+        default: stock

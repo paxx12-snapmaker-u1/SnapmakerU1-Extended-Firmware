@@ -54,6 +54,7 @@ Heavily expanded firmware with extensive features and customization:
 - [Camera Support](camera_support.md) - Hardware-accelerated camera stack with WebRTC streaming for internal and USB cameras
 - [Remote Screen](remote_screen.md) - View and control printer screen remotely via web browser
 - [HelixScreen Touchscreen GUI](helixscreen.md) - Replace the stock touchscreen interface with the third-party HelixScreen Klipper UI
+- [Touchscreen Language (Polish)](touchscreen_language.md) - Add a Polish translation to the stock touchscreen UI (in place of Turkish)
 - Timelapse Support - Record print timelapses with automatic cleanup
 - [Timelapse Recovery Tool](https://github.com/horzadome/snapmaker-u1-timelapse-recovery) - Recover unplayable timelapse videos
 
