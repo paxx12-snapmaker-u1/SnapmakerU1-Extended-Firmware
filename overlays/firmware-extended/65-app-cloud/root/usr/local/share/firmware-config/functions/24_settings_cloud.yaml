@@ -72,4 +72,26 @@ settings:
 
                 echo "Your OctoEverywhere plugin link status could not be determined from the logs."
                 echo "Please check the logs for more details."
+          konnect:
+            label: Konnect
+            cmd:
+              - bash
+              - -ec
+              - |
+                echo "WARNING: Konnect support is experimental. Higher resource usage may affect print quality."
+                sleep 5
+
+                echo ">> Downloading Konnect package (if needed)..."
+                /usr/local/bin/extended-pkg konnect download
+
+                echo ">> Selecting Konnect as the remote-access provider..."
+                /usr/local/bin/extended-config.py add /home/lava/printer_data/config/extended/extended2.cfg remote_access cloud konnect
+
+                echo ">> Restarting the cloud service..."
+                /etc/init.d/S99cloud restart
+
+                echo
+                echo "Konnect enabled. Open http://<printer-ip>/konnect/ to register"
+                echo "this printer with Prusa Connect - or choose 'Custom server'"
+                echo "there to use your own Connect-compatible server."
         default: none

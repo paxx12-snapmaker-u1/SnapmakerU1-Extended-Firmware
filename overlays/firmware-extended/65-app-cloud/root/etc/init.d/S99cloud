@@ -37,6 +37,9 @@ start() {
         octoeverywhere)
             start_octoeverywhere
             ;;
+        konnect)
+            /etc/init.d/S98konnect start
+            ;;
         *)
             echo "No cloud is enabled in the extended configuration, not starting any cloud service."
             exit 0
@@ -46,6 +49,7 @@ start() {
 
 stop() {
     # Stop all cloud services, if any are running.
+    /etc/init.d/S98konnect stop
     printf "Stopping OctoEverywhere: "
     if [ -f "$OCTOEVERYWHERE_PIDFILE" ]; then
         start-stop-daemon -K -p "$OCTOEVERYWHERE_PIDFILE" -s TERM
