@@ -1,0 +1,13 @@
+--- a/klippy/extras/filament_parameters.py
++++ b/klippy/extras/filament_parameters.py
+@@ -1950,7 +1950,9 @@
+                         continue
+                     if '*' in forbidden_sub_types or filament_sub_type in forbidden_sub_types:
+                         is_allow = False
+-                if filament_main_type.startswith('PA') or filament_main_type.startswith('PC') or \
++                # PCTG is a copolyester like PETG, not a polycarbonate
++                is_pc = filament_main_type.startswith('PC') and not filament_main_type.startswith('PCTG')
++                if filament_main_type.startswith('PA') or is_pc or \
+                     '-CF' in filament_main_type or '-GF' in filament_main_type:
+                     is_allow = False
+             else:
