@@ -1,9 +1,9 @@
 PKG_LABEL="HelixScreen"
-PKG_VERSION=1.0.10
+PKG_VERSION=1.1.1
 # Use the unversioned `helixscreen-snapmaker-u1.zip` release asset, not the
 # `helixscreen-snapmaker-u1-v<version>.tar.gz` one. The zip has no top-level
 # directory, so it is unpacked as-is.
 PKG_URL="https://github.com/prestonbrown/helixscreen/releases/download/v${PKG_VERSION}/helixscreen-snapmaker-u1.zip"
-PKG_SHA256=17694421b4d54af9126708429819eccfab007b3a40069b72f0fb1293c4f9bcfb
+PKG_SHA256=e528746e09eccb92d977e923ed25cbdab29b939ce104475f4f3bd25cab7afde6
 PKG_STRIP_COMPONENTS=0
 PKG_BINARIES="bin/helix-screen"
