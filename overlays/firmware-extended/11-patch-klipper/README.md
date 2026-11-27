@@ -9,6 +9,10 @@
 5. [toolhead: Reduce LOOKAHEAD_FLUSH_TIME to 0.150 seconds](https://github.com/Klipper3d/klipper/commit/16fc46fe5)
 6. snapmaker: Fix self.test references after upstream refactor
 
+## U1 fix (not in Snapmaker/u1-klipper yet)
+
+9. print_task_config: compare each used file tool with the head `extruder_map_table` gives it, instead of comparing every used head with `nozzle_diameter[0]`. Fixes Snapmaker/u1-klipper#30 and the touchscreen refusal in #35. This is not #774: that patch still reads the file list by physical head number, so a tool remapped onto another head is checked against the wrong entry. Regression: `tests/test_issue30.py` in github.com/DesignMaster-Solutions/u1-fixpack (stock refuses a matching mixed-nozzle file; patched prints; a real mismatch and a remap onto the wrong size are still refused). Not run on a physical U1.
+
 ## How patches were generated
 
 These patches were generated from the `snapmaker-lava/snapmaker-klipper` repository

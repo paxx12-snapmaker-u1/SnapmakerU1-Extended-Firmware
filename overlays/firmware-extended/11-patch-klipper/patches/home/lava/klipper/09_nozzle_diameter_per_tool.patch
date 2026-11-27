@@ -1,0 +1,27 @@
+--- a/klippy/extras/print_task_config.py
++++ b/klippy/extras/print_task_config.py
+@@ -1414,12 +1414,18 @@
+ 
+             # check nozzle diameter
+             if nozzle_diameter is not None:
+-                for i in range(PHYSICAL_EXTRUDER_NUM):
+-                    if tmp_print_task_config['extruders_used'][i]:
+-                        if abs(tmp_print_task_config_2['nozzle_diameter'][0] - actual_nozzle_diameter[i]) > 0.001:
+-                            exception_code = 14
+-                            raise gcmd.error(f"[print_task_config] nozzle diameter mismatch:" +
+-                                                f"f{i}_{tmp_print_task_config_2['nozzle_diameter'][0]} != e{i}_{actual_nozzle_diameter[i]}")
++                # file tool -> the head it is mapped to. A zero entry means the file
++                # did not name that tool (older single-value files), so it keeps entry 0.
++                for i in range(LOGICAL_EXTRUDER_NUM):
++                    if not (tmp_print_task_config_2['filament_used_g'][i] > 0.0001 or tmp_print_task_config_2['filament_used_mm'][i] > 0.0001):
++                        continue
++                    map_e = tmp_print_task_config['extruder_map_table'][i]
++                    listed = tmp_print_task_config_2['nozzle_diameter']
++                    file_diameter = listed[i] if i < len(listed) and listed[i] > 0 else listed[0]
++                    if abs(file_diameter - actual_nozzle_diameter[map_e]) > 0.001:
++                        exception_code = 14
++                        raise gcmd.error(f"[print_task_config] nozzle diameter mismatch:" +
++                                            f"f{i}_{file_diameter} != e{map_e}_{actual_nozzle_diameter[map_e]}")
+ 
+             # check filament volume type
+             if filament_volume_type is not None:
