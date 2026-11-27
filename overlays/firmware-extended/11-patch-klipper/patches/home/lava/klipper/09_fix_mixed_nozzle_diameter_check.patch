@@ -1,0 +1,33 @@
+From 58064973c2442e60a72bf1e53e0cabba08ec2d89 Mon Sep 17 00:00:00 2001
+From: Daniel Cook <cook0001@users.noreply.github.com>
+Date: Thu, 8 Oct 2026 18:29:42 -0500
+Subject: [PATCH] snapmaker: Fix mixed nozzle diameter check in
+ print_task_config
+
+---
+ klippy/extras/print_task_config.py | 7 +++++--
+ 1 file changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/klippy/extras/print_task_config.py b/klippy/extras/print_task_config.py
+index 340b423..8827426 100644
+--- a/klippy/extras/print_task_config.py
++++ b/klippy/extras/print_task_config.py
+@@ -1399,10 +1399,13 @@ class PrintTaskConfig:
+             if nozzle_diameter is not None:
+                 for i in range(PHYSICAL_EXTRUDER_NUM):
+                     if tmp_print_task_config['extruders_used'][i]:
+-                        if abs(tmp_print_task_config_2['nozzle_diameter'][0] - actual_nozzle_diameter[i]) > 0.001:
++                        file_nozzle = (tmp_print_task_config_2['nozzle_diameter'][i]
++                                       if i < len(tmp_print_task_config_2['nozzle_diameter']) and tmp_print_task_config_2['nozzle_diameter'][i] > 0
++                                       else tmp_print_task_config_2['nozzle_diameter'][0])
++                        if abs(file_nozzle - actual_nozzle_diameter[i]) > 0.001:
+                             exception_code = 14
+                             raise gcmd.error(f"[print_task_config] nozzle diameter mismatch:" +
+-                                                f"f{i}_{tmp_print_task_config_2['nozzle_diameter'][0]} != e{i}_{actual_nozzle_diameter[i]}")
++                                                f"f{i}_{file_nozzle} != e{i}_{actual_nozzle_diameter[i]}")
+ 
+             # check filament volume type
+             if filament_volume_type is not None:
+-- 
+2.53.0
+
