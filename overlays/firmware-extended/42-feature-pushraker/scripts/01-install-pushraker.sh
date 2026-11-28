@@ -15,8 +15,8 @@ set -eo pipefail
 # pip pulls in its dependencies (Apprise, requests, Pillow) that the image
 # doesn't have yet at this step.
 # The sha256 is PyPI's for the wheel: pip refuses any other file.
-PUSHRAKER_VERSION=0.4.1
-PUSHRAKER_SHA256=a4ecc624a83ebd7cecc734289be8324ec92bba366371eda0139f784d11f367a8
+PUSHRAKER_VERSION=0.4.2
+PUSHRAKER_SHA256=c1f73d0004b1b6e313faa6a5b39bff004c2b2636c2cc302cb61e09cf696b4a61
 
 echo ">> Installing pushraker $PUSHRAKER_VERSION via pip3"
 cache_pip.sh "$ROOTFS_DIR" "pushraker==$PUSHRAKER_VERSION" --hash=sha256:$PUSHRAKER_SHA256
